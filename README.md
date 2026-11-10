@@ -1,2 +1,45 @@
-# dual-gate-tcg
-Dual Gate: Another World Cross TCG for Android (Kotlin/Jetpack Compose)
+# 🎴 듀얼 게이트: 이계의 문 (Dual Gate TCG)
+
+> **현실–이세계 크로스 모바일 TCG 안드로이드 프로젝트**  
+> 기획서 초안 v0.1 및 3단 비주얼(전투/사복/데이트) 70종 카드 구현 베이스라인 (Kotlin + Jetpack Compose)
+
+---
+
+## 🎯 게임 기획 및 핵심 메커니즘
+
+1. **현실 봉인 팩 습득 프롤로그 & 스타팅 3인방 계약**
+   - 일상 골목길에서 주운 의문의 봉인 카드팩을 개봉하며 스타팅 3인방(성기사 아우렐리아, 건슬링어 베리티, 무녀 히스이)과 계약합니다.
+   - 언제든 원하는 시점에 차원 게이트를 통해 이세계로 다이브하여 세계를 구원합니다.
+
+2. **현실 소환 교감 ↔ 이세계 전략 배틀 듀얼 월드 순환 루프**
+   - **현실 소환 모드**: 갑옷을 벗고 [일상 사복 큐트] 또는 [매혹적인 데이트 룩]을 착용한 파트너와 일상 교감을 나누어 호감도(Bond)를 육성합니다.
+   - **호감도 MAX 달성 시**: 전투 시 발동되는 강력한 **'페어 얼티밋 오의' (+25% 데미지 증폭)** 가 영구 개방됩니다.
+   - **이세계 원정 모드**: 풀 무장 TCG 턴제 배틀을 클리어하여 EXP를 획득하고, 카드의 기본 능력치(ATK·DEF·HP)를 영구 성장시킵니다.
+
+3. **속성 상성 및 전열/후열 턴제 카드 배틀**
+   - **3원소 삼각 순환**: 화염(FIRE) → 바람(WIND) → 빙결(ICE) → 화염 (+30% 증폭 / -20% 경감)
+   - **2극원소 상호 카운터**: 빛(LIGHT) ↔ 어둠(DARK) (+50% 극딜 상호 카운터)
+   - 전열 3슬롯 / 후열 2슬롯 배치 및 마나 코스트 운영
+
+4. **카드 합성 및 5성 한계 돌파 & 3슬롯 장비 장착**
+   - 동일 카드 합성 시 성급 상승(최대 5성 한계 돌파, 성급당 능력치 +20% 스케일링)
+   - 무기·방어구·아티팩트 3슬롯 장비 시스템
+
+---
+
+## 🛠 기술 스택 및 아키텍처
+
+- **플랫폼**: Android (Min SDK 26, Target SDK 35)
+- **프로그래밍 언어**: Kotlin 2.0+ (선정 사유: Android 네이티브 표준, 고성능 타입 안정성, 반응형 코루틴)
+- **UI 프레임워크**: Jetpack Compose + Material 3
+- **아키텍처**: Clean Architecture + MVVM
+- **검증**: JUnit 4 / AndroidX Test
+
+```
+com.game.tcg
+├── core
+│   ├── model          # TcgCard, Element, VisualState, BattleSlot, PlayerDeck
+│   └── engine         # 전투(BattleEngine), 합성(SynthesisEngine), 크로스루프(DualWorldEngine)
+├── ui                 # Jetpack Compose UI 및 시뮬레이션 컴포넌트
+└── MainActivity.kt    # 메인 액티비티 진입점
+```
