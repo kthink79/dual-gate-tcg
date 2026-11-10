@@ -13,36 +13,45 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.game.tcg.core.engine.*
-import com.game.tcg.core.model.*
+import com.game.tcg.core.engine.RealWorldActivity
+import com.game.tcg.ui.ITcgUiContract
+import com.game.tcg.ui.TcgUiState
+import com.game.tcg.ui.TcgViewModel
 
 class MainActivity : ComponentActivity() {
-    private val battleEngine = BattleEngine()
-    private val synthesisEngine = SynthesisEngine()
-    private val dualWorldEngine = DualWorldEngine()
+    private val viewModel = TcgViewModel()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                TcgMainScreen(
-                    battleEngine = battleEngine,
-                    synthesisEngine = synthesisEngine,
-                    dualWorldEngine = dualWorldEngine
-                )
+                TcgMainScreen(viewModel = viewModel)
             }
         }
     }
 }
 
 @Composable
-fun TcgMainScreen(
-    battleEngine: BattleEngine,
-    synthesisEngine: SynthesisEngine,
-    dualWorldEngine: DualWorldEngine
-) {
-    var statusMessage by remember { mutableStateOf("듀얼 게이트 TCG 엔진 준비 완료") }
+fun TcgMainScreen(viewModel: ITcgUiContract) {
+    val uiState by viewModel.uiState.collectAsState()
 
+    TcgMainContent(
+        uiState = uiState,
+        onSimulateBattle = { viewModel.executeBattleSimulation() },
+        onInteractRealWorld = { viewModel.executeRealWorldInteraction(RealWorldActivity.ROMANTIC_EVENING_DATE) },
+        onSynthesize = { viewModel.executeSynthesisAscension() },
+        onExpedition = { viewModel.executeIsekaiExpedition() }
+    )
+}
+
+@Composable
+fun TcgMainContent(
+    uiState: TcgUiState,
+    onSimulateBattle: () -> Unit,
+    onInteractRealWorld: () -> Unit,
+    onSynthesize: () -> Unit,
+    onExpedition: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -57,7 +66,7 @@ fun TcgMainScreen(
             fontWeight = FontWeight.Bold
         )
         Text(
-            text = "현실–이세계 크로스 모바일 TCG (Kotlin/Compose)",
+            text = "현실–이세계 크로스 모바일 TCG (Kotlin/Compose Clean Architecture)",
             color = Color.LightGray,
             fontSize = 14.sp
         )
@@ -77,29 +86,7 @@ fun TcgMainScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Button(
-                    onClick = {
-                        val seraphiel = TcgCard(
-                            id = 1,
-                            name = "태양의 대천사 세라피엘",
-                            element = Element.LIGHT,
-                            baseCost = 8,
-                            atk = 8500,
-                            def = 7500,
-                            bondLevel = 100, // 오의 개방
-                            skillText = "필드 전개 시 아군 전체 실드 부여"
-                        )
-                        val carmilla = TcgCard(
-                            id = 6,
-                            name = "뱀파이어 퀸 카밀라",
-                            element = Element.DARK,
-                            baseCost = 8,
-                            atk = 8200,
-                            def = 7100,
-                            skillText = "피해의 30% 생명력 흡수"
-                        )
-                        val result = battleEngine.calculateDamage(seraphiel, carmilla)
-                        statusMessage = "[배틀 상성 연산 결과]\n${result.summaryMessage}\n원 데미지: ${result.rawDamage} → 최종 데미지: ${result.finalDamage} (빛↔어둠 상극 +50%, 오의 +25%)"
-                    },
+                    onClick = onSimulateBattle,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("1. 속성 상성 및 페어 얼티밋 오의 검증")
@@ -108,20 +95,7 @@ fun TcgMainScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Button(
-                    onClick = {
-                        val card = TcgCard(
-                            id = 51,
-                            name = "백호령 신녀 단아",
-                            element = Element.WIND,
-                            baseCost = 7,
-                            atk = 7400,
-                            def = 6200,
-                            bondLevel = 20,
-                            skillText = "아군 공격 속도 및 회피율 대폭 상승"
-                        )
-                        dualWorldEngine.interactInRealWorld(card, RealWorldActivity.ROMANTIC_EVENING_DATE)
-                        statusMessage = "[현실 소환 교감 결과]\n캐릭터: ${card.name}\n현재 비주얼 상태: ${card.currentVisual.displayName}\n호감도: ${card.bondLevel}/100"
-                    },
+                    onClick = onInteractRealWorld,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("2. 현실 일상 소환 (데이트 룩/호감도) 검증")
@@ -130,15 +104,19 @@ fun TcgMainScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Button(
-                    onClick = {
-                        val base = TcgCard(1, "태양의 대천사 세라피엘", Element.LIGHT, 8, 8500, 7500, starLevel = 1, skillText = "")
-                        val material = TcgCard(1, "태양의 대천사 세라피엘", Element.LIGHT, 8, 8500, 7500, starLevel = 1, skillText = "")
-                        synthesisEngine.synthesizeCard(base, material)
-                        statusMessage = "[카드 합성 결과]\n한계 돌파: ${base.starLevel}성 달성!\nATK 스케일링: 8500 → ${base.atk} (+20%)\nDEF 스케일링: 7500 → ${base.def} (+20%)"
-                    },
+                    onClick = onSynthesize,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("3. 동일 카드 한계 돌파(5성) 합성 검증")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = onExpedition,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("4. 이세계 원정 배틀 및 EXP 스탯 성장 검증")
                 }
             }
         }
@@ -152,7 +130,7 @@ fun TcgMainScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(text = "시뮬레이션 출력 로그", color = Color(0xFF90CAF9), fontSize = 12.sp)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = statusMessage, color = Color.White, fontSize = 14.sp)
+                Text(text = uiState.statusMessage, color = Color.White, fontSize = 14.sp)
             }
         }
     }

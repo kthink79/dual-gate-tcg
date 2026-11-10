@@ -3,14 +3,36 @@ package com.game.tcg.core.engine
 import com.game.tcg.core.model.*
 
 /**
+ * 턴제 TCG 룰 및 상성 데미지 계산 배틀 엔진 인터페이스
+ */
+interface IBattleEngine {
+    fun calculateDamage(attacker: TcgCard, defender: TcgCard): BattleDamageResult
+}
+
+/**
+ * 카드 합성 및 한계 돌파(5성) 엔진 인터페이스
+ */
+interface ISynthesisEngine {
+    fun synthesizeCard(baseCard: TcgCard, materialCard: TcgCard): Boolean
+}
+
+/**
+ * 현실–이세계 크로스 듀얼 월드 순환 루프 엔진 인터페이스
+ */
+interface IDualWorldEngine {
+    fun interactInRealWorld(card: TcgCard, activity: RealWorldActivity): Int
+    fun completeIsekaiBattle(card: TcgCard, earnedExp: Int): Boolean
+}
+
+/**
  * 턴제 TCG 룰 및 상성 데미지 계산 배틀 엔진
  */
-class BattleEngine {
+class BattleEngine : IBattleEngine {
 
     /**
      * 카드 간 단일 공격 판정 (상성 배율 + 페어 얼티밋 오의 보너스 적용)
      */
-    fun calculateDamage(attacker: TcgCard, defender: TcgCard): BattleDamageResult {
+    override fun calculateDamage(attacker: TcgCard, defender: TcgCard): BattleDamageResult {
         val baseDamage = attacker.atk.toDouble()
         val multiplier = attacker.element.getDamageMultiplier(defender.element)
 
@@ -49,13 +71,13 @@ data class BattleDamageResult(
 /**
  * 카드 합성 및 한계 돌파(5성) 엔진
  */
-class SynthesisEngine {
+class SynthesisEngine : ISynthesisEngine {
 
     /**
      * 동일 카드 합성을 통한 성급 상승 (최대 5성 한계 돌파)
      * 성급당 공격력/방어력 +20% 영구 스케일링
      */
-    fun synthesizeCard(baseCard: TcgCard, materialCard: TcgCard): Boolean {
+    override fun synthesizeCard(baseCard: TcgCard, materialCard: TcgCard): Boolean {
         if (baseCard.id != materialCard.id) return false
         if (baseCard.starLevel >= 5) return false
 
@@ -71,12 +93,12 @@ class SynthesisEngine {
  * - 현실 소환 모드: 일상 평상복/데이트 룩 교감, 호감도 상승 -> 페어 얼티밋 오의 개방
  * - 이세계 원정 모드: 턴제 배틀 클리어, EXP 획득 -> 레벨업 및 영구 스탯 성장
  */
-class DualWorldEngine {
+class DualWorldEngine : IDualWorldEngine {
 
     /**
      * 현실 소환 모드: 일상 교감으로 호감도 육성
      */
-    fun interactInRealWorld(card: TcgCard, activity: RealWorldActivity): Int {
+    override fun interactInRealWorld(card: TcgCard, activity: RealWorldActivity): Int {
         val bondIncrease = when (activity) {
             RealWorldActivity.DAILY_GREETING -> 5
             RealWorldActivity.CASUAL_CAFE_WALK -> 15
@@ -97,7 +119,7 @@ class DualWorldEngine {
     /**
      * 이세계 원정 모드: 배틀 승리를 통해 EXP 획득 및 영구 능력치 성장
      */
-    fun completeIsekaiBattle(card: TcgCard, earnedExp: Int): Boolean {
+    override fun completeIsekaiBattle(card: TcgCard, earnedExp: Int): Boolean {
         card.currentExp += earnedExp
         val expThreshold = card.starLevel * 1000
 
