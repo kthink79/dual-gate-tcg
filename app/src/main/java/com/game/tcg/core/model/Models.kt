@@ -87,3 +87,44 @@ data class PlayerDeck(
     val deckName: String,
     val cards: MutableList<TcgCard> = mutableListOf()
 )
+
+/**
+ * 마나 자원 상태
+ */
+data class ManaState(
+    val currentMana: Int = 1,
+    val maxMana: Int = 1
+)
+
+/**
+ * 덱 유효성 검증 결과 및 코스트 커브 분석
+ */
+data class DeckValidationResult(
+    val isValid: Boolean,
+    val errors: List<String> = emptyList(),
+    val costCurve: Map<Int, Int> = emptyMap(), // 코스트별 카드 장수 분포
+    val averageCost: Double = 0.0
+)
+
+/**
+ * 드로우 단계 결과
+ */
+data class DrawResult(
+    val drawnCard: TcgCard? = null,
+    val isBurned: Boolean = false, // 최대 핸드 초과로 소멸 여부
+    val fatigueDamage: Int = 0,    // 덱 소진 시 누적 탈진 데미지
+    val newFatigueCount: Int = 0
+)
+
+/**
+ * 배틀 필드 슬롯 팩토리 헬퍼 (전열 3 / 후열 2 기본 구성)
+ */
+object FieldSlotFactory {
+    fun createStandardSlots(): List<BattleSlot> = listOf(
+        BattleSlot(slotIndex = 0, isFrontRow = true),
+        BattleSlot(slotIndex = 1, isFrontRow = true),
+        BattleSlot(slotIndex = 2, isFrontRow = true),
+        BattleSlot(slotIndex = 3, isFrontRow = false),
+        BattleSlot(slotIndex = 4, isFrontRow = false)
+    )
+}
