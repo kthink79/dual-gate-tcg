@@ -128,3 +128,116 @@ object FieldSlotFactory {
         BattleSlot(slotIndex = 4, isFrontRow = false)
     )
 }
+
+/**
+ * 3대 매혹의 마왕 데이터 모델
+ */
+data class DemonLord(
+    val id: Int,                        // No.112~114
+    val name: String,                   // 릴리스, 카밀라, 모르가나
+    val title: String,                  // 황혼과 욕망의 마왕 등
+    val element: Element,               // DARK, FIRE 등
+    val baseHp: Int,
+    val attack: Int,
+    val disguiseHeroineName: String,    // 릴리, 밀라, 모나
+    val disguiseJob: String,            // 심야 라운지 소믈리에, 패션 디자이너, 앤틱 타로술사
+    var isDefeated: Boolean = false,    // 토벌 여부 (토벌 전까지 일상 잠입)
+    var isVowedCompanion: Boolean = false // 토벌 후 서약 파트너 합류 여부
+)
+
+/**
+ * 3대 마왕 사전 정의 레지스트리
+ */
+object DemonLordRegistry {
+    val LILITH = DemonLord(
+        id = 112,
+        name = "릴리스",
+        title = "황혼과 욕망의 마왕",
+        element = Element.DARK,
+        baseHp = 25000,
+        attack = 2800,
+        disguiseHeroineName = "릴리",
+        disguiseJob = "심야 프라이빗 라운지 바텐더/소믈리에"
+    )
+
+    val CARMILLA = DemonLord(
+        id = 113,
+        name = "카밀라",
+        title = "선혈과 파멸의 폭군",
+        element = Element.FIRE,
+        baseHp = 28000,
+        attack = 3200,
+        disguiseHeroineName = "밀라",
+        disguiseJob = "청담 하이엔드 부티크 수석 디자이너"
+    )
+
+    val MORGANA = DemonLord(
+        id = 114,
+        name = "모르가나",
+        title = "환영과 심연의 요녀",
+        element = Element.DARK,
+        baseHp = 22000,
+        attack = 2600,
+        disguiseHeroineName = "모나",
+        disguiseJob = "앤틱 타로 숍 점술가"
+    )
+
+    val ALL: List<DemonLord>
+        get() = listOf(LILITH, CARMILLA, MORGANA)
+}
+
+/**
+ * 유저의 마왕 도감 시선/확대 응시 및 일상 잠입 유혹 누적 상태
+ */
+data class TemptationState(
+    var gazeDurationSeconds: Long = 0L,         // 도감/상세창 응시 누적 시간(초)
+    var gazeZoomCount: Int = 0,                 // 핀치 줌 확대 횟수
+    var gazeTemptationStacks: Int = 0,          // 시선 유혹 스택 (최대 5스택)
+    var undercoverEncounterCount: Int = 0,      // 일상에서 위장 마왕과 조우한 횟수
+    var undercoverFlirtCount: Int = 0,          // 매혹적 선택지에 흔들린 횟수
+    var curseOfArchdemonStacks: Int = 0,        // 잠입 마왕의 저주 누적 스택 (최대 5스택)
+    var stolenGold: Int = 0                     // 잠입 중 빼앗긴 금화
+) {
+    /**
+     * 총 유혹 스택 (시선 스택 + 저주 스택, 최대 10)
+     */
+    val totalTemptationStacks: Int
+        get() = (gazeTemptationStacks + curseOfArchdemonStacks).coerceAtMost(10)
+
+    /**
+     * UI 연출용: 화면 가장자리 매혹 안개 강도 (0.0f ~ 1.0f)
+     */
+    val visualMistIntensity: Float
+        get() = (totalTemptationStacks / 10.0f).coerceIn(0.0f, 1.0f)
+
+    /**
+     * UI 연출용: 심장 박동 사운드 BPM 가속치 (기본 60 -> 최대 120)
+     */
+    val heartbeatBpm: Int
+        get() = 60 + (totalTemptationStacks * 6)
+}
+
+/**
+ * 전투 돌입 시 아군 카드에 은밀히 적용되는 능력 저감 페널티
+ */
+data class CombatPenalty(
+    val totalStacks: Int,
+    val attackReductionPercent: Int,       // 공격력 저감율 (스택당 5%, 최대 35%)
+    val damageTakenIncreasePercent: Int,  // 피격 데미지 증가율 (스택당 5%, 최대 35%)
+    val criticalReductionPercent: Int,    // 치명타율 저감율 (스택당 4%, 최대 25%)
+    val extraManaCost: Int,               // 스킬 마나 코스트 추가 (3스택 이상 시 +1)
+    val isCharmed: Boolean,               // 홀림 상태 여부 (스택 >= 1)
+    val debuffDescription: String
+)
+
+/**
+ * 일상 위장 마왕과의 조우 선택지
+ */
+data class UndercoverDialogueOption(
+    val optionId: String,
+    val text: String,
+    val isTemptedChoice: Boolean,        // 매혹/유혹에 넘어가는 선택지 여부
+    val goldStolen: Int = 0,             // 유혹에 넘어가 뺏기는 금화
+    val curseAdded: Int = 0              // 추가되는 마왕의 저주 스택
+)
+

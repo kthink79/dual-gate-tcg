@@ -41,6 +41,17 @@ data class TcgUiState(
         def = 7500,
         starLevel = 1,
         skillText = "필드 전개 시 아군 전체 실드 부여"
+    ),
+    val demonLords: List<DemonLord> = DemonLordRegistry.ALL,
+    val temptationState: TemptationState = TemptationState(),
+    val combatPenalty: CombatPenalty = CombatPenalty(
+        totalStacks = 0,
+        attackReductionPercent = 0,
+        damageTakenIncreasePercent = 0,
+        criticalReductionPercent = 0,
+        extraManaCost = 0,
+        isCharmed = false,
+        debuffDescription = "[정신 맑음] 유혹에 흔들리지 않아 전투 페널티가 없습니다."
     )
 )
 
@@ -60,6 +71,12 @@ interface ITcgUiContract {
     fun executeTurnDraw()
     fun executePlayCard(cardIndex: Int, slotIndex: Int): Boolean
     fun executeAiAction(): String?
+
+    // 마왕 도감 시선/확대 응시 및 일상 잠입 유혹 인터랙션 계약
+    fun recordDemonLordGaze(demonLordId: Int, durationSeconds: Long, isZoomed: Boolean)
+    fun chooseUndercoverOption(option: UndercoverDialogueOption)
+    fun defeatDemonLord(demonLordId: Int)
+    fun purifyTemptation(amount: Int = 2)
 }
 
 /**
@@ -71,7 +88,8 @@ class TcgViewModel(
     private val dualWorldEngine: IDualWorldEngine = DualWorldEngine(),
     private val deckEngine: IDeckEngine = DeckEngine(),
     private val manaEngine: IManaEngine = ManaEngine(),
-    private val battleAiEngine: IBattleAiEngine = BattleAiEngine()
+    private val battleAiEngine: IBattleAiEngine = BattleAiEngine(),
+    private val temptationEngine: ITemptationEngine = TemptationEngine()
 ) : ViewModel(), ITcgUiContract {
 
     private val _uiState = MutableStateFlow(TcgUiState())
@@ -98,7 +116,12 @@ class TcgViewModel(
             skillText = "피해의 30% 생명력 흡수"
         )
 
-        val result = battleEngine.calculateDamage(seraphiel, carmilla)
+        val penalty = _uiState.value.combatPenalty
+        val result = if (penalty.isCharmed) {
+            battleEngine.calculateDamageWithTemptation(seraphiel, carmilla, penalty)
+        } else {
+            battleEngine.calculateDamage(seraphiel, carmilla)
+        }
         val message = "[배틀 상성 연산 결과]\n${result.summaryMessage}\n원 데미지: ${result.rawDamage} → 최종 데미지: ${result.finalDamage} (빛↔어둠 상극 +50%, 오의 +25%)"
 
         _uiState.update { current ->
@@ -334,5 +357,86 @@ class TcgViewModel(
             )
         }
         return cards
+    }
+
+    override fun recordDemonLordGaze(demonLordId: Int, durationSeconds: Long, isZoomed: Boolean) {
+        val current = _uiState.value
+        val updatedState = temptationEngine.recordGaze(demonLordId, durationSeconds, isZoomed, current.temptationState)
+        val penalty = temptationEngine.calculateCombatPenalty(updatedState)
+
+        val targetLord = current.demonLords.find { it.id == demonLordId }
+        val lordName = targetLord?.name ?: "마왕"
+
+        val actionDesc = if (isZoomed) "상세 사진 핀치 줌 확대 감지" else "${durationSeconds}초간 응시"
+        val message = "[마왕의 시선 유혹] $lordName ($actionDesc)\n${penalty.debuffDescription}"
+
+        _uiState.update {
+            it.copy(
+                temptationState = updatedState,
+                combatPenalty = penalty,
+                statusMessage = message
+            )
+        }
+    }
+
+    override fun chooseUndercoverOption(option: UndercoverDialogueOption) {
+        val current = _uiState.value
+        val updatedState = temptationEngine.processUndercoverChoice(option, current.temptationState)
+        val penalty = temptationEngine.calculateCombatPenalty(updatedState)
+
+        val message = if (option.isTemptedChoice) {
+            "[일상 잠입 유혹에 흔들림] '${option.text}' 선택!\n마왕의 저주 +${option.curseAdded}스택, 금화 -${option.goldStolen}G 유출!\n${penalty.debuffDescription}"
+        } else {
+            "[유혹 거부] '${option.text}' 선택! 단호한 태도로 마왕의 유혹을 뿌리쳤습니다."
+        }
+
+        _uiState.update {
+            it.copy(
+                temptationState = updatedState,
+                combatPenalty = penalty,
+                statusMessage = message
+            )
+        }
+    }
+
+    override fun defeatDemonLord(demonLordId: Int) {
+        val current = _uiState.value
+        val targetLord = current.demonLords.find { it.id == demonLordId }
+        if (targetLord == null) return
+
+        val updatedState = temptationEngine.onDemonLordDefeated(targetLord, current.temptationState)
+        val penalty = temptationEngine.calculateCombatPenalty(updatedState)
+        val updatedLords = current.demonLords.map {
+            if (it.id == demonLordId) it.copy(isDefeated = true, isVowedCompanion = true) else it
+        }
+
+        val message = "[마왕 토벌 완료] '${targetLord.name} (${targetLord.title})'을 정벌하여 세계를 구원했습니다!\n" +
+                "일상 위장 신분('${targetLord.disguiseHeroineName}')의 가면을 벗고 '진정한 동료'로 합류!\n" +
+                "마왕의 저주가 정화되었습니다. (현재 페널티: ${penalty.debuffDescription})"
+
+        _uiState.update {
+            it.copy(
+                demonLords = updatedLords,
+                temptationState = updatedState,
+                combatPenalty = penalty,
+                statusMessage = message
+            )
+        }
+    }
+
+    override fun purifyTemptation(amount: Int) {
+        val current = _uiState.value
+        val updatedState = temptationEngine.purifyTemptationWithHolyWater(current.temptationState, amount)
+        val penalty = temptationEngine.calculateCombatPenalty(updatedState)
+
+        val message = "[성수 정화] 성수를 사용하여 마왕의 매혹 및 저주 스택을 ${amount}만큼 정화했습니다.\n${penalty.debuffDescription}"
+
+        _uiState.update {
+            it.copy(
+                temptationState = updatedState,
+                combatPenalty = penalty,
+                statusMessage = message
+            )
+        }
     }
 }

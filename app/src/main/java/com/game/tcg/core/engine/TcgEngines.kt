@@ -7,6 +7,11 @@ import com.game.tcg.core.model.*
  */
 interface IBattleEngine {
     fun calculateDamage(attacker: TcgCard, defender: TcgCard): BattleDamageResult
+    fun calculateDamageWithTemptation(
+        attacker: TcgCard,
+        defender: TcgCard,
+        penalty: CombatPenalty
+    ): BattleDamageResult = calculateDamage(attacker, defender)
 }
 
 /**
@@ -53,6 +58,40 @@ class BattleEngine : IBattleEngine {
                 append("${defender.name} [${defender.element.displayName}] 타격: ")
                 append("${finalDamage} 데미지! (상성 ${multiplier}x")
                 if (attacker.isUltimateUnlocked) append(", 오의 발동 +25%")
+                append(")")
+            }
+        )
+    }
+
+    /**
+     * 유혹 페널티(마왕의 매혹)가 적용된 공격 판정
+     */
+    override fun calculateDamageWithTemptation(
+        attacker: TcgCard,
+        defender: TcgCard,
+        penalty: CombatPenalty
+    ): BattleDamageResult {
+        val penaltyMultiplier = (100 - penalty.attackReductionPercent).coerceAtLeast(10) / 100.0
+        val effectiveAtk = (attacker.atk * penaltyMultiplier).toInt()
+
+        val multiplier = attacker.element.getDamageMultiplier(defender.element)
+        val ultimateBonus = if (attacker.isUltimateUnlocked) 1.25 else 1.00
+
+        val finalDamage = (effectiveAtk * multiplier * ultimateBonus).toInt()
+        val isCriticalElement = multiplier >= 1.30
+
+        return BattleDamageResult(
+            rawDamage = attacker.atk,
+            multiplier = multiplier,
+            finalDamage = finalDamage,
+            isCriticalElement = isCriticalElement,
+            isUltimateTriggered = attacker.isUltimateUnlocked,
+            summaryMessage = buildString {
+                append("${attacker.name} [${attacker.element.displayName}] → ")
+                append("${defender.name} [${defender.element.displayName}] 타격: ")
+                append("${finalDamage} 데미지! (상성 ${multiplier}x")
+                if (attacker.isUltimateUnlocked) append(", 오의 발동 +25%")
+                if (penalty.isCharmed) append(", [마왕의 매혹] 공격력 -${penalty.attackReductionPercent}%")
                 append(")")
             }
         )
@@ -393,5 +432,122 @@ class BattleAiEngine : IBattleAiEngine {
                 slot.placedCard!!.atk
             }
         )
+    }
+}
+
+/**
+ * 마왕 도감 시선/확대 응시 및 일상 잠입 유혹 페널티 엔진 인터페이스
+ */
+interface ITemptationEngine {
+    fun recordGaze(demonLordId: Int, durationSeconds: Long, isZoomed: Boolean, state: TemptationState): TemptationState
+    fun processUndercoverChoice(option: UndercoverDialogueOption, state: TemptationState): TemptationState
+    fun calculateCombatPenalty(state: TemptationState): CombatPenalty
+    fun applyCombatPenaltyToAttacker(baseDamage: Int, penalty: CombatPenalty): Int
+    fun applyDamageTakenPenalty(baseIncomingDamage: Int, penalty: CombatPenalty): Int
+    fun onDemonLordDefeated(demonLord: DemonLord, state: TemptationState): TemptationState
+    fun purifyTemptationWithHolyWater(state: TemptationState, purifyAmount: Int): TemptationState
+}
+
+/**
+ * 마왕 도감 시선/확대 응시 및 일상 잠입 유혹 페널티 엔진 기본 구현체
+ */
+class TemptationEngine : ITemptationEngine {
+
+    override fun recordGaze(
+        demonLordId: Int,
+        durationSeconds: Long,
+        isZoomed: Boolean,
+        state: TemptationState
+    ): TemptationState {
+        val updated = state.copy()
+        updated.gazeDurationSeconds += durationSeconds
+
+        if (isZoomed) {
+            updated.gazeZoomCount += 1
+            // 핀치 줌 1회당 즉시 1스택 추가 (최대 5스택)
+            updated.gazeTemptationStacks = (updated.gazeTemptationStacks + 1).coerceAtMost(5)
+        }
+
+        // 10초 이상 응시할 때마다 1스택씩 추가 (기본 스택에 누적 반영, 최대 5스택)
+        val timeStacks = (updated.gazeDurationSeconds / 10).toInt().coerceAtMost(5)
+        if (timeStacks > updated.gazeTemptationStacks) {
+            updated.gazeTemptationStacks = timeStacks
+        }
+
+        return updated
+    }
+
+    override fun processUndercoverChoice(
+        option: UndercoverDialogueOption,
+        state: TemptationState
+    ): TemptationState {
+        val updated = state.copy()
+        updated.undercoverEncounterCount += 1
+
+        if (option.isTemptedChoice) {
+            updated.undercoverFlirtCount += 1
+            updated.curseOfArchdemonStacks = (updated.curseOfArchdemonStacks + option.curseAdded).coerceAtMost(5)
+            updated.stolenGold += option.goldStolen
+        }
+
+        return updated
+    }
+
+    override fun calculateCombatPenalty(state: TemptationState): CombatPenalty {
+        val total = state.totalTemptationStacks
+        val atkRed = (total * 5).coerceAtMost(35)
+        val dmgInc = (total * 5).coerceAtMost(35)
+        val critRed = (total * 4).coerceAtMost(25)
+        val manaCost = if (total >= 3) 1 else 0
+        val isCharmed = total > 0
+
+        val desc = if (isCharmed) {
+            "[마왕의 매혹: 총 ${total}스택] 아군 공격력 -${atkRed}%, 받는 피해 +${dmgInc}%, 치명타율 -${critRed}%" +
+                    (if (manaCost > 0) ", 스킬 마나 코스트 +$manaCost" else "")
+        } else {
+            "[정신 맑음] 유혹에 흔들리지 않아 전투 페널티가 없습니다."
+        }
+
+        return CombatPenalty(
+            totalStacks = total,
+            attackReductionPercent = atkRed,
+            damageTakenIncreasePercent = dmgInc,
+            criticalReductionPercent = critRed,
+            extraManaCost = manaCost,
+            isCharmed = isCharmed,
+            debuffDescription = desc
+        )
+    }
+
+    override fun applyCombatPenaltyToAttacker(baseDamage: Int, penalty: CombatPenalty): Int {
+        if (!penalty.isCharmed) return baseDamage
+        val multiplier = (100 - penalty.attackReductionPercent).coerceAtLeast(10) / 100.0
+        return (baseDamage * multiplier).toInt()
+    }
+
+    override fun applyDamageTakenPenalty(baseIncomingDamage: Int, penalty: CombatPenalty): Int {
+        if (!penalty.isCharmed) return baseIncomingDamage
+        val multiplier = (100 + penalty.damageTakenIncreasePercent) / 100.0
+        return (baseIncomingDamage * multiplier).toInt()
+    }
+
+    override fun onDemonLordDefeated(demonLord: DemonLord, state: TemptationState): TemptationState {
+        demonLord.isDefeated = true
+        demonLord.isVowedCompanion = true
+
+        val updated = state.copy()
+        // 토벌 성공 시 저주 스택 3 완화
+        updated.curseOfArchdemonStacks = (updated.curseOfArchdemonStacks - 3).coerceAtLeast(0)
+        return updated
+    }
+
+    override fun purifyTemptationWithHolyWater(
+        state: TemptationState,
+        purifyAmount: Int
+    ): TemptationState {
+        val updated = state.copy()
+        updated.gazeTemptationStacks = (updated.gazeTemptationStacks - purifyAmount).coerceAtLeast(0)
+        updated.curseOfArchdemonStacks = (updated.curseOfArchdemonStacks - purifyAmount).coerceAtLeast(0)
+        return updated
     }
 }
