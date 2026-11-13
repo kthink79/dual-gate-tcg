@@ -52,7 +52,21 @@ data class TcgUiState(
         extraManaCost = 0,
         isCharmed = false,
         debuffDescription = "[정신 맑음] 유혹에 흔들리지 않아 전투 페널티가 없습니다."
-    )
+    ),
+    // ── v0.3 로그라이크 영구 상실·환생 바인딩 ──
+    val ownedCards: List<TcgCard> = emptyList(),                     // 보유 중인 유일 카드 (1캐릭터 1장)
+    val reincarnationPool: List<ReincarnatedCard> = emptyList(),     // 환생 대기 목록 (재획득 필요)
+    val lastCardDeathResult: CardDeathResult? = null,                // 최근 사망/상실 알림
+    val lastAcquisitionResult: AcquisitionResult? = null,            // 최근 획득/환생 재획득 알림
+    // ── v0.3 전투 중 전략적 후퇴 바인딩 ──
+    val retreatInfo: BattleRetreatInfo = BattleRetreatInfo(),        // 턴/전투 후퇴 사용 현황
+    val retreatUsedThisTurn: Boolean = false,                        // 턴당 후퇴 사용 여부 (UI 버튼 비활성화용)
+    val lastRetreatResult: RetreatResult? = null,
+    val lastEmergencyRetreatResult: EmergencyRetreatResult? = null,
+    val battleReserve: List<TcgCard> = emptyList(),                  // 손패 초과 시 후퇴 카드가 쌓이는 대기열
+    val battleLootGold: Int = 0,                                     // 긴급 철수 시 포기하게 되는 전리품
+    val battleLootGems: Int = 0,
+    val battleLootItems: List<String> = emptyList()
 )
 
 /**
@@ -77,6 +91,13 @@ interface ITcgUiContract {
     fun chooseUndercoverOption(option: UndercoverDialogueOption)
     fun defeatDemonLord(demonLordId: Int)
     fun purifyTemptation(amount: Int = 2)
+
+    // v0.3 로그라이크 상실·환생 및 전술 후퇴 계약
+    fun retreatCard(slotIndex: Int, isDemonLordBattle: Boolean = false): RetreatResult
+    fun emergencyRetreat(): EmergencyRetreatResult
+    fun handleCardDeath(cardId: Int): CardDeathResult
+    fun reacquireCard(templateId: Int): AcquisitionResult
+    fun setBattleLoot(gold: Int, gems: Int, items: List<String> = emptyList())
 }
 
 /**
@@ -89,7 +110,9 @@ class TcgViewModel(
     private val deckEngine: IDeckEngine = DeckEngine(),
     private val manaEngine: IManaEngine = ManaEngine(),
     private val battleAiEngine: IBattleAiEngine = BattleAiEngine(),
-    private val temptationEngine: ITemptationEngine = TemptationEngine()
+    private val temptationEngine: ITemptationEngine = TemptationEngine(),
+    private val lifecycleEngine: IRoguelikeLifecycleEngine = RoguelikeLifecycleEngine(),
+    private val retreatEngine: ITacticalRetreatEngine = TacticalRetreatEngine()
 ) : ViewModel(), ITcgUiContract {
 
     private val _uiState = MutableStateFlow(TcgUiState())
@@ -187,6 +210,8 @@ class TcgViewModel(
 
     override fun startNewGame(deckCards: List<TcgCard>?) {
         val cards = deckCards?.toMutableList() ?: createSample30Deck()
+        // 덱에 편성된 카드는 이미 보유한 유일 카드로 컬렉션에 시딩 (중복 획득 차단 기준)
+        cards.forEach { lifecycleEngine.registerOwnedCard(it) }
         val hand = deckEngine.drawInitialHand(cards).toMutableList()
         val initialMana = manaEngine.replenishTurnMana(manaEngine.calculateMaxManaForTurn(1))
 
@@ -200,6 +225,16 @@ class TcgViewModel(
                 mulliganUsed = false,
                 playerFieldSlots = FieldSlotFactory.createStandardSlots(),
                 enemyFieldSlots = FieldSlotFactory.createStandardSlots(),
+                ownedCards = lifecycleEngine.collection.ownedCards(),
+                reincarnationPool = lifecycleEngine.collection.reincarnationQueue(),
+                retreatInfo = BattleRetreatInfo(turn = 1),
+                retreatUsedThisTurn = false,
+                lastRetreatResult = null,
+                lastEmergencyRetreatResult = null,
+                battleReserve = emptyList(),
+                battleLootGold = 0,
+                battleLootGems = 0,
+                battleLootItems = emptyList(),
                 statusMessage = "[게임 시작] 턴 1 시작! 오프닝 핸드 5장 드로우 완료 (잔여 덱: ${cards.size}장, 마나: ${initialMana.currentMana}/${initialMana.maxMana})"
             )
         }
@@ -258,6 +293,9 @@ class TcgViewModel(
                 playerDeck = deck.toList(),
                 playerHand = hand.toList(),
                 fatigueCount = drawResult.newFatigueCount,
+                // 새 턴 시작: 전술 후퇴 턴당 1회 제한 해제
+                retreatInfo = it.retreatInfo.copy(turn = nextTurn, retreatUsedThisTurn = false),
+                retreatUsedThisTurn = false,
                 statusMessage = statusMsg
             )
         }
@@ -423,6 +461,159 @@ class TcgViewModel(
             )
         }
     }
+
+    // =========================================================================
+    // v0.3 로그라이크 영구 상실·환생 및 전술 후퇴 구현
+    // =========================================================================
+
+    override fun retreatCard(slotIndex: Int, isDemonLordBattle: Boolean): RetreatResult {
+        val current = _uiState.value
+        val battleState = current.toBattleState()
+        val result = retreatEngine.retreatCard(
+            battleState = battleState,
+            slotIndex = slotIndex,
+            temptationStacks = current.combatPenalty.totalStacks,
+            isDemonLordBattle = isDemonLordBattle
+        )
+
+        _uiState.update {
+            it.copy(
+                playerFieldSlots = battleState.playerSlots.toList(),
+                playerHand = battleState.hand.toList(),
+                battleReserve = battleState.reserve.toList(),
+                manaState = battleState.mana,
+                retreatInfo = battleState.retreatInfo,
+                retreatUsedThisTurn = battleState.retreatInfo.retreatUsedThisTurn,
+                lastRetreatResult = result,
+                statusMessage = result.message
+            )
+        }
+        return result
+    }
+
+    override fun emergencyRetreat(): EmergencyRetreatResult {
+        val current = _uiState.value
+        val battleState = current.toBattleState()
+        val result = retreatEngine.emergencyPartyRetreat(battleState)
+
+        _uiState.update {
+            it.copy(
+                playerFieldSlots = battleState.playerSlots.toList(),
+                playerHand = battleState.hand.toList(),
+                battleReserve = battleState.reserve.toList(),
+                manaState = battleState.mana,
+                battleLootGold = battleState.lootGold,
+                battleLootGems = battleState.lootGems,
+                battleLootItems = battleState.lootItems.toList(),
+                retreatInfo = battleState.retreatInfo,
+                retreatUsedThisTurn = battleState.retreatInfo.retreatUsedThisTurn,
+                lastEmergencyRetreatResult = result,
+                statusMessage = result.message
+            )
+        }
+        return result
+    }
+
+    override fun handleCardDeath(cardId: Int): CardDeathResult {
+        val current = _uiState.value
+        // 전장/덱/핸드에 있는 카드라면 보유 컬렉션 기준으로 먼저 등록
+        current.findOwnedCard(cardId)?.let { lifecycleEngine.registerOwnedCard(it) }
+
+        val result = lifecycleEngine.onCardDied(
+            cardId = cardId,
+            causeOfDeath = "전투 중 HP 0 (${current.currentTurn}턴)",
+            diedAtTurn = current.currentTurn
+        )
+
+        if (result.isSuccess) {
+            val clearedSlots = current.playerFieldSlots.map { slot ->
+                if (slot.placedCard?.id == cardId) {
+                    BattleSlot(slotIndex = slot.slotIndex, isFrontRow = slot.isFrontRow)
+                } else {
+                    slot
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    playerDeck = it.playerDeck.filterNot { card -> card.id == cardId },
+                    playerHand = it.playerHand.filterNot { card -> card.id == cardId },
+                    battleReserve = it.battleReserve.filterNot { card -> card.id == cardId },
+                    playerFieldSlots = clearedSlots,
+                    ownedCards = lifecycleEngine.collection.ownedCards(),
+                    reincarnationPool = lifecycleEngine.collection.reincarnationQueue(),
+                    lastCardDeathResult = result,
+                    statusMessage = result.message
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    lastCardDeathResult = result,
+                    statusMessage = result.message
+                )
+            }
+        }
+        return result
+    }
+
+    override fun reacquireCard(templateId: Int): AcquisitionResult {
+        val result = lifecycleEngine.acquireCard(templateId)
+        val newCard = if (result.isSuccess) result.card else null
+
+        _uiState.update { current ->
+            val updatedDeck = if (newCard != null && current.playerDeck.none { it.id == newCard.id }) {
+                current.playerDeck + newCard
+            } else {
+                current.playerDeck
+            }
+            current.copy(
+                playerDeck = updatedDeck,
+                ownedCards = lifecycleEngine.collection.ownedCards(),
+                reincarnationPool = lifecycleEngine.collection.reincarnationQueue(),
+                lastAcquisitionResult = result,
+                statusMessage = result.message
+            )
+        }
+        return result
+    }
+
+    override fun setBattleLoot(gold: Int, gems: Int, items: List<String>) {
+        _uiState.update {
+            it.copy(
+                battleLootGold = gold,
+                battleLootGems = gems,
+                battleLootItems = items,
+                statusMessage = "[전리품 확보] 금화 ${gold}G · 보석 ${gems} · 아이템 ${items.size}개 — 긴급 철수 시 이 전리품을 모두 포기하게 됩니다."
+            )
+        }
+    }
+
+    /**
+     * UI 상태로부터 후퇴 엔진 판정용 전장 스냅샷을 조립한다.
+     */
+    private fun TcgUiState.toBattleState(): BattleState = BattleState(
+        turn = currentTurn,
+        mana = manaState,
+        playerSlots = playerFieldSlots.map { slot ->
+            BattleSlot(slotIndex = slot.slotIndex, isFrontRow = slot.isFrontRow, placedCard = slot.placedCard)
+        }.toMutableList(),
+        hand = playerHand.toMutableList(),
+        reserve = battleReserve.toMutableList(),
+        retreatInfo = retreatInfo.copy(turn = currentTurn),
+        lootGold = battleLootGold,
+        lootGems = battleLootGems,
+        lootItems = battleLootItems.toMutableList()
+    )
+
+    /**
+     * 보유 카드 탐색 (핸드 → 덱 → 전장 → 대기열 → 대표 파트너 카드)
+     */
+    private fun TcgUiState.findOwnedCard(cardId: Int): TcgCard? =
+        playerHand.firstOrNull { it.id == cardId }
+            ?: playerDeck.firstOrNull { it.id == cardId }
+            ?: playerFieldSlots.firstNotNullOfOrNull { slot -> slot.placedCard?.takeIf { it.id == cardId } }
+            ?: battleReserve.firstOrNull { it.id == cardId }
+            ?: partnerCard.takeIf { it.id == cardId }
 
     override fun purifyTemptation(amount: Int) {
         val current = _uiState.value

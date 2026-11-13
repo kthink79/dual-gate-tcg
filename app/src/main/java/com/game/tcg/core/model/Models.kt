@@ -62,13 +62,32 @@ data class TcgCard(
     var currentExp: Int = 0,         // 이세계 원정 획득 누적 EXP
     var bondLevel: Int = 0,          // 현실 일상 교감 호감도 (0~100)
     var currentVisual: VisualState = VisualState.BATTLE,
-    val skillText: String
+    val skillText: String,
+    // ── v0.3 로그라이크 성장·기억 트래킹 ──
+    var upgradeLevel: Int = 0,        // 강화 레벨 (사망 시 0으로 초기화)
+    var memoryAffinity: Int = 0,      // 전장에서 쌓은 교감/기억 스택 (0~100, 사망 시 0으로 초기화)
+    var reincarnationCount: Int = 0,  // 환생 횟수 (죽음을 넘긴 윤회 기록, 상실되지 않음)
+    var equippedRelicCount: Int = 0,  // 장착 장비 수 (최대 3, 사망 시 전부 소실)
+    val baseAtk: Int = atk,           // 원본 공격력 — 환생 초기화 기준값
+    val baseDef: Int = def            // 원본 방어력 — 환생 초기화 기준값
 ) {
     /**
      * 호감도 MAX(100) 달성 시 개방되는 '페어 얼티밋 오의' 활성화 여부
      */
     val isUltimateUnlocked: Boolean
         get() = bondLevel >= 100
+
+    /**
+     * 1캐릭터 = 유일한 1장 수집 원칙의 식별자 (도감 번호 = 캐릭터 고유 ID)
+     */
+    val uniqueKey: Int
+        get() = id
+
+    /**
+     * 윤회의 상흔: 환생 횟수에 따른 외형/대사 단계 (0~3)
+     */
+    val rebirthMarkTier: Int
+        get() = reincarnationCount.coerceIn(0, 3)
 }
 
 /**
@@ -241,3 +260,208 @@ data class UndercoverDialogueOption(
     val curseAdded: Int = 0              // 추가되는 마왕의 저주 스택
 )
 
+
+// =============================================================================
+// v0.3 로그라이크 영구 상실·기억 초기화 환생 & 전투 중 전략적 후퇴 모델
+// =============================================================================
+
+/**
+ * 전장 카드의 HP 추적 상태 (후퇴 빈사 판정 및 사망 판정 기준)
+ * - 전장 HP와 무관한 카드 원본 스탯(atk/def)과 분리하여 관리한다.
+ */
+data class BattleCardHp(
+    val slotIndex: Int,
+    val cardId: Int,
+    val currentHp: Int,
+    val maxHp: Int
+) {
+    /** 남은 HP 비율 (0.0 ~ 1.0) */
+    val hpRatio: Double
+        get() = if (maxHp <= 0) 0.0 else currentHp.toDouble() / maxHp.toDouble()
+
+    /** 생존 여부 (HP 0 = 사망 → 영구 상실 대상) */
+    val isAlive: Boolean
+        get() = currentHp > 0
+
+    /** HP 15% 이하 생사 고비 여부 (위기 후퇴 생존 보너스 조건) */
+    val isNearDeath: Boolean
+        get() = isAlive && hpRatio <= NEAR_DEATH_HP_RATIO
+
+    companion object {
+        /** 빈사 상태 기준 HP 비율 15% */
+        const val NEAR_DEATH_HP_RATIO: Double = 0.15
+    }
+}
+
+/**
+ * 후퇴 목적지 (손패 / 대기열)
+ */
+enum class RetreatZone(val displayName: String) {
+    HAND("손패"),
+    RESERVE("대기열")
+}
+
+/**
+ * 전투 중 후퇴 사용 현황 (턴당 1회 제한 및 긴급 철수 사용 여부)
+ */
+data class BattleRetreatInfo(
+    val turn: Int = 1,
+    val retreatUsedThisTurn: Boolean = false,   // 이번 턴 전술 후퇴 사용 여부 (턴당 1회)
+    val totalRetreatCount: Int = 0,             // 전투 전체 후퇴 횟수
+    val nearDeathSurvivalCount: Int = 0,        // 빈사에서 살아 돌아온 횟수
+    val emergencyRetreatUsed: Boolean = false   // 파티 긴급 철수 사용 여부 (전투당 1회)
+)
+
+/**
+ * 후퇴 엔진이 판정하는 전장 상태 스냅샷
+ * - ViewModel / 배틀 UI에서 조립해 엔진에 전달한다.
+ */
+data class BattleState(
+    var turn: Int = 1,
+    var mana: ManaState = ManaState(1, 1),
+    val playerSlots: MutableList<BattleSlot> = FieldSlotFactory.createStandardSlots().toMutableList(),
+    val playerHp: MutableList<BattleCardHp> = mutableListOf(),
+    val hand: MutableList<TcgCard> = mutableListOf(),
+    val reserve: MutableList<TcgCard> = mutableListOf(),
+    var retreatInfo: BattleRetreatInfo = BattleRetreatInfo(),
+    var lootGold: Int = 0,
+    var lootGems: Int = 0,
+    val lootItems: MutableList<String> = mutableListOf(),
+    var maxHandSize: Int = 10
+) {
+    /** 슬롯별 HP 조회 */
+    fun hpOf(slotIndex: Int): BattleCardHp? = playerHp.firstOrNull { it.slotIndex == slotIndex }
+
+    /** HP가 0이 되어 상실 처리되어야 할 카드 목록 */
+    fun deadCardsOnField(): List<BattleCardHp> = playerHp.filter { !it.isAlive }
+
+    /**
+     * 생존 카드 전체 (전장 생존 + 손패 + 대기열) — 긴급 철수 시 마을로 데려갈 카드
+     */
+    fun survivingCards(): List<TcgCard> {
+        val aliveOnField = playerSlots.mapNotNull { slot ->
+            val card = slot.placedCard ?: return@mapNotNull null
+            val hp = hpOf(slot.slotIndex)
+            if (hp == null || hp.isAlive) card else null
+        }
+        return aliveOnField + hand + reserve
+    }
+}
+
+/**
+ * 개별 전술 후퇴 판정 결과
+ */
+data class RetreatResult(
+    val isSuccess: Boolean,
+    val retreatedCard: TcgCard? = null,
+    val fromSlotIndex: Int = -1,
+    val toZone: RetreatZone = RetreatZone.HAND,
+    val manaSpent: Int = 0,
+    val remainingMana: Int = 0,
+    val nearDeathSurvivalBonus: Boolean = false,   // HP 15% 이하 생사 고비 생존 보너스
+    val memoryAffinityGained: Int = 0,
+    val failureReason: String? = null,
+    val message: String = ""
+) {
+    val isFailure: Boolean get() = !isSuccess
+}
+
+/**
+ * 파티 긴급 철수(전투 도주) 판정 결과
+ */
+data class EmergencyRetreatResult(
+    val isSuccess: Boolean,
+    val rescuedCards: List<TcgCard> = emptyList(),
+    val lostLootGold: Int = 0,
+    val lostLootGems: Int = 0,
+    val abandonedLootNames: List<String> = emptyList(),
+    val failureReason: String? = null,
+    val message: String = ""
+) {
+    val isFailure: Boolean get() = !isSuccess
+    val rescuedCardCount: Int get() = rescuedCards.size
+}
+
+/**
+ * 환생 대기 카드 (사망으로 상실된 뒤 세계 어딘가에서 재획득을 기다리는 상태)
+ * - 원본(초기) 스탯과 상실된 성장 수치를 기록하여 재획득 시 초기 상태로 복원한다.
+ */
+data class ReincarnatedCard(
+    val templateId: Int,
+    val name: String,
+    val element: Element,
+    val baseCost: Int,
+    val baseAtk: Int,
+    val baseDef: Int,
+    val skillText: String,
+    val reincarnationCount: Int,     // 이번 사망으로 누적된 환생 횟수
+    val lostUpgradeLevel: Int,       // 상실된 강화 레벨
+    val lostMemoryAffinity: Int,     // 상실된 기억 스택
+    val lostBondLevel: Int,          // 상실된 현실 교감 호감도
+    val lostStarLevel: Int,          // 상실된 성급(★)
+    val lostRelicCount: Int,         // 상실된 장비 수
+    val causeOfDeath: String,
+    val diedAtTurn: Int
+) {
+    /** UI 표기용 이름 (환생 회차 포함) */
+    val displayName: String
+        get() = if (reincarnationCount > 1) "$name (${reincarnationCount}회차 환생)" else name
+}
+
+/**
+ * 1캐릭터 = 유일한 1장 수집 컬렉션 + 환생 풀
+ * - cards: 현재 보유 중인 유일 카드 (key = 도감 번호)
+ * - reincarnationPool: 상실되어 환생한 카드의 재획득 대기열
+ */
+data class RoguelikeCollection(
+    val cards: MutableMap<Int, TcgCard> = linkedMapOf(),
+    val reincarnationPool: MutableMap<Int, ReincarnatedCard> = linkedMapOf()
+) {
+    val size: Int get() = cards.size
+
+    fun isOwned(templateId: Int): Boolean = cards.containsKey(templateId)
+
+    fun isAwaitingReincarnation(templateId: Int): Boolean = reincarnationPool.containsKey(templateId)
+
+    fun ownedCards(): List<TcgCard> = cards.values.toList()
+
+    fun reincarnationQueue(): List<ReincarnatedCard> = reincarnationPool.values.toList()
+}
+
+/**
+ * 사망 상실·환생 처리 결과
+ */
+data class CardDeathResult(
+    val isSuccess: Boolean,
+    val lostCard: TcgCard? = null,
+    val reincarnation: ReincarnatedCard? = null,
+    val lostUpgradeLevel: Int = 0,
+    val lostMemoryAffinity: Int = 0,
+    val failureReason: String? = null,
+    val message: String = ""
+) {
+    val isFailure: Boolean get() = !isSuccess
+}
+
+/**
+ * 카드 획득 판정 상태
+ */
+enum class AcquisitionStatus(val displayName: String) {
+    ACQUIRED_NEW("신규 획득"),
+    REACQUIRED_FROM_REINCARNATION("환생 카드 재획득"),
+    REJECTED_DUPLICATE("중복 획득 차단"),
+    REJECTED_UNKNOWN_TEMPLATE("미등록 카드")
+}
+
+/**
+ * 카드 획득(가챠/드랍/재획득) 결과
+ */
+data class AcquisitionResult(
+    val status: AcquisitionStatus,
+    val card: TcgCard? = null,
+    val message: String = ""
+) {
+    val isSuccess: Boolean
+        get() = status == AcquisitionStatus.ACQUIRED_NEW ||
+                status == AcquisitionStatus.REACQUIRED_FROM_REINCARNATION
+}
