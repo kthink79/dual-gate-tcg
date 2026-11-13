@@ -22,10 +22,14 @@ class TcgAdvancedEngineTest {
         battleAiEngine = BattleAiEngine()
     }
 
+    /**
+     * 기획서 v0.3 §7.3 표준 구성 덱:
+     * 캐릭터 20장(서로 다른 20명 각 1장) + 장비/스펠 10장(동일 카드 최대 3장) = 30장
+     */
     private fun createValid30CardDeck(): MutableList<TcgCard> {
         val list = mutableListOf<TcgCard>()
-        // 10 distinct card IDs, 3 copies each = 30 cards total
-        for (id in 1..10) {
+        // 1) 캐릭터 20장 — 도감 번호 1~20, 각 1장
+        for (id in 1..20) {
             val element = when (id % 5) {
                 0 -> Element.FIRE
                 1 -> Element.WIND
@@ -34,16 +38,39 @@ class TcgAdvancedEngineTest {
                 else -> Element.DARK
             }
             val cost = (id % 7) + 1
-            repeat(3) { copyIndex ->
+            list.add(
+                TcgCard(
+                    id = id,
+                    name = "Card-$id",
+                    element = element,
+                    baseCost = cost,
+                    atk = 1000 * cost,
+                    def = 800 * cost,
+                    skillText = "Skill-$id",
+                    category = CardCategory.CHARACTER
+                )
+            )
+        }
+        // 2) 장비/스펠 10장 — 201~203 각 3장 + 204 1장
+        val equipmentSpells = listOf(
+            Triple(201, "Equip-Aura", CardCategory.EQUIPMENT),
+            Triple(202, "Equip-Barrier", CardCategory.EQUIPMENT),
+            Triple(203, "Spell-Heal", CardCategory.SPELL),
+            Triple(204, "Spell-Burst", CardCategory.SPELL)
+        )
+        for ((id, name, category) in equipmentSpells) {
+            val copies = if (id == 204) 1 else 3
+            repeat(copies) { copyIndex ->
                 list.add(
                     TcgCard(
                         id = id,
-                        name = "Card-$id#$copyIndex",
-                        element = element,
-                        baseCost = cost,
-                        atk = 1000 * cost,
-                        def = 800 * cost,
-                        skillText = "Skill-$id"
+                        name = "$name#$copyIndex",
+                        element = Element.FIRE,
+                        baseCost = 2,
+                        atk = 0,
+                        def = 0,
+                        skillText = "Skill-$id",
+                        category = category
                     )
                 )
             }
@@ -63,6 +90,9 @@ class TcgAdvancedEngineTest {
         assertTrue(result.isValid)
         assertTrue(result.errors.isEmpty())
         assertEquals(30, deck.size)
+        // v0.3 §7.3 구성: 캐릭터 20장 + 장비/스펠 10장
+        assertEquals(20, result.characterCount)
+        assertEquals(10, result.equipmentSpellCount)
         // Check cost curve map is properly populated
         assertTrue(result.costCurve.isNotEmpty())
         assertTrue(result.averageCost > 0.0)
@@ -86,9 +116,10 @@ class TcgAdvancedEngineTest {
     @Test
     fun testDeckValidationFailsWhenCardExceedsMax3Copies() {
         val deck = createValid30CardDeck().toMutableList()
-        // Replace 1 card of id=10 with card of id=1 -> id=1 now has 4 copies, total size remains 30
-        val indexOfTen = deck.indexOfFirst { it.id == 10 }
-        deck[indexOfTen] = deck.first { it.id == 1 }.copy()
+        // 캐릭터 1장을 빼고 장비/스펠 201번의 4장째 복사본으로 교체 -> 동일 장비 4장 (3장 초과)
+        val characterIndex = deck.indexOfFirst { it.category == CardCategory.CHARACTER }
+        val fourthCopy = deck.first { it.id == 201 }.copy()
+        deck[characterIndex] = fourthCopy
 
         assertEquals(30, deck.size)
         val result = deckEngine.validateDeck(deck)
@@ -97,25 +128,85 @@ class TcgAdvancedEngineTest {
     }
 
     @Test
-    fun testDeckCostCurveAnalysis() {
-        val deck = mutableListOf<TcgCard>()
-        // 10 cards of cost 1, 10 cards of cost 2, 10 cards of cost 3 (with IDs within 3 copies limit)
-        for (i in 1..10) {
-            val cost = 1
-            val id = (i % 4) + 1 // ids 1,2,3,4 max copies <= 3
-            deck.add(TcgCard(i, "Card-$i", Element.FIRE, cost, 100, 100, skillText = ""))
-        }
-        for (i in 11..20) {
-            val cost = 2
-            deck.add(TcgCard(i, "Card-$i", Element.WIND, cost, 200, 200, skillText = ""))
-        }
-        for (i in 21..30) {
-            val cost = 3
-            deck.add(TcgCard(i, "Card-$i", Element.ICE, cost, 300, 300, skillText = ""))
-        }
+    fun testDeckValidationAllowsUpToThreeCopiesOfEquipmentSpell() {
+        val deck = createValid30CardDeck()
+        // 201번 장비는 3장 (규칙상 허용 최대치)
+        assertEquals(3, deck.count { it.id == 201 })
 
         val result = deckEngine.validateDeck(deck)
         assertTrue(result.isValid)
+        assertTrue(result.errors.isEmpty())
+    }
+
+    @Test
+    fun testDeckValidationRejectsDuplicateCharacter() {
+        val deck = createValid30CardDeck().toMutableList()
+        // 20번 캐릭터를 1번 캐릭터의 2장째로 교체 -> 총 30장, 구성 20/10 유지, 유일성만 위반
+        val characterIndex = deck.indexOfFirst { it.id == 20 }
+        deck[characterIndex] = deck.first { it.id == 1 }.copy()
+
+        assertEquals(30, deck.size)
+        assertTrue(deck.none { it.id == 20 })
+        val result = deckEngine.validateDeck(deck)
+        assertFalse(result.isValid)
+        assertTrue(result.errors.any { it.contains("캐릭터 유일성 위반") && it.contains("Card-1") })
+        assertEquals(20, result.characterCount)
+        assertEquals(10, result.equipmentSpellCount)
+    }
+
+    @Test
+    fun testDeckValidationRejectsNonStandardComposition() {
+        val deck = createValid30CardDeck().toMutableList()
+        // 장비/스펠 1장을 새 캐릭터로 교체 -> 캐릭터 21장 + 장비/스펠 9장 (유일성·매수 위반 없음)
+        val spellIndex = deck.indexOfFirst { it.id == 204 }
+        deck[spellIndex] = TcgCard(
+            id = 21,
+            name = "Card-21",
+            element = Element.WIND,
+            baseCost = 3,
+            atk = 3000,
+            def = 2400,
+            skillText = "Skill-21",
+            category = CardCategory.CHARACTER
+        )
+
+        val result = deckEngine.validateDeck(deck)
+        assertFalse(result.isValid)
+        assertEquals(21, result.characterCount)
+        assertEquals(9, result.equipmentSpellCount)
+        assertTrue(result.errors.any { it.contains("캐릭터 카드는 20장") })
+        assertTrue(result.errors.any { it.contains("장비/스펠 카드는 10장") })
+        // 유일성·매수 오류는 없어야 한다 (구성 오류만)
+        assertFalse(result.errors.any { it.contains("캐릭터 유일성 위반") })
+        assertFalse(result.errors.any { it.contains("매수가 초과") })
+    }
+
+    @Test
+    fun testDeckCostCurveAnalysis() {
+        val deck = mutableListOf<TcgCard>()
+        // 캐릭터 20장: 코스트 1 × 10장(1~10번) + 코스트 2 × 10장(11~20번)
+        for (i in 1..10) {
+            deck.add(TcgCard(i, "Card-$i", Element.FIRE, 1, 100, 100, skillText = ""))
+        }
+        for (i in 11..20) {
+            deck.add(TcgCard(i, "Card-$i", Element.WIND, 2, 200, 200, skillText = ""))
+        }
+        // 장비/스펠 10장: 코스트 3 (201~203 각 3장 + 204 1장)
+        for (id in listOf(201, 202, 203)) {
+            repeat(3) {
+                deck.add(
+                    TcgCard(id, "Equip-$id", Element.ICE, 3, 0, 0, skillText = "", category = CardCategory.EQUIPMENT)
+                )
+            }
+        }
+        deck.add(
+            TcgCard(204, "Spell-204", Element.ICE, 3, 0, 0, skillText = "", category = CardCategory.SPELL)
+        )
+
+        val result = deckEngine.validateDeck(deck)
+        assertTrue(result.isValid)
+        assertEquals(20, result.characterCount)
+        assertEquals(10, result.equipmentSpellCount)
         assertEquals(10, result.costCurve[1])
         assertEquals(10, result.costCurve[2])
         assertEquals(10, result.costCurve[3])
@@ -386,5 +477,23 @@ class TcgAdvancedEngineTest {
             assertEquals(5, state.playerHand.size)
             assertNotNull(state.playerFieldSlots[0].placedCard)
         }
+    }
+
+    @Test
+    fun testSampleDeckFollowsV03UniqueCardComposition() {
+        val viewModel = TcgViewModel(deckEngine = deckEngine, manaEngine = manaEngine)
+        viewModel.startNewGame()
+
+        val state = viewModel.uiState.value
+        val fullDeck = state.playerHand + state.playerDeck
+        assertEquals(30, fullDeck.size)
+
+        // 기본 샘플 덱도 v0.3 §7.3 규칙(캐릭터 20 + 장비/스펠 10)을 만족해야 한다
+        val result = deckEngine.validateDeck(fullDeck)
+        assertTrue(result.errors.joinToString("\n"), result.isValid)
+        assertEquals(20, result.characterCount)
+        assertEquals(10, result.equipmentSpellCount)
+        assertEquals(20, fullDeck.filter { it.category == CardCategory.CHARACTER }.map { it.uniqueKey }.distinct().size)
+        assertTrue(fullDeck.filter { it.category.isEquipmentOrSpell }.groupingBy { it.id }.eachCount().values.all { it <= 3 })
     }
 }

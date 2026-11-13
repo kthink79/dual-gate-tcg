@@ -427,4 +427,34 @@ class RoguelikeLifecycleAndRetreatTest {
         assertTrue(after.statusMessage.contains("[파티 긴급 철수]"))
     }
 
+    // =========================================================================
+    // 6. 장비/스펠 카드 분류 계승 (v0.3 §7.3)
+    // =========================================================================
+
+    @Test
+    fun testSpellCardKeepsCategoryThroughDeathAndReincarnation() {
+        val engine: IRoguelikeLifecycleEngine = RoguelikeLifecycleEngine()
+        val spellCard = TcgCard(
+            id = 901,
+            name = "성광의 성수",
+            element = Element.LIGHT,
+            baseCost = 2,
+            atk = 0,
+            def = 0,
+            skillText = "아군 전체 치유",
+            category = CardCategory.SPELL
+        )
+
+        assertTrue(engine.acquireCard(spellCard).isSuccess)
+        assertEquals(CardCategory.SPELL, engine.collection.cards[901]!!.category)
+
+        val death = engine.onCardDied(901)
+        assertTrue(death.isSuccess)
+        assertEquals(CardCategory.SPELL, death.reincarnation!!.category)
+
+        val reacquired = engine.acquireCard(901)
+        assertTrue(reacquired.isSuccess)
+        assertEquals(CardCategory.SPELL, reacquired.card!!.category)
+        assertEquals(0, reacquired.card!!.atk)
+    }
 }

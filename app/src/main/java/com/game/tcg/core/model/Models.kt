@@ -49,7 +49,27 @@ enum class VisualState(val displayName: String) {
 }
 
 /**
- * TCG 캐릭터 카드
+ * 카드 분류 (기획서 v0.3 §7.3 덱 구성 규칙)
+ * - CHARACTER: 캐릭터 카드 — 1캐릭터 = 1장 유일성 검증 대상 (동일 캐릭터 2장 이상 불가)
+ * - EQUIPMENT: 장비 카드 — 동일 카드 최대 3장 허용
+ * - SPELL: 스펠 카드 — 동일 카드 최대 3장 허용
+ */
+enum class CardCategory(val displayName: String) {
+    CHARACTER("캐릭터"),
+    EQUIPMENT("장비"),
+    SPELL("스펠");
+
+    /** 캐릭터 카드 여부 (덱에서 유일성 1장 규칙이 적용되는 대상) */
+    val isCharacter: Boolean
+        get() = this == CHARACTER
+
+    /** 장비/스펠 카드 여부 (동일 카드 최대 3장 규칙이 적용되는 대상) */
+    val isEquipmentOrSpell: Boolean
+        get() = !isCharacter
+}
+
+/**
+ * TCG 카드 (캐릭터 · 장비 · 스펠)
  */
 data class TcgCard(
     val id: Int,                     // 도감 번호 (1~70)
@@ -63,6 +83,8 @@ data class TcgCard(
     var bondLevel: Int = 0,          // 현실 일상 교감 호감도 (0~100)
     var currentVisual: VisualState = VisualState.BATTLE,
     val skillText: String,
+    // 덱 구성 분류 (기본값 CHARACTER: 기존 캐릭터 카드 코드와 호환)
+    val category: CardCategory = CardCategory.CHARACTER,
     // ── v0.3 로그라이크 성장·기억 트래킹 ──
     var upgradeLevel: Int = 0,        // 강화 레벨 (사망 시 0으로 초기화)
     var memoryAffinity: Int = 0,      // 전장에서 쌓은 교감/기억 스택 (0~100, 사망 시 0으로 초기화)
@@ -122,7 +144,9 @@ data class DeckValidationResult(
     val isValid: Boolean,
     val errors: List<String> = emptyList(),
     val costCurve: Map<Int, Int> = emptyMap(), // 코스트별 카드 장수 분포
-    val averageCost: Double = 0.0
+    val averageCost: Double = 0.0,
+    val characterCount: Int = 0,               // 캐릭터 카드 장수 (v0.3 §7.3 표준 20장)
+    val equipmentSpellCount: Int = 0           // 장비/스펠 카드 장수 (v0.3 §7.3 표준 10장)
 )
 
 /**
@@ -394,6 +418,7 @@ data class ReincarnatedCard(
     val baseAtk: Int,
     val baseDef: Int,
     val skillText: String,
+    val category: CardCategory = CardCategory.CHARACTER,  // 카드 분류 계승 (장비/스펠 재획득 시 유지)
     val reincarnationCount: Int,     // 이번 사망으로 누적된 환생 횟수
     val lostUpgradeLevel: Int,       // 상실된 강화 레벨
     val lostMemoryAffinity: Int,     // 상실된 기억 스택

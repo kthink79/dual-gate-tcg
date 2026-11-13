@@ -182,13 +182,26 @@ enum class RealWorldActivity {
  * 덱 및 핸드 관리 엔진 인터페이스
  */
 interface IDeckEngine {
+    /** 메인 덱 총 장수 (기획서 v0.3 §7.3) */
     val maxDeckSize: Int get() = 30
-    val maxCardCopies: Int get() = 3
+
+    /** 캐릭터 카드: 서로 다른 캐릭터 각 1장 (동일 캐릭터 2장 이상 편성 불가) */
+    val maxCharacterCopies: Int get() = 1
+
+    /** 장비/스펠 카드: 동일 카드 최대 3장 */
+    val maxEquipmentSpellCopies: Int get() = 3
+
+    /** 기획서 표준 구성 — 캐릭터 카드 20장 */
+    val standardCharacterCount: Int get() = 20
+
+    /** 기획서 표준 구성 — 장비/스펠 카드 10장 */
+    val standardEquipmentSpellCount: Int get() = 10
+
     val initialHandSize: Int get() = 5
     val maxHandSize: Int get() = 10
 
     /**
-     * 30장 덱 규칙 및 동일 카드 최대 3장 제한 검증, 코스트 커브 분석
+     * 30장 덱 규칙 + 캐릭터 유일성(1장) + 장비/스펠 동일 3장 제한 검증, 코스트 커브 분석
      */
     fun validateDeck(deck: List<TcgCard>): DeckValidationResult
 
@@ -271,6 +284,14 @@ interface IBattleAiEngine {
  * 덱 및 핸드 관리 엔진 기본 구현체
  */
 class DeckEngine : IDeckEngine {
+
+    /**
+     * 덱 검증 (기획서 v0.3 §7.3 — 유일 카드 원칙)
+     * 1) 메인 덱은 정확히 30장
+     * 2) 캐릭터 카드는 서로 다른 캐릭터 각 1장 (동일 캐릭터 2장 이상 불가 — 1캐릭터 1장 수집 원칙)
+     * 3) 장비/스펠 카드는 동일 카드 최대 3장
+     * 4) 표준 구성: 캐릭터 20장 + 장비/스펠 10장
+     */
     override fun validateDeck(deck: List<TcgCard>): DeckValidationResult {
         val errors = mutableListOf<String>()
 
@@ -278,12 +299,41 @@ class DeckEngine : IDeckEngine {
             errors.add("덱은 정확히 ${maxDeckSize}장이어야 합니다. (현재: ${deck.size}장)")
         }
 
-        val cardCounts = deck.groupingBy { it.id }.eachCount()
-        for ((cardId, count) in cardCounts) {
-            if (count > maxCardCopies) {
-                val cardName = deck.firstOrNull { it.id == cardId }?.name ?: "ID:$cardId"
-                errors.add("카드 '${cardName}'(ID: $cardId)의 매수가 초과되었습니다: ${count}장 (최대 ${maxCardCopies}장)")
+        val characters = deck.filter { it.category.isCharacter }
+        val equipmentSpells = deck.filter { it.category.isEquipmentOrSpell }
+
+        // 캐릭터 카드: 동일 캐릭터 1장 제한 (유일성)
+        characters.groupingBy { it.uniqueKey }.eachCount().forEach { (uniqueKey, count) ->
+            if (count > maxCharacterCopies) {
+                val cardName = characters.first { it.uniqueKey == uniqueKey }.name
+                errors.add(
+                    "[캐릭터 유일성 위반] '${cardName}'(No.$uniqueKey) ${count}장 편성 — " +
+                        "캐릭터 카드는 서로 다른 캐릭터 각 ${maxCharacterCopies}장만 편성할 수 있습니다."
+                )
             }
+        }
+
+        // 장비/스펠 카드: 동일 카드 최대 3장 제한
+        equipmentSpells.groupingBy { it.id }.eachCount().forEach { (cardId, count) ->
+            if (count > maxEquipmentSpellCopies) {
+                val sample = equipmentSpells.first { it.id == cardId }
+                errors.add(
+                    "[장비/스펠 매수 초과] ${sample.category.displayName} 카드 '${sample.name}'(ID: $cardId)의 " +
+                        "매수가 초과되었습니다: ${count}장 (최대 ${maxEquipmentSpellCopies}장)"
+                )
+            }
+        }
+
+        // 표준 구성: 캐릭터 20장 + 장비/스펠 10장
+        if (characters.size != standardCharacterCount) {
+            errors.add(
+                "[덱 구성] 캐릭터 카드는 ${standardCharacterCount}장이어야 합니다. (현재: ${characters.size}장)"
+            )
+        }
+        if (equipmentSpells.size != standardEquipmentSpellCount) {
+            errors.add(
+                "[덱 구성] 장비/스펠 카드는 ${standardEquipmentSpellCount}장이어야 합니다. (현재: ${equipmentSpells.size}장)"
+            )
         }
 
         val costCurve = deck.groupingBy { it.baseCost }.eachCount().toSortedMap()
@@ -293,7 +343,9 @@ class DeckEngine : IDeckEngine {
             isValid = errors.isEmpty(),
             errors = errors,
             costCurve = costCurve,
-            averageCost = (averageCost * 10.0).toInt() / 10.0
+            averageCost = (averageCost * 10.0).toInt() / 10.0,
+            characterCount = characters.size,
+            equipmentSpellCount = equipmentSpells.size
         )
     }
 
@@ -643,6 +695,7 @@ class RoguelikeLifecycleEngine(
             baseAtk = dying.baseAtk,
             baseDef = dying.baseDef,
             skillText = dying.skillText,
+            category = dying.category,
             reincarnationCount = nextReincarnationCount,
             lostUpgradeLevel = dying.upgradeLevel,
             lostMemoryAffinity = dying.memoryAffinity,
@@ -742,6 +795,7 @@ class RoguelikeLifecycleEngine(
         bondLevel = 0,
         currentVisual = VisualState.BATTLE,
         skillText = seed.skillText,
+        category = seed.category,
         upgradeLevel = 0,
         memoryAffinity = 0,
         reincarnationCount = seed.reincarnationCount,

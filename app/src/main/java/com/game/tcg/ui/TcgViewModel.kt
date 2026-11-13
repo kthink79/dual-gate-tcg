@@ -376,24 +376,61 @@ class TcgViewModel(
         }
     }
 
+    /**
+     * 기획서 v0.3 §7.3 표준 구성 샘플 덱 (30장)
+     * - 캐릭터 20장: 서로 다른 캐릭터 20명 각 1장
+     * - 장비/스펠 10장: 동일 카드 최대 3장 (201~203 각 3장 + 204 1장)
+     */
     private fun createSample30Deck(): MutableList<TcgCard> {
         val elements = Element.entries.toTypedArray()
         val cards = mutableListOf<TcgCard>()
-        for (i in 1..30) {
+
+        // 캐릭터 20명 — 각 1장씩만 (동일 캐릭터 중복 편성 금지)
+        for (i in 1..20) {
             val elem = elements[i % elements.size]
             val cost = ((i % 8) + 1)
             cards.add(
                 TcgCard(
-                    id = (i % 10) + 1, // 1~10번 카드 각 3장씩 구성 (최대 3장 규칙 준수)
+                    id = i,
                     name = "수호자 #$i",
                     element = elem,
                     baseCost = cost,
                     atk = 1000 + (cost * 200),
                     def = 1000 + (cost * 150),
-                    skillText = "필드 전개 스킬"
+                    skillText = "필드 전개 스킬",
+                    category = CardCategory.CHARACTER
                 )
             )
         }
+
+        // 장비/스펠 10장 — 동일 카드 최대 3장
+        val equipmentSpells = listOf(
+            Triple(201, "화염의 부적", CardCategory.EQUIPMENT),
+            Triple(202, "빙결의 수정", CardCategory.EQUIPMENT),
+            Triple(203, "성광의 성수", CardCategory.SPELL),
+            Triple(204, "심연의 파편", CardCategory.SPELL)
+        )
+        var remaining = 10
+        for ((id, baseName, category) in equipmentSpells) {
+            val copies = minOf(3, remaining)
+            repeat(copies) { copyIndex ->
+                val cost = ((id % 4) + 1)
+                cards.add(
+                    TcgCard(
+                        id = id,
+                        name = "$baseName ${copyIndex + 1}",
+                        element = elements[id % elements.size],
+                        baseCost = cost,
+                        atk = 0,
+                        def = 0,
+                        skillText = if (category == CardCategory.EQUIPMENT) "장착 시 아군 능력치 강화" else "즉발 효과 발동",
+                        category = category
+                    )
+                )
+            }
+            remaining -= copies
+        }
+
         return cards
     }
 
