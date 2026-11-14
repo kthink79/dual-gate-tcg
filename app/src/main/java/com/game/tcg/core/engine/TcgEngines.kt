@@ -746,7 +746,9 @@ class RoguelikeLifecycleEngine(
                 status = AcquisitionStatus.REACQUIRED_FROM_REINCARNATION,
                 card = reborn,
                 message = "[환생 카드 재획득] '${reborn.name}'이(가) ${poolEntry.reincarnationCount}회차 윤회를 안고 돌아왔습니다.\n" +
-                        "강화 Lv.0 · 성급 1★ · 기억 0 · 교감 0 — 모든 기억이 초기화된 첫 만남입니다."
+                        "강화 Lv.0 · 성급 1★ · 기억 0 · 교감 0 — 모든 기억이 초기화된 첫 만남입니다.\n" +
+                        "[기억이 지워진 동료] 이름도 온기도 낯설다. 현실 교감과 전투 승리로 기억 파편 " +
+                        "0/${TcgCard.MEMORY_FRAGMENT_TARGET}을 모아 「기억의 조각 회상」을 열어야 합니다."
             )
         }
 
@@ -799,7 +801,10 @@ class RoguelikeLifecycleEngine(
         upgradeLevel = 0,
         memoryAffinity = 0,
         reincarnationCount = seed.reincarnationCount,
-        equippedRelicCount = 0
+        equippedRelicCount = 0,
+        // 환생 후유증: 단순 복구가 아니라 '기억이 지워진 동료' 상태로 돌아온다.
+        isMemoryReset = true,
+        memoryFragments = 0
     )
 }
 

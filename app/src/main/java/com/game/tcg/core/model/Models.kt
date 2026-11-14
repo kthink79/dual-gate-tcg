@@ -91,7 +91,10 @@ data class TcgCard(
     var reincarnationCount: Int = 0,  // 환생 횟수 (죽음을 넘긴 윤회 기록, 상실되지 않음)
     var equippedRelicCount: Int = 0,  // 장착 장비 수 (최대 3, 사망 시 전부 소실)
     val baseAtk: Int = atk,           // 원본 공격력 — 환생 초기화 기준값
-    val baseDef: Int = def            // 원본 방어력 — 환생 초기화 기준값
+    val baseDef: Int = def,           // 원본 방어력 — 환생 초기화 기준값
+    // ── 「기억의 잔향」: 환생 재획득 직후 기억 초기화 상태 ──
+    var isMemoryReset: Boolean = false, // true = 기억이 지워진 동료 (파편을 모아야 회상)
+    var memoryFragments: Int = 0        // 회상에 필요한 기억 파편 (0 ~ MEMORY_FRAGMENT_TARGET)
 ) {
     /**
      * 호감도 MAX(100) 달성 시 개방되는 '페어 얼티밋 오의' 활성화 여부
@@ -110,6 +113,19 @@ data class TcgCard(
      */
     val rebirthMarkTier: Int
         get() = reincarnationCount.coerceIn(0, 3)
+
+    /** 기억 파편 게이지 표기 (0/3) */
+    val memoryFragmentGauge: String
+        get() = "${memoryFragments.coerceIn(0, MEMORY_FRAGMENT_TARGET)}/$MEMORY_FRAGMENT_TARGET"
+
+    /** 기억 파편을 모두 모아 「기억의 조각 회상」 이벤트를 열 수 있는 상태 */
+    val isMemoryRecallReady: Boolean
+        get() = isMemoryReset && memoryFragments >= MEMORY_FRAGMENT_TARGET
+
+    companion object {
+        /** 기억 회상에 필요한 기억 파편 수 */
+        const val MEMORY_FRAGMENT_TARGET: Int = 3
+    }
 }
 
 /**
@@ -490,3 +506,151 @@ data class AcquisitionResult(
         get() = status == AcquisitionStatus.ACQUIRED_NEW ||
                 status == AcquisitionStatus.REACQUIRED_FROM_REINCARNATION
 }
+
+// =============================================================================
+// 「기억의 잔향: 환생한 파트너와의 재회」 — 기억 초기화 · 파편 회상 모델
+// =============================================================================
+
+/**
+ * 기억 파편 획득 경로 (기획: 교감/전투로 파편 3개를 모은다)
+ */
+enum class MemoryFragmentSource(val displayName: String) {
+    REAL_WORLD_BOND("현실 교감"),
+    BATTLE("이계 전투 승리"),
+    RECALL_GIFT("회상의 잔향")
+}
+
+/**
+ * 카드의 기억 파편 게이지 (0/3)
+ */
+data class MemoryFragmentProgress(
+    val fragments: Int,
+    val target: Int = TcgCard.MEMORY_FRAGMENT_TARGET
+) {
+    /** 게이지 표기 (예: "1/3") */
+    val gaugeText: String get() = "${fragments.coerceIn(0, target)}/$target"
+
+    /** 회상 이벤트 개방 조건 충족 여부 */
+    val isComplete: Boolean get() = fragments >= target
+
+    /** UI 게이지 비율 (0.0 ~ 1.0) */
+    val ratio: Float get() = if (target <= 0) 0f else (fragments.toFloat() / target).coerceIn(0f, 1f)
+
+    /** 남은 파편 수 */
+    val remaining: Int get() = (target - fragments).coerceAtLeast(0)
+}
+
+/**
+ * 기억 파편 획득 결과
+ */
+data class MemoryFragmentGain(
+    val isSuccess: Boolean,
+    val cardName: String,
+    val gained: Int = 0,
+    val progress: MemoryFragmentProgress = MemoryFragmentProgress(0),
+    val source: MemoryFragmentSource = MemoryFragmentSource.BATTLE,
+    val failureReason: String? = null,
+    val message: String = ""
+) {
+    /** 이번 획득으로 회상 이벤트가 열리는지 */
+    val isRecallUnlocked: Boolean get() = isSuccess && progress.isComplete
+}
+
+/**
+ * 「기억의 조각 회상」 특별 이벤트 대화
+ */
+data class MemoryRecallDialogue(
+    val eventTitle: String = "기억의 조각 회상",
+    val subtitle: String,
+    val lines: List<String>,
+    val closingLine: String
+)
+
+/**
+ * 「기억의 조각 회상」 이벤트 처리 결과 (스탯 보너스 + 기억 복원)
+ */
+data class MemoryRecallResult(
+    val isSuccess: Boolean,
+    val cardName: String,
+    val atkBonus: Int = 0,
+    val defBonus: Int = 0,
+    val restoredBond: Int = 0,
+    val dialogue: MemoryRecallDialogue? = null,
+    val failureReason: String? = null,
+    val message: String = ""
+)
+
+// =============================================================================
+// 「신뢰의 균열: 마왕의 홀림을 눈치챈 파트너」 — 현실·이세계 교차 이벤트 모델
+// =============================================================================
+
+/**
+ * 긴급 교차 이벤트 선택지 종류
+ */
+enum class TrustRiftChoiceType(val isHonest: Boolean) {
+    HONEST_CONFESSION(true),  // 솔직히 털어놓고 함께 정화한다
+    HIDE_IT(false)            // 아무 일 아니라고 숨긴다
+}
+
+/**
+ * 긴급 교차 이벤트 선택지
+ */
+data class TrustRiftChoice(
+    val id: String,
+    val type: TrustRiftChoiceType,
+    val label: String,
+    val hint: String
+)
+
+/**
+ * 긴급 교차 이벤트 처리 결과
+ * - 솔직한 고백: 성수 없이 홀림 스택 -1, 호감도 +10
+ * - 숨김: 홀림 스택 +1, 호감도 -15, 다음 전투 전열 방어 -10%
+ */
+data class TrustRiftResolution(
+    val isSuccess: Boolean,
+    val choiceId: String,
+    val choiceType: TrustRiftChoiceType,
+    val resolvedState: TemptationState = TemptationState(),
+    val bondDelta: Int = 0,
+    val newBondLevel: Int = 0,
+    val frontRowDefensePenaltyPercent: Int = 0,
+    val failureReason: String? = null,
+    val message: String = ""
+)
+
+// =============================================================================
+// 「페어 얼티밋 오의」 컷인 모델
+// =============================================================================
+
+/**
+ * 페어 얼티밋 오의 컷인 연출 스타일
+ */
+enum class PairUltimateStyle(val displayName: String) {
+    GOLDEN_NEON("황금·네온 컷인")
+}
+
+/**
+ * 페어 얼티밋 오의 발동 가능 판정
+ */
+data class PairUltimateReady(
+    val canActivate: Boolean,
+    val reason: String,
+    val aliveSurvivors: Int = 0,
+    val currentMana: Int = 0
+)
+
+/**
+ * 페어 얼티밋 오의 발동 결과 (컷인 배너 + 전투 로그)
+ */
+data class PairUltimateResult(
+    val isSuccess: Boolean,
+    val damage: Int = 0,
+    val manaSpent: Int = 0,
+    val survivorBonusMultiplier: Double = 1.0,
+    val bannerTitle: String = "",
+    val bannerSubtitle: String = "",
+    val style: PairUltimateStyle = PairUltimateStyle.GOLDEN_NEON,
+    val logLines: List<String> = emptyList(),
+    val failureReason: String? = null
+)

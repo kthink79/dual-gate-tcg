@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.game.tcg.core.engine.RealWorldActivity
+import com.game.tcg.core.model.TcgCard
 import com.game.tcg.core.model.VisualState
 
 /**
@@ -34,7 +35,8 @@ import com.game.tcg.core.model.VisualState
 @Composable
 fun RealWorldScreen(
     state: TcgGameState,
-    onInteract: (RealWorldActivity) -> Unit
+    onInteract: (RealWorldActivity) -> Unit,
+    onBondMemoryPartner: (Int) -> Unit
 ) {
     val bond = state.partnerBond
     val partner = state.ownedCards.firstOrNull { it.id == 3 }
@@ -126,6 +128,67 @@ fun RealWorldScreen(
                     color = TcgColors.Muted,
                     fontSize = 9.sp
                 )
+            }
+        }
+
+        // ── 「기억의 잔향」: 기억이 지워진 동료와의 재회 ──
+        val memoryPartner = state.memoryResetCards.firstOrNull()
+        if (memoryPartner != null) {
+            val target = TcgCard.MEMORY_FRAGMENT_TARGET
+            SectionCard(
+                title = "기억의 잔향 — 기억이 지워진 동료",
+                badge = "기억 파편 ${memoryPartner.memoryFragments}/$target",
+                accent = TcgColors.Abyss
+            ) {
+                Text(
+                    "「저… 계약자님이 맞으시죠? 이상하게, 이 문양을 보면 가슴이 아파요.」\n" +
+                            "${memoryPartner.name}은(는) 죽음을 넘어 돌아왔지만, 당신과의 기억을 전부 잃었습니다. " +
+                            "함께 걸으며 파편을 모으면 잊힌 이름이 돌아옵니다.",
+                    color = TcgColors.Text.copy(alpha = 0.86f),
+                    fontSize = 11.sp,
+                    lineHeight = 17.sp
+                )
+                StatBar(
+                    ratio = memoryPartner.memoryFragments.toFloat() / target,
+                    color = TcgColors.Abyss,
+                    height = 9
+                )
+                Text(
+                    "기억 파편 ${memoryPartner.memoryFragments}/$target · 호감도 ${memoryPartner.bondLevel}/100",
+                    color = TcgColors.Muted,
+                    fontSize = 9.sp
+                )
+                ActionTile(
+                    label = "기억의 잔향 교감 — ${memoryPartner.name}",
+                    hint = "기억 파편 +1 · 호감도 +5 (전장 승리로도 파편 획득)",
+                    accent = TcgColors.Abyss,
+                    enabled = memoryPartner.memoryFragments < target,
+                    onClick = { onBondMemoryPartner(memoryPartner.id) }
+                )
+                if (memoryPartner.memoryFragments >= target) {
+                    Text(
+                        "기억 파편이 모두 모였습니다 — 도감·서약 탭에서 「기억의 조각 회상」을 열어 기억을 복원하세요.",
+                        color = TcgColors.Gold,
+                        fontSize = 10.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+                if (state.memoryRecallMessage != null && memoryPartner.memoryFragments < target) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(TcgColors.Abyss.copy(alpha = 0.14f))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            state.memoryRecallMessage,
+                            color = TcgColors.Text.copy(alpha = 0.9f),
+                            fontSize = 10.sp,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
             }
         }
 

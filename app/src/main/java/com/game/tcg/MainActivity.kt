@@ -113,7 +113,10 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                         onNextStep = { viewModel.advanceStory() },
                         onPrevStep = { viewModel.previousStory() },
                         onChooseEventA = { talk -> viewModel.chooseEventA(talk) },
-                        onChooseEventB = { fight -> viewModel.chooseEventB(fight) }
+                        onChooseEventB = { fight -> viewModel.chooseEventB(fight) },
+                        onResolveTrustRift = { choice -> viewModel.resolveTrustRift(choice) },
+                        onOpenChapter2 = { viewModel.openChapter2Prelude() },
+                        onStartChapter2Boss = { viewModel.startChapter2BossBattle() }
                     )
                     1 -> BattleScreen(
                         state = state,
@@ -125,7 +128,8 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                         onReacquire = { id -> viewModel.reacquire(id) },
                         onRedeploy = { id -> viewModel.redeploy(id) },
                         onStartDemonLordBattle = { viewModel.startDemonLordBattle() },
-                        onStartFieldBattle = { viewModel.startFieldBattle() }
+                        onStartFieldBattle = { viewModel.startFieldBattle() },
+                        onPairUltimate = { viewModel.activatePairUltimate() }
                     )
                     2 -> CollectionScreen(
                         state = state,
@@ -134,11 +138,13 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                         onGaze = { viewModel.gazeAtDemonLord() },
                         onPurify = { viewModel.purify() },
                         onLimitBreak = { viewModel.limitBreakSelected() },
-                        onCraftNew = { viewModel.craftNewCharacter() }
+                        onCraftNew = { viewModel.craftNewCharacter() },
+                        onMemoryRecall = { id -> viewModel.openMemoryRecall(id) }
                     )
                     else -> RealWorldScreen(
                         state = state,
-                        onInteract = { activity -> viewModel.interactRealWorld(activity) }
+                        onInteract = { activity -> viewModel.interactRealWorld(activity) },
+                        onBondMemoryPartner = { id -> viewModel.bondMemoryResetPartner(id) }
                     )
                 }
             }

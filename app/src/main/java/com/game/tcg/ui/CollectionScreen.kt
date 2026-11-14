@@ -40,7 +40,8 @@ fun CollectionScreen(
     onGaze: () -> Unit,
     onPurify: () -> Unit,
     onLimitBreak: () -> Unit,
-    onCraftNew: () -> Unit
+    onCraftNew: () -> Unit,
+    onMemoryRecall: (Int) -> Unit
 ) {
     val selected: TcgCard = state.ownedCards.firstOrNull { it.id == state.selectedCardId }
         ?: TcgGameViewModel.characterCard(state.selectedCardId)
@@ -217,6 +218,101 @@ fun CollectionScreen(
                     }
                 }
                 Text(state.combatPenalty.debuffDescription, color = TcgColors.Danger, fontSize = 10.sp)
+            }
+        }
+
+        // ── 「기억의 잔향」: 기억이 지워진 동료 ──
+        if (selected.isMemoryReset) {
+            val progress = state.memoryResetCards.firstOrNull { it.id == selected.id }
+            val fragments = progress?.memoryFragments ?: selected.memoryFragments
+            val target = TcgCard.MEMORY_FRAGMENT_TARGET
+            SectionCard(
+                title = "기억이 지워진 동료",
+                badge = "기억 파편 $fragments/$target",
+                accent = TcgColors.Abyss
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Pill("기억이 지워진 동료", TcgColors.Abyss, filled = true)
+                    Spacer(Modifier.width(6.dp))
+                    Pill("재획득 ${selected.reincarnationCount}회차", TcgColors.Muted)
+                }
+                Text(
+                    "환생 풀에서 돌아온 '${selected.name}'은(는) 이름도 온기도 기억하지 못합니다. " +
+                            "현실 교감과 이계 전투 승리로 기억 파편을 모으면 「기억의 조각 회상」 이벤트로 " +
+                            "스탯 보너스와 기억을 되찾을 수 있습니다.",
+                    color = TcgColors.Muted,
+                    fontSize = 10.sp,
+                    lineHeight = 15.sp
+                )
+                StatBar(ratio = fragments.toFloat() / target, color = TcgColors.Abyss, height = 10)
+                Text(
+                    "기억 파편 게이지 $fragments/$target" +
+                            (if (fragments >= target) " — 회상 이벤트 개방!" else " — ${target - fragments}개 더 필요"),
+                    color = if (fragments >= target) TcgColors.Gold else TcgColors.Muted,
+                    fontSize = 10.sp
+                )
+                Text(
+                    "파편 수집 경로: 현실 교감 탭의 「기억의 잔향」 교감(파편 +1) · 이계 전투 승리(파편 +1)",
+                    color = TcgColors.Muted,
+                    fontSize = 9.sp
+                )
+                ActionTile(
+                    label = "🌙 기억의 조각 회상 이벤트 열기",
+                    hint = if (fragments >= target) "스탯 보너스 + 기억 복원"
+                    else "기억 파편 ${target - fragments}개 부족",
+                    accent = TcgColors.Gold,
+                    enabled = fragments >= target,
+                    onClick = { onMemoryRecall(selected.id) }
+                )
+                if (state.memoryRecallMessage != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(TcgColors.Abyss.copy(alpha = 0.14f))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            state.memoryRecallMessage,
+                            color = TcgColors.Text.copy(alpha = 0.9f),
+                            fontSize = 10.sp,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── 「기억의 조각 회상」 대화 연출 ──
+        val recallDialogue = state.memoryRecallDialogue
+        if (recallDialogue != null) {
+            SectionCard(
+                title = "「${recallDialogue.eventTitle}」",
+                badge = recallDialogue.subtitle,
+                accent = TcgColors.Gold
+            ) {
+                recallDialogue.lines.forEach { line ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(TcgColors.SurfaceAlt)
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            line,
+                            color = TcgColors.Text.copy(alpha = 0.9f),
+                            fontSize = 11.sp,
+                            lineHeight = 17.sp
+                        )
+                    }
+                }
+                Text(
+                    recallDialogue.closingLine,
+                    color = TcgColors.Gold,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
 

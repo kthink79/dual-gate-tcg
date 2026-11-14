@@ -2,20 +2,28 @@ package com.game.tcg.ui
 
 import androidx.lifecycle.ViewModel
 import com.game.tcg.core.engine.BattleEngine
+import com.game.tcg.core.engine.ChapterTwoScript
 import com.game.tcg.core.engine.DualWorldEngine
 import com.game.tcg.core.engine.IBattleEngine
 import com.game.tcg.core.engine.IDualWorldEngine
 import com.game.tcg.core.engine.IManaEngine
+import com.game.tcg.core.engine.IMemoryRecallEngine
+import com.game.tcg.core.engine.IPairUltimateEngine
 import com.game.tcg.core.engine.IRoguelikeLifecycleEngine
 import com.game.tcg.core.engine.ISynthesisEngine
 import com.game.tcg.core.engine.ITacticalRetreatEngine
 import com.game.tcg.core.engine.ITemptationEngine
+import com.game.tcg.core.engine.ITrustRiftEngine
 import com.game.tcg.core.engine.ManaEngine
+import com.game.tcg.core.engine.MemoryRecallEngine
+import com.game.tcg.core.engine.PairUltimateEngine
 import com.game.tcg.core.engine.RealWorldActivity
 import com.game.tcg.core.engine.RoguelikeLifecycleEngine
 import com.game.tcg.core.engine.SynthesisEngine
+import com.game.tcg.core.engine.StoryArcNode
 import com.game.tcg.core.engine.TacticalRetreatEngine
 import com.game.tcg.core.engine.TemptationEngine
+import com.game.tcg.core.engine.TrustRiftEngine
 import com.game.tcg.core.model.AcquisitionResult
 import com.game.tcg.core.model.BattleCardHp
 import com.game.tcg.core.model.BattleRetreatInfo
@@ -26,10 +34,16 @@ import com.game.tcg.core.model.DemonLordRegistry
 import com.game.tcg.core.model.Element
 import com.game.tcg.core.model.EmergencyRetreatResult
 import com.game.tcg.core.model.ManaState
+import com.game.tcg.core.model.MemoryFragmentSource
+import com.game.tcg.core.model.MemoryRecallDialogue
+import com.game.tcg.core.model.MemoryRecallResult
+import com.game.tcg.core.model.PairUltimateReady
+import com.game.tcg.core.model.PairUltimateResult
 import com.game.tcg.core.model.ReincarnatedCard
 import com.game.tcg.core.model.RetreatResult
 import com.game.tcg.core.model.TcgCard
 import com.game.tcg.core.model.TemptationState
+import com.game.tcg.core.model.TrustRiftResolution
 import com.game.tcg.core.model.UndercoverDialogueOption
 import com.game.tcg.core.model.VisualState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -265,8 +279,51 @@ data class TcgGameState(
     val partnerVisual: VisualState = VisualState.BATTLE,
     val realWorldLog: List<String> = listOf("[현실 교감] 아우렐리아 소환 대기 중. 호감도 20/100"),
     val dateLookUnlocked: Boolean = false,
-    val ultimateUnlocked: Boolean = false
-)
+    val ultimateUnlocked: Boolean = false,
+    // ── 「기억의 잔향」: 환생 재획득 후 기억 초기화·파편 회상 ──
+    val memoryRecallMessage: String? = null,
+    val memoryRecallDialogue: MemoryRecallDialogue? = null,
+    // ── 「신뢰의 균열」: 현실·이세계 교차 이벤트 ──
+    val trustRiftChoice: String? = null,
+    val trustRiftMessage: String? = null,
+    val frontRowDefensePenaltyPercent: Int = 0,
+    // ── 「페어 얼티밋 오의」 컷인 ──
+    val pairUltimateUsedThisBattle: Boolean = false,
+    val pairUltimateBanner: String? = null,
+    val pairUltimateBannerSubtitle: String? = null,
+    val pairUltimateCount: Int = 0,
+    // ── 제2장 프롤로그: 제1군단장 「그림자 기사」 전초전 ──
+    val chapter2PreludeOpened: Boolean = false,
+    val chapter2Message: String? = null,
+    val isChapter2BossBattle: Boolean = false
+) {
+    /** 생존 아군 수 (오의 조건 판정용) */
+    val aliveSurvivorCount: Int get() = party.count { it.isAlive }
+
+    /** 페어 얼티밋 오의 발동 조건 (아군 2명 이상 생존 + 마나 3 이상 + 전투당 1회) */
+    val canActivatePairUltimate: Boolean
+        get() = !pairUltimateUsedThisBattle && aliveSurvivorCount >= PAIR_ULTIMATE_SURVIVORS &&
+            mana.currentMana >= PAIR_ULTIMATE_MANA
+
+    /** [홀림] 스택 2 이상이면 열리는 긴급 교차 이벤트 활성 여부 */
+    val isTrustRiftAvailable: Boolean
+        get() = trustRiftChoice == null && combatPenalty.totalStacks >= 2
+
+    /** 기억이 지워진 동료 카드 목록 */
+    val memoryResetCards: List<TcgCard> get() = ownedCards.filter { it.isMemoryReset }
+
+    /** 제1장 5화까지 읽어 제2장 프롤로그 노드가 열린 상태 */
+    val isChapter2Unlocked: Boolean
+        get() = ChapterTwoScript.SHADOW_KNIGHT_PRELUDE.isUnlocked(storyStepIndex)
+
+    companion object {
+        /** 페어 얼티밋 오의 최소 생존 인원 */
+        const val PAIR_ULTIMATE_SURVIVORS: Int = 2
+
+        /** 페어 얼티밋 오의 소모 마나 */
+        const val PAIR_ULTIMATE_MANA: Int = 3
+    }
+}
 
 // ============================================================================
 // ViewModel — 화면 4탭(시나리오 · 이계 전투 · 도감 · 현실 교감)의 상태와 조작
@@ -279,7 +336,10 @@ class TcgGameViewModel(
     private val manaEngine: IManaEngine = ManaEngine(),
     private val temptationEngine: ITemptationEngine = TemptationEngine(),
     private val lifecycleEngine: IRoguelikeLifecycleEngine = RoguelikeLifecycleEngine(),
-    private val retreatEngine: ITacticalRetreatEngine = TacticalRetreatEngine()
+    private val retreatEngine: ITacticalRetreatEngine = TacticalRetreatEngine(),
+    private val memoryRecallEngine: IMemoryRecallEngine = MemoryRecallEngine(),
+    private val trustRiftEngine: ITrustRiftEngine = TrustRiftEngine(),
+    private val pairUltimateEngine: IPairUltimateEngine = PairUltimateEngine()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -424,6 +484,10 @@ class TcgGameViewModel(
                 mana = ManaState(1, 1),
                 party = initialParty(),
                 retreatInfo = BattleRetreatInfo(turn = 1),
+                pairUltimateUsedThisBattle = false,
+                pairUltimateBanner = null,
+                pairUltimateBannerSubtitle = null,
+                isChapter2BossBattle = false,
                 pendingLootGold = 2500,
                 pendingLootGems = 30,
                 battleLog = s.battleLog + listOf(
@@ -449,6 +513,10 @@ class TcgGameViewModel(
                 mana = ManaState(1, 1),
                 party = initialParty(),
                 retreatInfo = BattleRetreatInfo(turn = 1),
+                pairUltimateUsedThisBattle = false,
+                pairUltimateBanner = null,
+                pairUltimateBannerSubtitle = null,
+                isChapter2BossBattle = false,
                 pendingLootGold = 300,
                 pendingLootGems = 5,
                 battleLog = s.battleLog + "[원정 개시] 차원 틈새의 마수 — HP 12000 / 공격력 900",
@@ -505,28 +573,7 @@ class TcgGameViewModel(
                     ") · 적 잔여 HP ${newEnemyHp}"
 
             if (newEnemyHp <= 0) {
-                val rewardGold = s.pendingLootGold
-                val rewardGems = s.pendingLootGems
-                var state = s.copy(
-                    enemyHp = 0,
-                    mana = newMana,
-                    battleLog = s.battleLog + logLine + "[전투 승리] ${s.enemyName} 토벌 완료! (전리품 금화 ${rewardGold}G · 보석 ${rewardGems})",
-                    gold = s.gold + rewardGold,
-                    gems = s.gems + rewardGems,
-                    battleVictories = s.battleVictories + 1,
-                    storyStepIndex = if (s.storyStepIndex <= 2) 3 else s.storyStepIndex,
-                    statusMessage = "[전투 승리] ${s.enemyName}을(를) 쓰러뜨렸습니다. 획득 금화 ${rewardGold}G."
-                )
-                if (s.isDemonLordBattle) {
-                    val afterDefeat = temptationEngine.onDemonLordDefeated(DemonLordRegistry.LILITH.copy(), state.temptationState)
-                    state = state.copy(
-                        temptationState = afterDefeat,
-                        combatPenalty = temptationEngine.calculateCombatPenalty(afterDefeat),
-                        battleLog = state.battleLog + "[토벌 완료] 릴리스가 가면을 벗고 서약 파트너로 합류합니다. 저주 스택 -3.",
-                        statusMessage = "[마왕 토벌] 릴리스 정벌! 황혼이 걷히고 그녀가 서약 파트너로 합류했습니다."
-                    )
-                }
-                state
+                applyVictory(s, newMana, listOf(logLine))
             } else {
                 s.copy(
                     enemyHp = newEnemyHp,
@@ -536,6 +583,74 @@ class TcgGameViewModel(
                 )
             }
         }
+    }
+
+    /**
+     * 전투 승리 정산 — 전리품·마왕 토벌·기억 파편·오의 상태 초기화·제2장 전초전 진행
+     */
+    private fun applyVictory(
+        s: TcgGameState,
+        newMana: ManaState,
+        logLines: List<String>
+    ): TcgGameState {
+        val rewardGold = s.pendingLootGold
+        val rewardGems = s.pendingLootGems
+
+        // 「기억의 잔향」: 전투 승리로 기억이 지워진 동료에게 기억 파편 +1
+        val fragmentLogs = mutableListOf<String>()
+        s.ownedCards.forEach { card ->
+            if (!card.isMemoryReset) return@forEach
+            val gain = memoryRecallEngine.grantFragment(card, 1, MemoryFragmentSource.BATTLE)
+            if (gain.isSuccess) fragmentLogs.add(gain.message)
+        }
+
+        var state = s.copy(
+            enemyHp = 0,
+            mana = newMana,
+            ownedCards = s.ownedCards.toList(),
+            battleLog = s.battleLog + logLines +
+                    "[전투 승리] ${s.enemyName} 토벌 완료! (전리품 금화 ${rewardGold}G · 보석 ${rewardGems})" +
+                    fragmentLogs,
+            gold = s.gold + rewardGold,
+            gems = s.gems + rewardGems,
+            battleVictories = s.battleVictories + 1,
+            pairUltimateUsedThisBattle = false,
+            frontRowDefensePenaltyPercent = 0,
+            storyStepIndex = if (s.storyStepIndex <= 2) 3 else s.storyStepIndex,
+            statusMessage = "[전투 승리] ${s.enemyName}을(를) 쓰러뜨렸습니다. 획득 금화 ${rewardGold}G."
+        )
+
+        if (s.isDemonLordBattle) {
+            val afterDefeat = temptationEngine.onDemonLordDefeated(
+                DemonLordRegistry.LILITH.copy(),
+                state.temptationState
+            )
+            state = state.copy(
+                temptationState = afterDefeat,
+                combatPenalty = temptationEngine.calculateCombatPenalty(afterDefeat),
+                battleLog = state.battleLog + "[토벌 완료] 릴리스가 가면을 벗고 서약 파트너로 합류합니다. 저주 스택 -3.",
+                statusMessage = "[마왕 토벌] 릴리스 정벌! 황혼이 걷히고 그녀가 서약 파트너로 합류했습니다."
+            )
+        }
+
+        if (s.isChapter2BossBattle) {
+            state = state.copy(
+                isChapter2BossBattle = false,
+                chapter2Message = "[전초전 승리] 제1군단장 그림자 기사가 갑주를 풀고 무릎을 꿇었다. " +
+                        "\"전초전일 뿐이야… 제2장은 아직 열리지 않았다.\" — 제2장 본편 진입 조건이 열렸습니다.",
+                battleLog = state.battleLog + "[전초전 승리] 제1군단장 그림자 기사의 가면이 갈라졌다. 제2장 진입 조건 충족.",
+                statusMessage = "[전초전 승리] 제1군단장 그림자 기사 격퇴 — 제2장이 곧 열립니다."
+            )
+        }
+
+        if (state.storyStepIndex >= StoryScript.STEPS.size - 1 && !state.chapter2PreludeOpened) {
+            val node = ChapterTwoScript.SHADOW_KNIGHT_PRELUDE
+            state = state.copy(
+                chapter2Message = "[${node.chapter}] ${node.title} — 제1장 5화 이후 열리는 다음 여정 노드입니다."
+            )
+        }
+
+        return state
     }
 
     /** 턴 진행 — 마나 회복, 후퇴 제한 해제, 적 반격 */
@@ -555,7 +670,8 @@ class TcgGameViewModel(
             val victim = targets[(nextTurnNo - 1) % targets.size]
             val raw = s.enemyAtk
             val taken = temptationEngine.applyDamageTakenPenalty(raw, s.combatPenalty)
-            val mitigated = (taken * (100 - s.defenseBonusPercent) / 100.0).toInt()
+            val frontPenalty = if (victim.isFrontRow) s.frontRowDefensePenaltyPercent else 0
+            val mitigated = (taken * (100 - s.defenseBonusPercent + frontPenalty) / 100.0).toInt()
             val newHp = (victim.hp - mitigated).coerceAtLeast(0)
 
             var post = s.copy(
@@ -565,7 +681,8 @@ class TcgGameViewModel(
                 lastRetreatMessage = null,
                 party = s.party.map { if (it.slotIndex == victim.slotIndex) it.copy(hp = newHp) else it },
                 battleLog = s.battleLog + ("[턴 $nextTurnNo] ${s.enemyName}의 반격 → ${victim.card.name} ${mitigated} 피해 " +
-                        "(받는 피해 +${s.combatPenalty.damageTakenIncreasePercent}%, 방어 보너스 -${s.defenseBonusPercent}%) · 잔여 HP $newHp/${victim.maxHp}"),
+                        "(받는 피해 +${s.combatPenalty.damageTakenIncreasePercent}%, 방어 보너스 -${s.defenseBonusPercent}%" +
+                        (if (frontPenalty > 0) ", 전열 결손 방어 -$frontPenalty%" else "") + ") · 잔여 HP $newHp/${victim.maxHp}"),
                 statusMessage = "[턴 $nextTurnNo] 마나 ${mana.currentMana}/${mana.maxMana} 회복 · ${victim.card.name} 피해 ${mitigated}"
             )
 
@@ -838,6 +955,12 @@ class TcgGameViewModel(
             val working = partner.copy()
             val newBond = dualWorldEngine.interactInRealWorld(working, activity)
             val visual = working.currentVisual
+            // 「기억의 잔향」: 기억이 지워진 동료는 교감으로 기억 파편을 되찾는다.
+            val fragmentGain = if (working.isMemoryReset) {
+                memoryRecallEngine.grantFragment(working, 1, MemoryFragmentSource.REAL_WORLD_BOND)
+            } else {
+                null
+            }
             val label = when (activity) {
                 RealWorldActivity.DAILY_GREETING -> "짧은 일상 대화 (+5)"
                 RealWorldActivity.CASUAL_CAFE_WALK -> "저녁 산책·카페 (+15)"
@@ -848,14 +971,219 @@ class TcgGameViewModel(
             val logLine = "[현실 교감] 아우렐리아 · $label → 호감도 $newBond/100" +
                     (if (unlockedDate) " · 데이트 룩 해금 연출" else "") +
                     (if (unlockedUltimate) " · 페어 얼티밋 오의 개방!" else "")
+            val fragmentLine = if (fragmentGain != null && fragmentGain.isSuccess) fragmentGain.message else null
             s.copy(
                 ownedCards = s.ownedCards.map { if (it.id == 3) working else it },
                 partnerBond = newBond,
                 partnerVisual = visual,
                 dateLookUnlocked = s.dateLookUnlocked || unlockedDate,
                 ultimateUnlocked = s.ultimateUnlocked || unlockedUltimate,
-                realWorldLog = (s.realWorldLog + logLine).takeLast(6),
+                memoryRecallMessage = fragmentLine ?: s.memoryRecallMessage,
+                realWorldLog = (s.realWorldLog + listOfNotNull(logLine, fragmentLine)).takeLast(6),
                 statusMessage = logLine
+            )
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 「기억의 잔향」 — 기억이 지워진 동료의 파편 수집 · 회상 이벤트
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 기억이 지워진 동료와 교감해 기억 파편 +1 (호감도 +5)
+     * — 현실 교감 경로. 전장 승리 경로는 전투 승리 정산에서 자동 지급된다.
+     */
+    fun bondMemoryResetPartner(cardId: Int) {
+        _uiState.update { s ->
+            val card = s.ownedCards.firstOrNull { it.id == cardId }
+                ?: return@update s.copy(statusMessage = "[교감 불가] 보유하지 않은 카드입니다. (ID: $cardId)")
+            if (!card.isMemoryReset) {
+                return@update s.copy(
+                    statusMessage = "[교감] '${card.name}'은(는) 기억이 온전한 상태라 파편이 필요하지 않습니다."
+                )
+            }
+            card.bondLevel = (card.bondLevel + 5).coerceAtMost(100)
+            val gain = memoryRecallEngine.grantFragment(card, 1, MemoryFragmentSource.REAL_WORLD_BOND)
+            s.copy(
+                ownedCards = s.ownedCards.map { if (it.id == card.id) card else it },
+                partnerBond = if (card.id == 3) card.bondLevel else s.partnerBond,
+                memoryRecallMessage = gain.message,
+                realWorldLog = (s.realWorldLog + gain.message).takeLast(6),
+                statusMessage = gain.message
+            )
+        }
+    }
+
+    /** 「기억의 조각 회상」 특별 이벤트 — 파편 3/3 달성 시 스탯 보너스와 기억 복원 */
+    fun openMemoryRecall(cardId: Int): MemoryRecallResult? {
+        var resultOut: MemoryRecallResult? = null
+        _uiState.update { s ->
+            val card = s.ownedCards.firstOrNull { it.id == cardId }
+                ?: return@update s.copy(statusMessage = "[회상 불가] 보유하지 않은 카드입니다. (ID: $cardId)")
+            val result = memoryRecallEngine.openRecallEvent(card)
+            resultOut = result
+            if (!result.isSuccess) {
+                return@update s.copy(
+                    memoryRecallMessage = result.message,
+                    statusMessage = result.message
+                )
+            }
+            s.copy(
+                ownedCards = s.ownedCards.map { if (it.id == card.id) card else it },
+                memoryRecallMessage = result.message,
+                memoryRecallDialogue = result.dialogue,
+                storyReadLog = (s.storyReadLog + "[기억의 조각 회상] ${card.name} — 기억 복원 완료").takeLast(8),
+                statusMessage = result.message
+            )
+        }
+        return resultOut
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 「신뢰의 균열」 — [홀림] 2스택 이상 시 열리는 긴급 교차 이벤트
+    // ──────────────────────────────────────────────────────────────
+
+    /** 교차 이벤트 선택지 A/B 처리 */
+    fun resolveTrustRift(choiceId: String): TrustRiftResolution? {
+        var resultOut: TrustRiftResolution? = null
+        _uiState.update { s ->
+            if (s.trustRiftChoice != null) {
+                return@update s.copy(statusMessage = "[교차 이벤트] 이미 선택을 마친 이벤트입니다.")
+            }
+            val result = trustRiftEngine.resolve(choiceId, s.temptationState, s.partnerBond)
+            resultOut = result
+            if (!result.isSuccess) {
+                return@update s.copy(statusMessage = result.message)
+            }
+            val penalty = temptationEngine.calculateCombatPenalty(result.resolvedState)
+            val summary = result.message.lineSequence().first()
+            s.copy(
+                temptationState = result.resolvedState,
+                combatPenalty = penalty,
+                partnerBond = result.newBondLevel,
+                trustRiftChoice = result.choiceId,
+                trustRiftMessage = result.message,
+                frontRowDefensePenaltyPercent = result.frontRowDefensePenaltyPercent,
+                ownedCards = s.ownedCards.map { card ->
+                    if (card.id == 3) {
+                        card.bondLevel = result.newBondLevel
+                    }
+                    card
+                },
+                storyReadLog = (s.storyReadLog + "[신뢰의 균열] $summary").takeLast(8),
+                statusMessage = summary
+            )
+        }
+        return resultOut
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 「페어 얼티밋 오의」 — 아군 2명 이상 + 마나 3 이상 협동 오의
+    // ──────────────────────────────────────────────────────────────
+
+    /** 페어 얼티밋 오의 발동 (전투당 1회) */
+    fun activatePairUltimate(): PairUltimateResult? {
+        var resultOut: PairUltimateResult? = null
+        _uiState.update { s ->
+            if (s.enemyHp <= 0) {
+                return@update s.copy(statusMessage = "[전투 종료] 적이 없습니다. 새 원정을 시작하세요.")
+            }
+            val attacker = s.party.firstOrNull { it.isAlive && it.isFrontRow }
+                ?: s.party.firstOrNull { it.isAlive }
+                ?: return@update s.copy(statusMessage = "[오의 불가] 생존한 아군이 없습니다.")
+
+            val result = pairUltimateEngine.activate(
+                attacker = attacker.card,
+                defender = enemyCard(s),
+                penalty = s.combatPenalty,
+                aliveCount = s.aliveSurvivorCount,
+                mana = s.mana,
+                usedThisBattle = s.pairUltimateUsedThisBattle
+            )
+            resultOut = result
+            if (!result.isSuccess) {
+                return@update s.copy(
+                    battleLog = s.battleLog + result.failureReason.orEmpty(),
+                    statusMessage = result.failureReason ?: "[오의 불가] 발동 조건을 만족하지 못했습니다."
+                )
+            }
+            val newEnemyHp = (s.enemyHp - result.damage).coerceAtLeast(0)
+            val newMana = s.mana.copy(currentMana = (s.mana.currentMana - result.manaSpent).coerceAtLeast(0))
+            val tail = "[턴 ${s.turn}] 적 잔여 HP $newEnemyHp/${s.enemyMaxHp}"
+
+            if (newEnemyHp <= 0) {
+                applyVictory(s, newMana, result.logLines + tail).copy(
+                    pairUltimateCount = s.pairUltimateCount + 1,
+                    pairUltimateBanner = result.bannerTitle,
+                    pairUltimateBannerSubtitle = result.bannerSubtitle
+                )
+            } else {
+                s.copy(
+                    enemyHp = newEnemyHp,
+                    mana = newMana,
+                    pairUltimateUsedThisBattle = true,
+                    pairUltimateBanner = result.bannerTitle,
+                    pairUltimateBannerSubtitle = result.bannerSubtitle,
+                    pairUltimateCount = s.pairUltimateCount + 1,
+                    battleLog = s.battleLog + result.logLines + tail,
+                    statusMessage = "[⚡ 페어 얼티밋 오의] ${attacker.card.name} · ${result.damage} 데미지 — 적 HP $newEnemyHp/${s.enemyMaxHp}"
+                )
+            }
+        }
+        return resultOut
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 제2장 프롤로그 — 제1군단장 「그림자 기사」 전초전
+    // ──────────────────────────────────────────────────────────────
+
+    /** 5화 이후 제2장 프롤로그 노드 열기 */
+    fun openChapter2Prelude() {
+        _uiState.update { s ->
+            val node: StoryArcNode = ChapterTwoScript.SHADOW_KNIGHT_PRELUDE
+            if (!node.isUnlocked(s.storyStepIndex)) {
+                return@update s.copy(statusMessage = "[제2장] 제1장 5화를 먼저 읽어야 프롤로그 노드가 열립니다.")
+            }
+            s.copy(
+                chapter2PreludeOpened = true,
+                chapter2Message = "[${node.chapter}] ${node.title} — ${node.objective}",
+                storyReadLog = (s.storyReadLog + "[${node.chapter}] ${node.title} — ${node.objective}").takeLast(8),
+                statusMessage = "[${node.chapter}] ${node.title} — 전초전이 열렸습니다."
+            )
+        }
+    }
+
+    /** 제1군단장 그림자 기사 전초전 개시 */
+    fun startChapter2BossBattle() {
+        _uiState.update { s ->
+            val node = ChapterTwoScript.SHADOW_KNIGHT_PRELUDE
+            if (!node.isUnlocked(s.storyStepIndex)) {
+                return@update s.copy(statusMessage = "[제2장] 5화 이후에만 전초전을 열 수 있습니다.")
+            }
+            s.copy(
+                chapter2PreludeOpened = true,
+                enemyName = node.bossName,
+                enemyElement = node.bossElement,
+                enemyHp = node.bossHp,
+                enemyMaxHp = node.bossHp,
+                enemyAtk = node.bossAtk,
+                isDemonLordBattle = false,
+                isChapter2BossBattle = true,
+                turn = 1,
+                mana = ManaState(1, 1),
+                party = initialParty(),
+                retreatInfo = BattleRetreatInfo(turn = 1),
+                pairUltimateUsedThisBattle = false,
+                pairUltimateBanner = null,
+                pairUltimateBannerSubtitle = null,
+                pendingLootGold = 1800,
+                pendingLootGems = 20,
+                chapter2Message = "[${node.chapter}] ${node.title} — ${node.bossSkill}",
+                battleLog = s.battleLog + listOf(
+                    "[전초전 개시] ${node.bossName} — HP ${node.bossHp} / 공격력 ${node.bossAtk}",
+                    node.bossSkill
+                ),
+                statusMessage = "[전초전] ${node.bossName}와(과) 조우했습니다. 아군 2명 생존 + 마나 3으로 페어 오의를 노리세요."
             )
         }
     }

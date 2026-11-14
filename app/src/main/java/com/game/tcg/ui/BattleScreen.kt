@@ -44,7 +44,8 @@ fun BattleScreen(
     onReacquire: (Int) -> Unit,
     onRedeploy: (Int) -> Unit,
     onStartDemonLordBattle: () -> Unit,
-    onStartFieldBattle: () -> Unit
+    onStartFieldBattle: () -> Unit,
+    onPairUltimate: () -> Unit
 ) {
     ScreenFrame {
         // ── 적 정보 ──
@@ -87,8 +88,16 @@ fun BattleScreen(
                             )
                             Spacer(Modifier.width(6.dp))
                             Pill(
-                                if (state.isDemonLordBattle) "마왕전" else "원정",
-                                if (state.isDemonLordBattle) TcgColors.Abyss else TcgColors.Mana
+                                when {
+                                    state.isDemonLordBattle -> "마왕전"
+                                    state.isChapter2BossBattle -> "제2장 전초전"
+                                    else -> "원정"
+                                },
+                                when {
+                                    state.isDemonLordBattle -> TcgColors.Abyss
+                                    state.isChapter2BossBattle -> TcgColors.Gold
+                                    else -> TcgColors.Mana
+                                }
                             )
                         }
                         Text(
@@ -150,6 +159,86 @@ fun BattleScreen(
                     fontSize = 9.sp
                 )
             }
+        }
+
+        // ── ⚡ 페어 얼티밋 오의 컷인 ──
+        SectionCard(
+            title = "⚡ 페어 얼티밋 오의",
+            badge = if (state.pairUltimateUsedThisBattle) "사용 완료" else "아군 2인 합격",
+            accent = TcgColors.Gold
+        ) {
+            if (state.pairUltimateBanner != null) {
+                // 황금·네온 컷인 배너
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color(0xFFFFD54F),
+                                    Color(0xFFFF8A65),
+                                    Color(0xFFB388FF),
+                                    Color(0xFF00E5FF)
+                                )
+                            )
+                        )
+                        .padding(14.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            state.pairUltimateBanner ?: "",
+                            color = Color(0xFF1A1206),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            state.pairUltimateBannerSubtitle ?: "",
+                            color = Color(0xFF2A1A08),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "누적 발동 ${state.pairUltimateCount}회 · 전투당 1회 제한",
+                            color = Color(0xFF3A2408),
+                            fontSize = 8.sp
+                        )
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Pill("생존 아군 ${state.aliveSurvivorCount}명", TcgColors.Heal)
+                Spacer(Modifier.width(6.dp))
+                Pill("마나 ${state.mana.currentMana}/${state.mana.maxMana}", TcgColors.Mana)
+                Spacer(Modifier.width(6.dp))
+                Pill(
+                    if (state.pairUltimateUsedThisBattle) "전투당 1회 사용" else "발동 가능",
+                    if (state.pairUltimateUsedThisBattle) TcgColors.Muted else TcgColors.Gold
+                )
+            }
+            Text(
+                when {
+                    state.pairUltimateUsedThisBattle ->
+                        "이번 전투에서는 이미 페어 오의를 발동했습니다. 새 원정을 시작하면 다시 열립니다."
+                    state.aliveSurvivorCount < TcgGameState.PAIR_ULTIMATE_SURVIVORS ->
+                        "생존한 아군이 ${TcgGameState.PAIR_ULTIMATE_SURVIVORS}명 이상이어야 페어 오의가 성립합니다. " +
+                                "(현재 ${state.aliveSurvivorCount}명 · 재획득·재투입으로 전열을 복구하세요.)"
+                    state.mana.currentMana < TcgGameState.PAIR_ULTIMATE_MANA ->
+                        "마나 ${TcgGameState.PAIR_ULTIMATE_MANA}이 필요합니다. (현재 ${state.mana.currentMana}) — '턴 진행'으로 마나를 회복하세요."
+                    else -> "조건 충족 — 황금·네온 컷인과 함께 전열 아군의 합격 오의가 발동합니다. " +
+                            "(생존 3인 이상 시 배율 추가)"
+                },
+                color = if (state.canActivatePairUltimate) TcgColors.Gold else TcgColors.Muted,
+                fontSize = 10.sp,
+                lineHeight = 15.sp
+            )
+            ActionTile(
+                label = "⚡ 페어 얼티밋 오의 발동",
+                hint = "마나 ${TcgGameState.PAIR_ULTIMATE_MANA} 소모 · 전투당 1회 · 황금/네온 컷인 연출",
+                accent = TcgColors.Gold,
+                enabled = state.canActivatePairUltimate && state.enemyHp > 0,
+                onClick = onPairUltimate
+            )
         }
 
         // ── 전열 3 ──
