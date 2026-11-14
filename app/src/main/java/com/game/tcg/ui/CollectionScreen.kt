@@ -42,47 +42,44 @@ fun CollectionScreen(
     onLimitBreak: () -> Unit,
     onCraftNew: () -> Unit
 ) {
-    val selected: TcgCard? = state.ownedCards.firstOrNull { it.id == state.selectedCardId }
+    val selected: TcgCard = state.ownedCards.firstOrNull { it.id == state.selectedCardId }
+        ?: TcgGameViewModel.characterCard(state.selectedCardId)
+    val isOwned = state.ownedCards.any { it.id == state.selectedCardId }
     val profile = TcgGameViewModel.profiles().firstOrNull { it.cardId == state.selectedCardId }
     val isDemonLordCard = state.selectedCardId == 112
 
     ScreenFrame {
         // ── 카드 선택 ──
-        SectionCard(title = "보유 카드", badge = "${state.ownedCards.size}장", accent = TcgColors.Violet) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                state.ownedCards.forEach { card ->
-                    ChipButton(
-                        label = "#${card.id} ${card.name.take(4)}",
-                        selected = card.id == state.selectedCardId,
-                        accent = elementColor(card.element),
-                        onClick = { onSelectCard(card.id) }
-                    )
+        SectionCard(title = "도감 카드", badge = "보유 ${state.ownedCards.size}/4", accent = TcgColors.Violet) {
+            TcgGameViewModel.profiles().chunked(2).forEach { rowItems ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    rowItems.forEach { profileItem ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            ChipButton(
+                                label = "#${profileItem.cardId} ${profileItem.displayName}",
+                                selected = profileItem.cardId == state.selectedCardId,
+                                accent = elementColor(profileItem.element),
+                                onClick = { onSelectCard(profileItem.cardId) }
+                            )
+                        }
+                    }
+                    if (rowItems.size == 1) {
+                        Spacer(Modifier.weight(1f))
+                    }
                 }
             }
             Text(
-                "도감 번호를 누르면 카드 상세와 3단 비주얼이 열립니다. (1캐릭터 = 1장 유일성)",
+                "도감 번호를 누르면 카드 상세와 3단 비주얼이 열립니다. (1캐릭터 = 1장 유일성)" +
+                        " 자물쇠 표시는 아직 계약하지 않은 카드입니다.",
                 color = TcgColors.Muted,
                 fontSize = 9.sp
             )
         }
 
-        if (selected == null) {
-            SectionCard(title = "카드 없음", accent = TcgColors.Muted) {
-                Text(
-                    "선택한 카드를 보유하고 있지 않습니다. 전투에서 상실했거나 아직 계약하지 않았습니다. " +
-                            "이계 전투 탭의 재획득, 또는 신규 연성으로 계약하세요.",
-                    color = TcgColors.Muted,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp
-                )
-            }
-            return@ScreenFrame
-        }
-
         // ── 3단 비주얼 + 카드 상세 ──
         SectionCard(
             title = "${selected.name}",
-            badge = "${selected.starLevel}★",
+            badge = if (isOwned) "${selected.starLevel}★" else "미계약",
             accent = elementColor(selected.element)
         ) {
             Box(
@@ -132,13 +129,13 @@ fun CollectionScreen(
 
             // 3단 비주얼 전환
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ChipButton("① 전투 TCG 아머", state.selectedVisual == VisualState.BATTLE) {
+                ChipButton("① 전투", state.selectedVisual == VisualState.BATTLE) {
                     onSelectVisual(VisualState.BATTLE)
                 }
-                ChipButton("② 일상 사복", state.selectedVisual == VisualState.CASUAL_CUTE, TcgColors.Heal) {
+                ChipButton("② 일상", state.selectedVisual == VisualState.CASUAL_CUTE, TcgColors.Heal) {
                     onSelectVisual(VisualState.CASUAL_CUTE)
                 }
-                ChipButton("③ 데이트 룩", state.selectedVisual == VisualState.ROMANTIC_DATE, TcgColors.Gold) {
+                ChipButton("③ 데이트", state.selectedVisual == VisualState.ROMANTIC_DATE, TcgColors.Gold) {
                     onSelectVisual(VisualState.ROMANTIC_DATE)
                 }
             }
@@ -150,6 +147,15 @@ fun CollectionScreen(
                 StatColumn("호감도", "${selected.bondLevel}", TcgColors.Heal)
             }
             Text("스킬 · ${selected.skillText}", color = TcgColors.Text.copy(alpha = 0.85f), fontSize = 11.sp, lineHeight = 16.sp)
+            if (!isOwned) {
+                Text(
+                    "아직 계약하지 않은 카드입니다. 도감 열람과 3단 비주얼 감상은 가능하며, " +
+                            "계약은 2웨이 합성의 '신규 연성'에서 할 수 있습니다.",
+                    color = TcgColors.Muted,
+                    fontSize = 9.sp,
+                    lineHeight = 14.sp
+                )
+            }
             if (isDemonLordCard && state.isDemonLordBattle && state.enemyHp == 0) {
                 Pill(
                     if (profile?.disguiseName != null) "서약 파트너 합류 (위장 신분 '${profile.disguiseName}' → 마왕 릴리스)" else "서약 파트너",
@@ -262,7 +268,7 @@ fun CollectionScreen(
                             label = "돌파 실행",
                             hint = "대상 ${selected.name.take(6)}",
                             accent = TcgColors.Violet,
-                            enabled = selected.starLevel < 5,
+                            enabled = isOwned && selected.starLevel < 5,
                             onClick = onLimitBreak
                         )
                     }

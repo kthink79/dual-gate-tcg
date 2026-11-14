@@ -115,7 +115,7 @@ fun RealWorldScreen(
                 onClick = { onInteract(RealWorldActivity.CASUAL_CAFE_WALK) }
             )
             ActionTile(
-                label = "🗣 짧은 일상 대화",
+                label = "🗣 전술 훈련 동행 · 짧은 대화",
                 hint = "호감도 +5",
                 accent = TcgColors.Mana,
                 onClick = { onInteract(RealWorldActivity.DAILY_GREETING) }
