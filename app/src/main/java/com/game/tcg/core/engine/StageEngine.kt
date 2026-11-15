@@ -60,13 +60,19 @@ object StageEngine {
         return next
     }
 
-    /** 전투력 대비 난이도 */
+    /**
+     * 전투력 대비 난이도.
+     *
+     * 권장 전투력은 "그 스테이지를 무리 없이 넘기는 덱" 기준이라, 실제 전투에서는
+     * 0.75배(권장의 3/4)만 되어도 호각으로 싸울 수 있다. (실측: 30스테이지 권장 230,000 대비
+     * 150,000 덱으로 클리어, 대신 카드 2~3장 영구 상실)
+     */
     fun readiness(deckPower: Int, stage: StageDefinition): StageReadiness {
         val ratio = deckPower.toDouble() / stage.recommendedPower
         return when {
-            ratio >= 1.25 -> StageReadiness.EASY
-            ratio >= 1.00 -> StageReadiness.EVEN
-            ratio >= 0.80 -> StageReadiness.HARD
+            ratio >= 1.15 -> StageReadiness.EASY
+            ratio >= 0.75 -> StageReadiness.EVEN
+            ratio >= 0.55 -> StageReadiness.HARD
             else -> StageReadiness.LETHAL
         }
     }
@@ -82,11 +88,11 @@ object StageEngine {
     fun estimatedWinChance(deckPower: Int, stage: StageDefinition): Int {
         val ratio = deckPower.toDouble() / stage.recommendedPower
         val chance = when {
-            ratio >= 1.40 -> 95.0
-            ratio >= 1.10 -> 80.0 + (ratio - 1.10) / 0.30 * 15.0
-            ratio >= 0.90 -> 50.0 + (ratio - 0.90) / 0.20 * 30.0
-            ratio >= 0.70 -> 20.0 + (ratio - 0.70) / 0.20 * 30.0
-            else -> 20.0 * (ratio / 0.70)
+            ratio >= 1.20 -> 95.0
+            ratio >= 1.00 -> 75.0 + (ratio - 1.00) / 0.20 * 20.0
+            ratio >= 0.75 -> 60.0 + (ratio - 0.75) / 0.25 * 15.0
+            ratio >= 0.50 -> 35.0 + (ratio - 0.50) / 0.25 * 25.0
+            else -> 35.0 * (ratio / 0.50)
         }.coerceIn(2.0, 99.0)
         return chance.toInt()
     }

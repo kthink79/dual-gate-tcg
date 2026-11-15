@@ -736,7 +736,7 @@ class GameProgressionTest {
     @Test
     fun `난이도와 예상 승률은 덱 전투력을 반영한다`() {
         val stage = StageCatalog.require(10)
-        val weak = StageEngine.readiness(stage.recommendedPower / 2, stage)
+        val weak = StageEngine.readiness(stage.recommendedPower / 3, stage)
         val even = StageEngine.readiness(stage.recommendedPower, stage)
         val strong = StageEngine.readiness(stage.recommendedPower * 2, stage)
 
@@ -744,8 +744,8 @@ class GameProgressionTest {
         assertEquals(StageReadiness.EVEN, even)
         assertEquals(StageReadiness.EASY, strong)
         assertTrue(StageEngine.estimatedWinChance(stage.recommendedPower * 2, stage) >
-            StageEngine.estimatedWinChance(stage.recommendedPower / 2, stage))
-        assertEquals("권장치와 같으면 50% 이상", true, StageEngine.estimatedWinChance(stage.recommendedPower, stage) >= 50)
+            StageEngine.estimatedWinChance(stage.recommendedPower / 3, stage))
+        assertEquals("권장치와 같으면 75% 이상", true, StageEngine.estimatedWinChance(stage.recommendedPower, stage) >= 75)
         assertEquals(100, StageEngine.powerRatio(stage.recommendedPower, stage))
     }
 
@@ -763,6 +763,65 @@ class GameProgressionTest {
         assertTrue("덱 전투력 상승 ($start → $after)", after > start)
         assertEquals("덱 전투력 = 장착 카드 ATK+DEF 합", vm.uiState.value.equippedCards.sumOf { it.atk + it.def }, after)
         assertEquals("덱 전투력 표시값은 /100", after / 100, vm.uiState.value.deckDisplayPower)
+    }
+
+    @Test
+    fun `사망한 카드의 장비는 소지품으로 회수된다`() {
+        val vm = TcgGameViewModel(
+            random = Random(5),
+            initialOwnedCardIds = listOf(3, 1, 2),
+            initialGold = 2000,
+            initialEquipmentIds = listOf("weapon_silver_blade")
+        )
+        val weapon = vm.uiState.value.equipment.single()
+        vm.equipItem(weapon.uid, 3)
+        assertEquals(3, vm.uiState.value.equipment.single().equippedTo)
+
+        vm.startDemonLordBattle()
+        var guard = 0
+        while (vm.uiState.value.reincarnationPool.none { it.templateId == 3 } && guard < 20) {
+            vm.nextTurn()
+            guard++
+        }
+
+        assertTrue("아우렐리아 상실", vm.uiState.value.reincarnationPool.any { it.templateId == 3 })
+        assertNull("장비는 회수된다", vm.uiState.value.equipment.single().equippedTo)
+
+        vm.reacquire(3)
+        val reborn = vm.uiState.value.ownedCards.first { it.id == 3 }
+        assertEquals("재획득 카드는 초기 스탯", TcgGameViewModel.characterCard(3).atk, reborn.atk)
+        assertEquals("장비 HP 보너스가 남지 않는다", 0, EquipmentEngine.hpBonus(3, vm.uiState.value.equipment))
+    }
+
+    @Test
+    fun `캠페인 1~30 스테이지를 덱 성장과 함께 완주할 수 있다`() {
+        val vm = TcgGameViewModel(random = Random(1))
+        var stage = 1
+        var guard = 0
+
+        while (stage <= 30 && guard < 60) {
+            guard++
+            // 플레이어처럼: 자동 편성 → 카드팩 → 조각 강화
+            vm.autoEquipParty()
+            val s = vm.uiState.value
+            val upgradable = s.ownedCards.firstOrNull { it.upgradeLevel < 9 && s.shards.of(it.id) >= 20 }
+            if (upgradable != null) repeat(3) { vm.upgradeCard(upgradable.id) }
+            if (vm.canBuyPack("pack_premium")) vm.openPack("pack_premium")
+            else if (vm.canBuyPack("pack_standard")) vm.openPack("pack_standard")
+
+            if (!vm.startStageBattle(stage)) break
+            fightToVictory(vm)
+            if (stage in vm.uiState.value.stageCleared) stage++ else guard += 5
+        }
+
+        val state = vm.uiState.value
+        assertEquals("30스테이지 전부 클리어", 30, state.stageCleared.size)
+        assertEquals(1, state.stageCleared.min())
+        assertEquals(30, state.stageCleared.max())
+        assertTrue("카드팩으로 덱이 자랐다", state.ownedCards.size > 3)
+        assertTrue("덱 전투력이 시작(약 2만)보다 훨씬 강해졌다", state.deckTotalPower > 100000)
+        assertTrue("최종 관문 보상 확인", state.lastStageOutcome != null)
+        assertEquals(114, state.lastStageOutcome!!.stage.bossId)
     }
 
     @Test
