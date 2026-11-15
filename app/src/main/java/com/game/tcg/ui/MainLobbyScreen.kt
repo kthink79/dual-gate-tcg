@@ -42,6 +42,8 @@ import com.game.tcg.core.model.VisualState
 @Composable
 fun MainLobbyScreen(
     state: TcgGameState,
+    audioManager: com.game.tcg.audio.AudioManager? = null,
+    audioSettings: com.game.tcg.audio.AudioSettings? = null,
     onOpenScreen: (LobbyDestination) -> Unit,
     onSelectHero: (Int) -> Unit,
     onCycleHero: (Int) -> Unit,
@@ -95,6 +97,11 @@ fun MainLobbyScreen(
                 Spacer(Modifier.width(5.dp))
                 Pill(state.storyProgressLabel, TcgColors.Muted)
                 Spacer(Modifier.weight(1f))
+                // 🔊/🔇 BGM · SFX 토글 (로비 상단 우측)
+                if (audioManager != null && audioSettings != null) {
+                    AudioToggleRowInline(audioManager, audioSettings)
+                    Spacer(Modifier.width(6.dp))
+                }
                 Pill(
                     if (state.combatPenalty.totalStacks > 0) "[홀림] ${state.combatPenalty.totalStacks}" else "정신 맑음",
                     if (state.combatPenalty.totalStacks > 0) TcgColors.Danger else TcgColors.Heal
@@ -323,5 +330,45 @@ private fun HeroCycleButton(label: String, onClick: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Text(label, color = TcgColors.Violet, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/**
+ * 로비 상단의 🔊/🔇 BGM·SFX 토글 (MainActivity 의 AudioToggleRow 와 같은 동작).
+ * MainActivity 패키지 순환 참조를 피하기 위해 여기서 가볍게 다시 그린다.
+ */
+@Composable
+private fun AudioToggleRowInline(
+    audio: com.game.tcg.audio.AudioManager,
+    settings: com.game.tcg.audio.AudioSettings
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        ToggleChip(
+            label = if (settings.bgmEnabled) "🔊 BGM" else "🔇 BGM",
+            active = settings.bgmEnabled
+        ) { audio.toggleBgm() }
+        Spacer(Modifier.width(4.dp))
+        ToggleChip(
+            label = if (settings.sfxEnabled) "🔊 SFX" else "🔇 SFX",
+            active = settings.sfxEnabled
+        ) {
+            val wasOff = !settings.sfxEnabled
+            audio.toggleSfx()
+            if (wasOff) audio.click()
+        }
+    }
+}
+
+@Composable
+private fun ToggleChip(label: String, active: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (active) TcgColors.Violet.copy(alpha = 0.18f) else TcgColors.SurfaceAlt.copy(alpha = 0.9f))
+            .border(1.dp, if (active) TcgColors.Violet.copy(alpha = 0.6f) else TcgColors.Line, RoundedCornerShape(50))
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    ) {
+        Text(label, color = if (active) TcgColors.Violet else TcgColors.Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
     }
 }

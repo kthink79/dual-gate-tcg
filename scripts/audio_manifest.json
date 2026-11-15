@@ -1,0 +1,83 @@
+[
+  {
+    "name": "sfx_click",
+    "file": "sfx_click.ogg",
+    "seconds": 0.06,
+    "kbytes": 5.2,
+    "kbps": 655.3,
+    "verified_from_file": true,
+    "peak": 0.6818
+  },
+  {
+    "name": "sfx_attack",
+    "file": "sfx_attack.ogg",
+    "seconds": 0.26,
+    "kbytes": 9.5,
+    "kbps": 299.9,
+    "verified_from_file": true,
+    "peak": 0.8926
+  },
+  {
+    "name": "sfx_skill",
+    "file": "sfx_skill.ogg",
+    "seconds": 0.95,
+    "kbytes": 26.7,
+    "kbps": 230.1,
+    "verified_from_file": true,
+    "peak": 0.9165
+  },
+  {
+    "name": "sfx_hit",
+    "file": "sfx_hit.ogg",
+    "seconds": 0.2,
+    "kbytes": 6.8,
+    "kbps": 280.4,
+    "verified_from_file": true,
+    "peak": 0.8521
+  },
+  {
+    "name": "sfx_summon",
+    "file": "sfx_summon.ogg",
+    "seconds": 1.35,
+    "kbytes": 33.2,
+    "kbps": 201.4,
+    "verified_from_file": true,
+    "peak": 0.9071
+  },
+  {
+    "name": "sfx_pack_open",
+    "file": "sfx_pack_open.ogg",
+    "seconds": 1.2,
+    "kbytes": 27.7,
+    "kbps": 189.1,
+    "verified_from_file": true,
+    "peak": 0.9078
+  },
+  {
+    "name": "sfx_upgrade",
+    "file": "sfx_upgrade.ogg",
+    "seconds": 0.7,
+    "kbytes": 13.0,
+    "kbps": 152.4,
+    "verified_from_file": true,
+    "peak": 0.8695
+  },
+  {
+    "name": "sfx_victory",
+    "file": "sfx_victory.ogg",
+    "seconds": 1.9,
+    "kbytes": 41.4,
+    "kbps": 178.4,
+    "verified_from_file": true,
+    "peak": 0.9026
+  },
+  {
+    "name": "sfx_defeat",
+    "file": "sfx_defeat.ogg",
+    "seconds": 2.0,
+    "kbytes": 25.9,
+    "kbps": 105.9,
+    "verified_from_file": true,
+    "peak": 0.825
+  }
+]

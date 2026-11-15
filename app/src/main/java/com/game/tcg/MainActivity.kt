@@ -37,6 +37,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.game.tcg.core.engine.IntroStoryEngine
+import com.game.tcg.audio.AudioManager
+import com.game.tcg.audio.ApplyBgmScene
+import com.game.tcg.audio.AudioScene
+import com.game.tcg.audio.SfxEffect
+import com.game.tcg.audio.rememberAudioManager
 import com.game.tcg.ui.BattleScreen
 import com.game.tcg.ui.CollectionScreen
 import com.game.tcg.ui.DeckBuilderScreen
@@ -94,6 +99,12 @@ fun TcgApp(viewModel: TcgGameViewModel) {
     val isIntroPlaying = state.isIntroPlaying
     val context = LocalContext.current
 
+    // ── 오디오: BGM 루프 재생기 + 생명주기 연동 + SFX 퍼사드 ──
+    val audio = rememberAudioManager()
+
+    // 화면 상태 → BGM 장면 (인트로 / 로비계 / 일반 전투 / 보스전)
+    ApplyBgmScene(audio, viewModel.audioSceneOf(state))
+
     // 인트로를 끝까지 보거나 SKIP 했다면 다음 실행부터는 재생하지 않는다.
     LaunchedEffect(state.introStory.hasSeenIntro) {
         if (state.introStory.hasSeenIntro) {
@@ -106,6 +117,7 @@ fun TcgApp(viewModel: TcgGameViewModel) {
 
     // Android 시스템 뒤로가기 → 인트로 중이면 SKIP, 그 외에는 메인 로비
     BackHandler(enabled = isIntroPlaying || screen != LobbyDestination.LOBBY) {
+        audio.click()
         if (isIntroPlaying) viewModel.skipIntro() else viewModel.backToLobby()
     }
 
@@ -128,7 +140,9 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                         screen = screen,
                         gold = state.gold,
                         gems = state.gems,
-                        onBack = { viewModel.backToLobby() }
+                        audio = audio,
+                        audioSettings = state.audioSettings,
+                        onBack = { audio.click(); viewModel.backToLobby() }
                     )
                 }
 
@@ -136,11 +150,13 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                     when (screen) {
                         LobbyDestination.LOBBY -> MainLobbyScreen(
                             state = state,
-                            onOpenScreen = { destination -> viewModel.openScreen(destination) },
-                            onSelectHero = { id -> viewModel.selectLobbyHero(id) },
-                            onCycleHero = { direction -> viewModel.cycleLobbyHero(direction) },
-                            onSelectVisual = { visual -> viewModel.selectLobbyVisual(visual) },
-                            onReplayIntro = { viewModel.replayIntro() }
+                            audioManager = audio,
+                            audioSettings = state.audioSettings,
+                            onOpenScreen = { destination -> audio.click(); viewModel.openScreen(destination) },
+                            onSelectHero = { id -> audio.click(); viewModel.selectLobbyHero(id) },
+                            onCycleHero = { direction -> audio.click(); viewModel.cycleLobbyHero(direction) },
+                            onSelectVisual = { visual -> audio.click(); viewModel.selectLobbyVisual(visual) },
+                            onReplayIntro = { audio.click(); viewModel.replayIntro() }
                         )
                         LobbyDestination.SCENARIO -> ScenarioScreen(
                             state = state,
@@ -251,19 +267,24 @@ fun TcgApp(viewModel: TcgGameViewModel) {
         ) {
             IntroStoryScreen(
                 state = state.introStory,
-                onNext = { viewModel.advanceIntro() },
-                onSkip = { viewModel.skipIntro() }
+                onNext = { audio.click(); viewModel.advanceIntro() },
+                onSkip = { audio.click(); viewModel.skipIntro() }
             )
         }
+
+        // ── 결과성 SFX — 상태 변화를 감지해 튼다 (공격·피격·개봉·강화·소환·승패) ──
+        GameAudioEffects(state = state, audio = audio)
     }
 }
 
-/** 기능 화면 상단 바 — 「← 메인 로비」 복귀 버튼 + 화면 이름 + 재화 */
+/** 기능 화면 상단 바 — 「← 메인 로비」 복귀 버튼 + 화면 이름 + 재화 + 🔊 오디오 토글 */
 @Composable
 private fun LobbyBackBar(
     screen: LobbyDestination,
     gold: Int,
     gems: Int,
+    audio: AudioManager,
+    audioSettings: com.game.tcg.audio.AudioSettings,
     onBack: () -> Unit
 ) {
     Row(
@@ -294,6 +315,9 @@ private fun LobbyBackBar(
             )
             Text(screen.tagline, color = TcgColors.Muted, fontSize = 9.sp)
         }
+        Spacer(Modifier.width(5.dp))
+        AudioToggleRow(audio = audio, settings = audioSettings)
+        Spacer(Modifier.width(6.dp))
         Pill("${gold}G", TcgColors.Gold)
         Spacer(Modifier.width(5.dp))
         Pill("${gems}💎", TcgColors.Mana)
@@ -318,5 +342,113 @@ private fun TcgStatusBar(message: String) {
             lineHeight = 13.sp,
             modifier = Modifier.weight(1f)
         )
+    }
+}
+
+/**
+ * 🔊/🔇 BGM·SFX 토글 행 — 로비 상단 바와 메인 로비 상단 스트립에서 쓴다.
+ * 각 토글은 즉시 적용되고(SharedPreferences 저장), BGM 토글을 끄면 현재 곡이 멈춘다.
+ */
+@Composable
+fun AudioToggleRow(
+    audio: AudioManager,
+    settings: com.game.tcg.audio.AudioSettings,
+    compact: Boolean = true
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        AudioToggleButton(
+            label = if (settings.bgmEnabled) "🔊BGM" else "🔇BGM",
+            enabled = settings.bgmEnabled,
+            onClick = { audio.toggleBgm() }
+        )
+        Spacer(Modifier.width(4.dp))
+        AudioToggleButton(
+            label = if (settings.sfxEnabled) "🔊SFX" else "🔇SFX",
+            enabled = settings.sfxEnabled,
+            onClick = {
+                audio.toggleSfx()
+                // 켜는 순간 클릭음으로 바로 확인시켜 준다
+                if (!settings.sfxEnabled) audio.click()
+            }
+        )
+    }
+}
+
+@Composable
+private fun AudioToggleButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(
+                if (enabled) TcgColors.Violet.copy(alpha = 0.18f)
+                else TcgColors.SurfaceAlt.copy(alpha = 0.9f)
+            )
+            .border(
+                1.dp,
+                if (enabled) TcgColors.Violet.copy(alpha = 0.6f) else TcgColors.Line,
+                RoundedCornerShape(50)
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 7.dp, vertical = 3.dp)
+    ) {
+        Text(
+            label,
+            color = if (enabled) TcgColors.Violet else TcgColors.Muted,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+/**
+ * 결과성 SFX — ViewModel 상태의 변화 "틱"을 감지해 효과음을 튼다.
+ * (공격/피격은 버튼 시점 재생이 아니라 실제 데미지가 발생했을 때 울리도록 틱으로 감지)
+ */
+@Composable
+fun GameAudioEffects(state: com.game.tcg.ui.TcgGameState, audio: AudioManager) {
+    // 적 타격 성공 (공격 데미지 발생)
+    androidx.compose.runtime.remember(state.lastEnemyHitTick) {
+        if (state.lastEnemyHitTick > 0) audio.attack()
+        state.lastEnemyHitTick
+    }
+    // 아군 피격 (적 반격 데미지 발생)
+    androidx.compose.runtime.remember(state.lastAllyHitTick) {
+        if (state.lastAllyHitTick > 0) audio.hit()
+        state.lastAllyHitTick
+    }
+    // 카드팩 개봉 결과
+    androidx.compose.runtime.remember(state.lastPackOpen) {
+        if (state.lastPackOpen != null) audio.packOpen()
+        state.lastPackOpen
+    }
+    // 강화·연성·초월·장비 성공 (growthMessage 가 바뀔 때)
+    androidx.compose.runtime.remember(state.growthMessage) {
+        if (state.growthMessage != null) audio.upgrade()
+        state.growthMessage
+    }
+    // 현실 소환 성공
+    androidx.compose.runtime.remember(state.lastSummon) {
+        if (state.lastSummon != null) audio.summon()
+        state.lastSummon
+    }
+    // 페어 얼티밋 오의 컷인
+    androidx.compose.runtime.remember(state.pairUltimateBanner) {
+        if (state.pairUltimateBanner != null) audio.skill()
+        state.pairUltimateBanner
+    }
+    // 전투 승리 (전투 승리 문구가 새로 생겼을 때)
+    androidx.compose.runtime.remember(state.battleVictories) {
+        if (state.battleVictories > 0) audio.victory()
+        state.battleVictories
+    }
+    // 전투 패배 (생존 아군이 0이 되는 순간)
+    androidx.compose.runtime.remember(state.aliveSurvivorCount) {
+        if (state.enemyHp > 0 && state.aliveSurvivorCount == 0) audio.defeat()
+        state.aliveSurvivorCount
+    }
+    // 영구 상실 (소유 카드가 줄어드는 순간은 전투 내 패배 신호로도 쓴다)
+    androidx.compose.runtime.remember(state.reincarnationPool.size) {
+        if (state.reincarnationPool.isNotEmpty()) audio.hit()
+        state.reincarnationPool.size
     }
 }

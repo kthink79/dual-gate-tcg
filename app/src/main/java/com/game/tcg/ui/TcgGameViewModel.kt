@@ -62,6 +62,10 @@ import com.game.tcg.core.model.StageDefinition
 import com.game.tcg.core.model.StartingRoster
 import kotlin.random.Random
 import com.game.tcg.core.model.AcquisitionResult
+import com.game.tcg.audio.AudioScene
+import com.game.tcg.audio.AudioSceneMapper
+import com.game.tcg.audio.AudioSettings
+import com.game.tcg.audio.SfxEffect
 import com.game.tcg.core.model.BattleCardHp
 import com.game.tcg.core.model.BattleRetreatInfo
 import com.game.tcg.core.model.BattleSlot
@@ -434,7 +438,11 @@ data class TcgGameState(
     val gateEnergy: Int = TcgGameViewModel.GATE_ENERGY_START,
     val explorationCount: Int = 0,
     val lastExploration: ExplorationResult? = null,
-    val explorationLog: List<String> = listOf("[탐색] 차원 균열 지도가 펼쳐졌습니다. 세 갈래 길이 빛납니다.")
+    val explorationLog: List<String> = listOf("[탐색] 차원 균열 지도가 펼쳐졌습니다. 세 갈래 길이 빛납니다."),
+    // ── 오디오 (BGM·SFX 설정 — 화면의 🔊/🔇 토글이 바꾼다) ──
+    val audioSettings: AudioSettings = AudioSettings(),
+    /** 이 상태에서 흘러야 할 BGM 장면 (전투 개시·정산 때 지정, 기본은 로비) */
+    val audioScene: AudioScene = AudioScene.LOBBY
 ) {
     /** 생존 아군 수 (오의 조건 판정용) */
     val aliveSurvivorCount: Int get() = party.count { it.isAlive }
@@ -673,6 +681,38 @@ class TcgGameViewModel(
     }
 
     // ──────────────────────────────────────────────────────────────
+    // 오디오 — 상태 유도 BGM 장면 · 액션별 SFX 이벤트 (Compose 레이어가 구독)
+    // ──────────────────────────────────────────────────────────────
+
+    /** BGM·SFX 토글/볼륨 변경 (화면 상단 오디오 패널에서 호출) */
+    fun updateAudioSettings(transform: (AudioSettings) -> AudioSettings) {
+        _uiState.update { s ->
+            s.copy(audioSettings = transform(s.audioSettings).sanitized())
+        }
+    }
+
+    /** 현재 상태에 대응하는 BGM 장면 (전투 · 보스 · 인트로 · 로비) */
+    fun audioSceneOf(s: TcgGameState = _uiState.value): AudioScene {
+        // 이미 저장된 장면(전투 개시 시 지정)을 우선하고, 인트로만 실시간으로 덮어쓴다.
+        val stored = s.audioScene
+        if (s.isIntroPlaying) return AudioScene.INTRO
+        // 전투가 끝나면(승리 정산에서 LOBBY 로 재지정) 저장 장면을 따른다.
+        return when (stored) {
+            AudioScene.BATTLE, AudioScene.BOSS, AudioScene.INTRO, AudioScene.LOBBY -> stored
+            AudioScene.NONE -> AudioSceneMapper.of(
+                isIntroPlaying = s.isIntroPlaying,
+                screen = s.currentScreen,
+                isBossBattle = s.isDemonLordBattle || s.isChapter2BossBattle || isActiveStageBoss(s)
+            )
+        }
+    }
+
+    private fun isActiveStageBoss(s: TcgGameState): Boolean {
+        val stage = s.activeStage?.let { com.game.tcg.core.model.StageCatalog.find(it) } ?: return false
+        return stage.isBoss
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // 메인 로비 — 대표 캐릭터 · 좌·우측 서브메뉴 · 화면 전환
     // ──────────────────────────────────────────────────────────────
 
@@ -707,6 +747,7 @@ class TcgGameViewModel(
         if (next.isPlaying) {
             return s.copy(
                 introStory = next,
+                audioScene = AudioScene.INTRO,
                 statusMessage = "[도입부] ${next.scene.act} · ${next.scene.title}"
             )
         }
@@ -719,6 +760,7 @@ class TcgGameViewModel(
         return s.copy(
             currentScreen = LobbyDestination.LOBBY,
             introStory = next,
+            audioScene = AudioScene.LOBBY,
             statusMessage = message
         )
     }
@@ -728,6 +770,7 @@ class TcgGameViewModel(
         _uiState.update { s ->
             s.copy(
                 currentScreen = destination,
+                audioScene = audioSceneOf(s.copy(currentScreen = destination)),
                 statusMessage = if (destination == LobbyDestination.LOBBY) {
                     "[메인 로비] ${s.lobbyHeroProfile?.displayName ?: s.lobbyHero.name}이(가) 당신을 맞이합니다."
                 } else {
@@ -742,6 +785,7 @@ class TcgGameViewModel(
         _uiState.update { s ->
             s.copy(
                 currentScreen = LobbyDestination.LOBBY,
+                audioScene = AudioScene.LOBBY,
                 statusMessage = "[메인 로비] ${s.lobbyHeroProfile?.displayName ?: s.lobbyHero.name}이(가) 기다리고 있었습니다."
             )
         }
@@ -1113,6 +1157,7 @@ class TcgGameViewModel(
                 pairUltimateBanner = null,
                 pairUltimateBannerSubtitle = null,
                 isChapter2BossBattle = false,
+                audioScene = AudioScene.BOSS,
                 pendingLootGold = 2500,
                 pendingLootGems = 30,
                 battleLog = s.battleLog + listOf(
@@ -1142,6 +1187,7 @@ class TcgGameViewModel(
                 pairUltimateBanner = null,
                 pairUltimateBannerSubtitle = null,
                 isChapter2BossBattle = false,
+                audioScene = AudioScene.BATTLE,
                 pendingLootGold = 300,
                 pendingLootGems = 5,
                 battleLog = s.battleLog + "[원정 개시] 차원 틈새의 마수 — HP 12000 / 공격력 900",
@@ -1255,6 +1301,7 @@ class TcgGameViewModel(
             summonBuffPercent = if (s.summonBuffBattles - 1 <= 0) 0 else s.summonBuffPercent,
             pairUltimateUsedThisBattle = false,
             frontRowDefensePenaltyPercent = 0,
+            audioScene = AudioScene.LOBBY,
             storyStepIndex = if (s.storyStepIndex <= 2) 3 else s.storyStepIndex,
             statusMessage = "[전투 승리] ${s.enemyName}을(를) 쓰러뜨렸습니다. 획득 금화 ${rewardGold}G." +
                     levelLineFor(s.playerExp, PlayerProgress.EXP_BATTLE_VICTORY)
@@ -1733,6 +1780,11 @@ class TcgGameViewModel(
                 )
             }
             started = true
+            val bossScene = when (stage.bossKind) {
+                com.game.tcg.core.model.BossKind.MID_BOSS -> AudioScene.BOSS
+                com.game.tcg.core.model.BossKind.DEMON_LORD -> AudioScene.BOSS
+                else -> AudioScene.BATTLE
+            }
             val bossLine = when (stage.bossKind) {
                 com.game.tcg.core.model.BossKind.MID_BOSS -> " · 중간 보스 관문"
                 com.game.tcg.core.model.BossKind.DEMON_LORD -> " · 대마왕 관문"
@@ -1758,6 +1810,7 @@ class TcgGameViewModel(
                 pendingLootGold = 0,
                 pendingLootGems = 0,
                 currentScreen = LobbyDestination.BATTLE,
+                audioScene = bossScene,
                 stageMessage = "[스테이지 $number] ${stage.name} — ${stage.enemyName}",
                 battleLog = s.battleLog + listOf(
                     "[스테이지 $number] ${stage.chapter}장 ${stage.chapterName} · ${stage.name}$bossLine",
@@ -2443,6 +2496,7 @@ class TcgGameViewModel(
                 pairUltimateBannerSubtitle = null,
                 pendingLootGold = 1800,
                 pendingLootGems = 20,
+                audioScene = AudioScene.BOSS,
                 chapter2Message = "[${node.chapter}] ${node.title} — ${node.bossSkill}",
                 battleLog = s.battleLog + listOf(
                     "[전초전 개시] ${node.bossName} — HP ${node.bossHp} / 공격력 ${node.bossAtk}",
