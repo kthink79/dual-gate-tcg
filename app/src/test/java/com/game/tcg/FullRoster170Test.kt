@@ -5,6 +5,7 @@ import com.game.tcg.core.engine.ExplorationMode
 import com.game.tcg.core.engine.ExplorationRewardType
 import com.game.tcg.core.model.CardCatalog
 import com.game.tcg.core.model.Element
+import com.game.tcg.core.model.MidBossCatalog
 import com.game.tcg.core.model.VisualState
 import com.game.tcg.ui.CharacterArtRegistry
 import com.game.tcg.ui.TcgGameViewModel
@@ -16,13 +17,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 170명 전원 탑재 검증 (No.1~169 + No.184 = 170명 × 3단 비주얼 = JPG 510장).
+ * 176명 카드 자산 검증 — 플레이 가능 170명 + 중간 보스 6명(No.170~175).
  *
  * - 도감 카탈로그 170명 데이터(이름·칭호·ATK·DEF·속성·코스트·스킬) 완비
- * - 510장 리소스 매핑 누락 0건
- * - 로비 대표 캐릭터 순환 · 3단 비주얼 · 도감 필터 · 서약 덱 · 전투 편성 · 탐색 조우
+ * - 중간 보스 6명(170~175) 기록·아트(3페어 18장) 등록
+ * - 3단 비주얼 리소스 매핑 누락 0건 (176 × 3 = 528장)
+ * - 전체 로스터를 지정한 상태에서 로비 순환 · 도감 필터 · 서약 덱 · 전투 편성 · 탐색 조우
+ *
+ * (게임 시작은 2026-11-16 사용자 확정으로 **저코스트 3장**만 보유한다 —
+ *  시작 상태·진행 루프는 `GameProgressionTest`가 검증한다.)
  */
 class FullRoster170Test {
+
+    /** 도감 전체를 보유한 상태의 ViewModel — 로스터 전수 검증용 */
+    private fun fullRosterViewModel() = TcgGameViewModel(
+        initialOwnedCardIds = CardCatalog.ALL.map { it.id } + MidBossCatalog.ALL.map { it.id }
+    )
 
     // ──────────────────────────────────────────────────────────────
     // 1. 170명 데이터
@@ -35,8 +45,8 @@ class FullRoster170Test {
         assertEquals(170, CardCatalog.ALL.size)
         assertEquals(expected, CardCatalog.ALL.map { it.id })
         assertEquals(170, CardCatalog.ROSTER_SIZE)
-        assertEquals("삭제된 170~183번은 카탈로그에 남지 않는다", 0,
-            CardCatalog.ALL.count { it.id in 170..183 })
+        assertEquals("플레이 가능 로스터에 중간 보스는 없다", 0,
+            CardCatalog.ALL.count { it.isMidBoss })
     }
 
     @Test
@@ -64,7 +74,7 @@ class FullRoster170Test {
             Element.values().toSet(),
             all.map { it.element }.toSet()
         )
-        assertEquals("170명 전원 호감도 50으로 합류한다", 50, all.map { it.bondSeed }.toSet().single())
+        assertEquals("플레이 가능 170명은 호감도 50으로 합류한다", 50, all.map { it.bondSeed }.toSet().single())
     }
 
     @Test
@@ -79,7 +89,6 @@ class FullRoster170Test {
 
     @Test
     fun `배치별 대표 캐릭터가 소스 문서와 같은 이름 칭호로 등록되어 있다`() {
-        // 1~50 · 51~114 · 115~124 · 125~144 · 145~154 · 155~169 · 184 표본
         val samples = mapOf(
             1 to ("세라피엘" to "태양의 대천사"),
             3 to ("아우렐리아" to "천상의 성기사"),
@@ -114,94 +123,106 @@ class FullRoster170Test {
         assertTrue("마왕은 어둠 속성", CardCatalog.demonLords().all { it.element == Element.DARK })
     }
 
+    @Test
+    fun `중간 보스 6명이 170번부터 175번에 카탈로그와 아트로 등록되어 있다`() {
+        assertEquals(listOf(170, 171, 172, 173, 174, 175), MidBossCatalog.ALL.map { it.id })
+        assertEquals(listOf("로잘린드", "시그룬", "파필리아", "나이아드라", "솔라리아", "닉사리아"),
+            MidBossCatalog.ALL.map { it.name })
+        assertEquals(
+            listOf("심연의 진홍 장미", "천공의 백은 발키리", "영원의 나비 여왕",
+                "심해의 창해 마도사", "성휘의 태양 여사제", "칠흑 염검의 마룡 기사"),
+            MidBossCatalog.ALL.map { it.title }
+        )
+        assertEquals(
+            listOf(5600, 4200, 5000, 5200, 5300, 5800),
+            MidBossCatalog.ALL.map { it.atk }
+        )
+        assertEquals(
+            listOf(4400, 3600, 4600, 4800, 4700, 4300),
+            MidBossCatalog.ALL.map { it.def }
+        )
+        assertTrue("전원 중간 보스 플래그", MidBossCatalog.ALL.all { it.isMidBoss })
+        MidBossCatalog.ALL.forEach { boss ->
+            assertEquals("카탈로그 조회", boss, CardCatalog.find(boss.id))
+            assertTrue("#${boss.id} 아트 미등록", CharacterArtRegistry.hasArt(boss.id))
+            assertTrue("#${boss.id} 최대 HP는 DEF 기반보다 두껍다", boss.maxHp > boss.def)
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────
-    // 2. JPG 510장 리소스 매핑 누락 0건
+    // 2. 3단 비주얼 리소스 매핑 누락 0건 (176명 × 3 = 528장)
     // ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `170명의 3단 비주얼 510장이 모두 리소스로 연결되어 있다`() {
+    fun `176명의 3단 비주얼 528장이 모두 리소스로 연결되어 있다`() {
+        val allIds = CardCatalog.ALL.map { it.id } + MidBossCatalog.ALL.map { it.id }
         var mapped = 0
-        CardCatalog.ALL.forEach { record ->
-            assertTrue("#${record.id} 아트 미등록", CharacterArtRegistry.hasArt(record.id))
+        allIds.forEach { id ->
+            assertTrue("#$id 아트 미등록", CharacterArtRegistry.hasArt(id))
             VisualState.values().forEach { visual ->
-                val resId = CharacterArtRegistry.resId(record.id, visual)
-                assertNotNull("#${record.id} ${visual.name} 리소스 없음", resId)
-                assertTrue("#${record.id} ${visual.name} 리소스 id 0", (resId ?: 0) != 0)
+                val resId = CharacterArtRegistry.resId(id, visual)
+                assertNotNull("#$id ${visual.name} 리소스 없음", resId)
+                assertTrue("#$id ${visual.name} 리소스 id 0", (resId ?: 0) != 0)
                 mapped++
             }
         }
-        assertEquals("170명 × 3비주얼 = 510장", 510, mapped)
-        assertEquals(170, CharacterArtRegistry.registeredCardCount)
-        assertEquals(CardCatalog.ALL.map { it.id }.toSet(), CharacterArtRegistry.registeredCardIds)
+        assertEquals("176명 × 3비주얼 = 528장", 528, mapped)
+        assertEquals(176, CharacterArtRegistry.registeredCardCount)
+        assertEquals(allIds.toSet(), CharacterArtRegistry.registeredCardIds)
         assertNull("등록되지 않은 번호는 null", CharacterArtRegistry.resId(999, VisualState.BATTLE))
     }
 
     @Test
     fun `한 캐릭터의 세 비주얼은 서로 다른 리소스를 가리킨다`() {
-        CardCatalog.ALL.forEach { record ->
-            val ids = VisualState.values().map { CharacterArtRegistry.resId(record.id, it) }
-            assertEquals("#${record.id} 3단 비주얼이 모두 같은 그림이다", 3, ids.toSet().size)
+        val allIds = CardCatalog.ALL.map { it.id } + MidBossCatalog.ALL.map { it.id }
+        allIds.forEach { id ->
+            val ids = VisualState.values().map { CharacterArtRegistry.resId(id, it) }
+            assertEquals("#$id 3단 비주얼이 모두 같은 그림이다", 3, ids.toSet().size)
         }
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 3. 로비 · 도감 · 덱
+    // 3. 로비 · 도감 · 덱 (전체 로스터 지정 상태)
     // ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `게임을 시작하면 170명 전원을 보유하고 로비 로스터에 모두 오른다`() {
-        val state = TcgGameViewModel().uiState.value
+    fun `전체 로스터를 지정하면 176명이 보유 목록에 오른다`() {
+        val state = fullRosterViewModel().uiState.value
 
-        assertEquals(170, state.ownedCards.size)
-        assertEquals(170, state.lobbyRoster.size)
+        assertEquals(176, state.ownedCards.size)
+        assertEquals(176, state.lobbyRoster.size)
         assertEquals(state.ownedCards.map { it.id }.toSet(), state.lobbyRoster.toSet())
-        assertEquals("스타팅 3인방이 먼저 온다", listOf(3, 1, 2), state.lobbyRoster.take(3))
         assertEquals(170, TcgGameViewModel.profiles().size)
     }
 
     @Test
-    fun `로비 좌우 전환은 170명을 한 바퀴 순환한다`() {
-        val vm = TcgGameViewModel()
+    fun `로비 좌우 전환은 보유 캐릭터를 한 바퀴 순환한다`() {
+        val vm = fullRosterViewModel()
         val roster = vm.uiState.value.lobbyRoster
+        assertEquals(176, roster.size)
 
-        vm.cycleLobbyHero(1)
-        assertEquals(1, vm.uiState.value.lobbyHeroId)
-        vm.cycleLobbyHero(1)
-        assertEquals(2, vm.uiState.value.lobbyHeroId)
-        vm.cycleLobbyHero(1)
-        assertEquals("세 번째 다음은 4번", 4, vm.uiState.value.lobbyHeroId)
-
-        vm.selectLobbyHero(184)
-        vm.cycleLobbyHero(1)
-        assertEquals("마지막(184) 다음은 처음(3)", 3, vm.uiState.value.lobbyHeroId)
-        vm.cycleLobbyHero(-1)
-        assertEquals("역방향도 순환한다", 184, vm.uiState.value.lobbyHeroId)
-        assertEquals(170, roster.size)
-    }
-
-    @Test
-    fun `등록되지 않은 번호만 대표 캐릭터가 될 수 없다`() {
-        val vm = TcgGameViewModel()
-        vm.selectLobbyHero(112)
-        assertEquals("마왕 릴리스도 170명 로스터에 포함되어 대표가 될 수 있다", 112, vm.uiState.value.lobbyHeroId)
-
-        vm.selectLobbyHero(999)
-        assertEquals("미등록 번호는 거부된다", 112, vm.uiState.value.lobbyHeroId)
-        assertTrue(vm.uiState.value.statusMessage.contains("계약하지 않은"))
-    }
-
-    @Test
-    fun `170명 전원이 처음부터 3단 비주얼을 모두 열람할 수 있다`() {
-        val vm = TcgGameViewModel()
-
-        listOf(3, 1, 2, 1, 112, 155, 169, 184).forEach { id ->
-            vm.selectLobbyHero(id)
-            assertTrue("#$id 호감도 50 이상이어야 데이트 룩이 열린다", vm.uiState.value.isLobbyDateLookUnlocked)
-            vm.selectLobbyVisual(VisualState.ROMANTIC_DATE)
-            assertEquals("#$id 데이트 룩 전환", VisualState.ROMANTIC_DATE, vm.uiState.value.lobbyVisual)
-            vm.selectLobbyVisual(VisualState.CASUAL_CUTE)
-            assertEquals("#$id 일상 룩 전환", VisualState.CASUAL_CUTE, vm.uiState.value.lobbyVisual)
+        val startIndex = roster.indexOf(vm.uiState.value.lobbyHeroId)
+        roster.drop(startIndex + 1).forEach { expected ->
+            vm.cycleLobbyHero(1)
+            assertEquals(expected, vm.uiState.value.lobbyHeroId)
         }
+        vm.cycleLobbyHero(1)
+        assertEquals("마지막 다음은 처음으로 돌아온다", roster.first(), vm.uiState.value.lobbyHeroId)
+        vm.cycleLobbyHero(-1)
+        assertEquals("역방향도 순환한다", roster.last(), vm.uiState.value.lobbyHeroId)
+    }
+
+    @Test
+    fun `미보유 캐릭터는 대표가 될 수 없다`() {
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
+        val start = vm.uiState.value.lobbyHeroId
+        vm.selectLobbyHero(112)
+        assertEquals("미보유 마왕은 대표가 될 수 없다", start, vm.uiState.value.lobbyHeroId)
+        assertTrue(vm.uiState.value.statusMessage.contains("계약하지 않은"))
+
+        vm.selectLobbyHero(1)
+        assertEquals("보유 캐릭터는 대표가 된다", 1, vm.uiState.value.lobbyHeroId)
+        assertEquals("태양의 대천사", vm.uiState.value.lobbyHeroProfile?.title)
     }
 
     @Test
@@ -218,28 +239,30 @@ class FullRoster170Test {
     @Test
     fun `도감에서 어떤 카드를 골라도 상세와 전용 스킬이 보인다`() {
         val vm = TcgGameViewModel()
+        val unowned = vm.uiState.value.ownedCardIds
 
-        listOf(1, 65, 112, 144, 169, 184).forEach { id ->
+        listOf(1, 65, 112, 144, 169, 184).filter { it !in unowned }.forEach { id ->
             vm.selectCard(id)
             val state = vm.uiState.value
-            val card = state.ownedCards.first { it.id == id }
             val record = CardCatalog.require(id)
+            val card = TcgGameViewModel.characterCard(id)
 
             assertEquals("#$id 선택", id, state.selectedCardId)
             assertEquals(record.fullName, card.name)
             assertTrue("#$id 스킬", card.skillText.isNotBlank())
+            assertFalse("#$id 미보유", id in state.ownedCardIds)
             vm.selectVisual(VisualState.ROMANTIC_DATE)
             assertEquals(VisualState.ROMANTIC_DATE, vm.uiState.value.selectedVisual)
         }
     }
 
     @Test
-    fun `서약 덱은 170명 전원을 카드로 편성 목록에 올린다`() {
-        val state = TcgGameViewModel().uiState.value
+    fun `서약 덱은 보유한 170명을 카드로 편성 목록에 올린다`() {
+        val state = fullRosterViewModel().uiState.value
         val characters = state.ownedCards.filter { it.category.isCharacter }
 
-        assertEquals(170, characters.size)
-        assertEquals("1캐릭터 1장 유일 원칙", 170, characters.map { it.id }.toSet().size)
+        assertEquals(176, characters.size)
+        assertEquals("1캐릭터 1장 유일 원칙", 176, characters.map { it.id }.toSet().size)
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -248,13 +271,13 @@ class FullRoster170Test {
 
     @Test
     fun `어떤 캐릭터든 전열 후열 슬롯에 소환하면 전투 파티에 반영된다`() {
-        val vm = TcgGameViewModel()
+        val vm = fullRosterViewModel()
 
         vm.deployToParty(155, 0)
         val front = vm.uiState.value.party.first { it.slotIndex == 0 }
         assertEquals(155, front.card.id)
         assertTrue(front.isFrontRow)
-        assertEquals("3인 편성을 유지한 채 0번 슬롯만 교체된다", 3, vm.uiState.value.party.size)
+        assertEquals("시작 3인 편성을 유지한 채 0번 슬롯만 교체된다", 3, vm.uiState.value.party.size)
         assertEquals("전열 HP는 DEF 기반", (3400 * 0.85).toInt(), front.maxHp)
 
         vm.deployToParty(184, 4)
@@ -262,17 +285,16 @@ class FullRoster170Test {
         assertEquals(184, back.card.id)
         assertFalse(back.isFrontRow)
 
-        // 같은 캐릭터를 다른 슬롯에 다시 소환하면 이전 슬롯에서 빠진다
         vm.deployToParty(155, 2)
         assertEquals(1, vm.uiState.value.party.count { it.card.id == 155 })
         assertNull("0번 슬롯은 비워진다", vm.uiState.value.party.firstOrNull { it.slotIndex == 0 })
     }
 
     @Test
-    fun `170명 전원이 전장에 나가 싸울 수 있다`() {
+    fun `보유한 캐릭터는 모두 전장에 나가 싸울 수 있다`() {
         CardCatalog.ALL.forEach { record ->
             val id = record.id
-            val vm = TcgGameViewModel()
+            val vm = fullRosterViewModel()
             vm.deployToParty(id, 0)
             vm.startFieldBattle()
 
@@ -291,7 +313,7 @@ class FullRoster170Test {
 
     @Test
     fun `편성에서 뺀 캐릭터는 대기열로 이동한다`() {
-        val vm = TcgGameViewModel()
+        val vm = fullRosterViewModel()
         vm.deployToParty(161, 3)
         vm.undeployFromParty(161)
 
@@ -305,9 +327,12 @@ class FullRoster170Test {
     // ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `탐색 랜덤 조우는 170명 전원을 대상으로 한다`() {
+    fun `탐색 랜덤 조우는 보유 로스터 170명을 대상으로 한다`() {
         // 판정 64 → r<70 조우 분기, index = (탐색 횟수 0 + 64) % 170 = 64 → 카탈로그 65번
-        val vm = TcgGameViewModel(explorationEngine = ExplorationEngine { 64 })
+        val vm = TcgGameViewModel(
+            explorationEngine = ExplorationEngine { 64 },
+            initialOwnedCardIds = CardCatalog.ALL.map { it.id }
+        )
         val target = CardCatalog.ALL[64]
         val before = vm.uiState.value.ownedCards.first { it.id == target.id }.bondLevel
 
@@ -322,7 +347,6 @@ class FullRoster170Test {
 
     @Test
     fun `조우 연출은 170명 각각 다른 인연을 걸 수 있다`() {
-        // 탐색 횟수를 0~169로 돌리면 170명 전원이 한 번씩 조우 대상이 된다
         val encountered = (0..169).map { count ->
             ExplorationEngine { 64 }.explore(
                 ExplorationMode.ENCOUNTER,

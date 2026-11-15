@@ -21,18 +21,20 @@ data class CharacterRecord(
     val skill: String,
     val isDemonLord: Boolean = false,
     val disguiseName: String? = null, // 마왕의 일상 위장 신분 이름
-    val bondSeed: Int = 0             // 합류 시점 호감도
+    val bondSeed: Int = 0,            // 합류 시점 호감도
+    val isMidBoss: Boolean = false    // 중간 보스(No.170~175) — 적 전용, 클리어 후 연성 가능
 ) {
     /** 카드 전면에 쓰는 전체 이름 */
     val fullName: String get() = "$title $name"
 
     /** 전장 최대 HP — DEF 기반 (기존 카드 값 6000/4200/5200/7000과 같은 계수) */
     val maxHp: Int
-        get() = when (id) {
-            1 -> 6000
-            2 -> 4200
-            3 -> 5200
-            112 -> 7000
+        get() = when {
+            id == 1 -> 6000
+            id == 2 -> 4200
+            id == 3 -> 5200
+            id == 112 -> 7000
+            isMidBoss -> (def * 1.8).toInt()   // 중간 보스는 두꺼운 HP
             else -> (def * 0.85).toInt()
         }
 
@@ -1981,11 +1983,11 @@ object CardCatalog {
 
     private val byId: Map<Int, CharacterRecord> = ALL.associateBy { it.id }
 
-    fun find(id: Int): CharacterRecord? = byId[id]
+    fun find(id: Int): CharacterRecord? = byId[id] ?: MidBossCatalog.find(id)
 
     /** 미등록 번호용 안전한 대체 기록 (게임이 깨지지 않게) */
     fun require(id: Int): CharacterRecord =
-        byId[id] ?: CharacterRecord(
+        find(id) ?: CharacterRecord(
             id = id,
             name = "미등록 카드 #$id",
             title = "미등록",
@@ -2010,7 +2012,10 @@ object CardCatalog {
     /** 합류(보유) 상태로 시작하는 카드 — 170명 전원 */
     fun initialOwnedRecords(): List<CharacterRecord> = ALL
 
-    /** 아직 계약하지 않은 카드 (신규 연성 대상) — 170명 전원 보유이므로 현재는 비어 있다 */
+    /** 아직 계약하지 않은 카드 (신규 연성 대상) */
     fun unownedCandidates(ownedIds: Collection<Int>): List<CharacterRecord> =
         ALL.filter { it.id !in ownedIds }
+
+    /** 중간 보스 6명 (No.170~175) — 적 전용 카드 기록 */
+    fun midBosses(): List<CharacterRecord> = MidBossCatalog.ALL
 }

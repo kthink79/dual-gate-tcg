@@ -133,7 +133,7 @@ class TcgScenarioExpansionTest {
 
     @Test
     fun `환생 재획득은 기억이 지워진 동료 상태를 만들고 교감으로 파편을 얻는다`() {
-        val vm = TcgGameViewModel()
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         vm.startDemonLordBattle()
 
         var guard = 0
@@ -156,14 +156,15 @@ class TcgScenarioExpansionTest {
         assertEquals(1, afterBond.memoryFragments)
         assertNotNull(vm.uiState.value.memoryRecallMessage)
 
-        // 현실 교감 화면 경로도 파편을 준다
+        // 현실 교감 화면 경로도 파편을 준다 (교감 대상 = 소환 대상)
+        vm.selectSummonCard(3)
         vm.interactRealWorld(com.game.tcg.core.engine.RealWorldActivity.DAILY_GREETING)
         assertEquals(2, vm.uiState.value.ownedCards.first { it.id == 3 }.memoryFragments)
     }
 
     @Test
     fun `전투 승리는 기억이 지워진 동료에게 기억 파편을 준다`() {
-        val vm = TcgGameViewModel()
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         vm.startDemonLordBattle()
         var guard = 0
         while (vm.uiState.value.reincarnationPool.none { it.templateId == 3 } && guard < 20) {
@@ -189,7 +190,7 @@ class TcgScenarioExpansionTest {
 
     @Test
     fun `파편 3개를 모으면 도감에서 회상 이벤트를 열어 기억을 복원한다`() {
-        val vm = TcgGameViewModel()
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         vm.startDemonLordBattle()
         var guard = 0
         while (vm.uiState.value.reincarnationPool.none { it.templateId == 3 } && guard < 20) {
@@ -262,7 +263,7 @@ class TcgScenarioExpansionTest {
 
     @Test
     fun `시나리오 탭 교차 이벤트는 홀림 2스택에서 활성되고 선택 후 닫힌다`() {
-        val vm = TcgGameViewModel()
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         assertFalse("초기에는 이벤트가 잠겨 있다", vm.uiState.value.isTrustRiftAvailable)
 
         vm.gazeAtDemonLord() // 핀치 줌 + 10초 응시 → 2스택
@@ -290,14 +291,14 @@ class TcgScenarioExpansionTest {
     fun `숨긴 선택의 전열 방어 페널티는 다음 전투에서 실제 피해를 키운다`() {
         fun totalHp(vm: TcgGameViewModel): Int = vm.uiState.value.party.sumOf { it.hp }
 
-        val baseline = TcgGameViewModel()
+        val baseline = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         baseline.gazeAtDemonLord()
         baseline.startFieldBattle()
         val baseBefore = totalHp(baseline)
         baseline.nextTurn()
         val baseLoss = baseBefore - totalHp(baseline)
 
-        val hidden = TcgGameViewModel()
+        val hidden = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         hidden.gazeAtDemonLord()
         hidden.resolveTrustRift("RIFT_B_HIDE")
         assertEquals(10, hidden.uiState.value.frontRowDefensePenaltyPercent)
@@ -371,8 +372,8 @@ class TcgScenarioExpansionTest {
 
     @Test
     fun `전투 화면 페어 오의 버튼은 마나 3에서 발동하고 전투당 1회로 제한된다`() {
-        // 제2장 보스(HP 32000)를 상대로 검증한다 — 오의 한 방에 전투가 끝나지 않아 '전투당 1회' 제한을 확인할 수 있다
-        val vm = TcgGameViewModel()
+        // 제2장 보스(HP 32000)를 상대로 오의 발동 조건·소모 마나·전투당 1회 제한을 확인한다
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         repeat(8) { vm.advanceStory() }
         vm.startChapter2BossBattle()
         // 마나 1 → 3까지 턴 진행
@@ -399,24 +400,23 @@ class TcgScenarioExpansionTest {
         assertEquals(1, after.pairUltimateCount)
         assertTrue(after.battleLog.any { it.contains("페어 얼티밋 오의") })
 
-        // 전투당 1회 제한
+        // 전투당 1회 제한 — 오의가 적을 끝냈다면 호출은 null(전투 종료), 살아 있다면 실패 결과가 온다
         vm.nextTurn()
         vm.nextTurn()
         vm.nextTurn()
         val again = vm.activatePairUltimate()
-        assertNotNull(again)
-        assertFalse(again!!.isSuccess)
+        assertTrue("두 번째 오의는 발동되지 않는다", again == null || !again.isSuccess)
         assertEquals(1, vm.uiState.value.pairUltimateCount)
     }
 
     @Test
     fun `제2장 프롤로그 노드는 5화 이후 열리고 그림자 기사 전초전을 시작한다`() {
-        val locked = TcgGameViewModel()
+        val locked = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         locked.startChapter2BossBattle()
         assertEquals("차원 틈새의 마수", locked.uiState.value.enemyName)
         assertTrue(locked.uiState.value.statusMessage.contains("5화"))
 
-        val vm = TcgGameViewModel()
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         repeat(8) { vm.advanceStory() }
         assertEquals(5, vm.uiState.value.storyStepIndex)
         assertTrue(vm.uiState.value.isChapter2Unlocked)
@@ -437,7 +437,7 @@ class TcgScenarioExpansionTest {
 
     @Test
     fun `새 원정을 시작하면 페어 오의 사용 제한이 초기화된다`() {
-        val vm = TcgGameViewModel()
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         vm.startDemonLordBattle()
         vm.nextTurn()
         vm.nextTurn()

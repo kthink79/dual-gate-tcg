@@ -129,7 +129,9 @@ class TcgGameFlowTest {
 
     @Test
     fun `현실 교감은 호감도를 올리고 데이트 룩을 해금한다`() {
-        val vm = TcgGameViewModel()
+        // 교감은 화면에서 고른 파트너(소환 대상)를 대상으로 한다 — 아우렐리아(3)를 선택
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
+        vm.selectSummonCard(3)
 
         vm.interactRealWorld(RealWorldActivity.ROMANTIC_EVENING_DATE)
 
@@ -142,7 +144,7 @@ class TcgGameFlowTest {
 
     @Test
     fun `한계 돌파는 성급과 스탯을 올린다`() {
-        val vm = TcgGameViewModel()
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         vm.selectCard(3)
         val before = vm.uiState.value.ownedCards.first { it.id == 3 }
 
@@ -155,18 +157,18 @@ class TcgGameFlowTest {
     }
 
     @Test
-    fun `신규 연성은 170명 전원 보유 상태에서는 보유 캐릭터 조각으로 귀결된다`() {
-        val vm = TcgGameViewModel()
+    fun `신규 연성은 잡카드가 모자라면 거부된다`() {
+        // 시작 상태는 잡카드 0장 — 도감 대신 조각 연성(GrowthScreen)을 쓴다
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
         val before = vm.uiState.value
-        assertEquals("미계약 카드가 남아 있지 않다", 0, CardCatalog.unownedCandidates(before.ownedCards.map { it.id }).size)
+        assertEquals(0, before.junkCards)
 
         vm.craftNewCharacter()
 
         val after = vm.uiState.value
-        assertEquals(before.junkCards - 3, after.junkCards)
-        assertEquals(before.gold - 300, after.gold)
-        assertEquals("새 캐릭터는 늘지 않는다", before.ownedCards.size, after.ownedCards.size)
-        assertTrue(after.synthesisMessage!!.contains("보유한 캐릭터의 조각"))
+        assertEquals("재화가 빠져나가지 않는다", before.gold, after.gold)
+        assertEquals(before.ownedCards.size, after.ownedCards.size)
+        assertTrue(after.synthesisMessage!!.contains("잡카드가 부족"))
     }
 
     @Test

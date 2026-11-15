@@ -1,9 +1,14 @@
 package com.game.tcg
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,23 +26,30 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.game.tcg.core.engine.IntroStoryEngine
 import com.game.tcg.ui.BattleScreen
 import com.game.tcg.ui.CollectionScreen
-import com.game.tcg.ui.DeckScreen
+import com.game.tcg.ui.DeckBuilderScreen
 import com.game.tcg.ui.ExplorationScreen
+import com.game.tcg.ui.GrowthScreen
+import com.game.tcg.ui.IntroStoryScreen
 import com.game.tcg.ui.LobbyDestination
 import com.game.tcg.ui.MainLobbyScreen
+import com.game.tcg.ui.PackShopScreen
 import com.game.tcg.ui.Pill
 import com.game.tcg.ui.RealWorldScreen
 import com.game.tcg.ui.ScenarioScreen
+import com.game.tcg.ui.StageScreen
 import com.game.tcg.ui.TcgColors
 import com.game.tcg.ui.TcgGameViewModel
 
@@ -46,12 +58,19 @@ import com.game.tcg.ui.TcgGameViewModel
  * 메인 로비(캐릭터 중심) + 좌·우측 측면 서브메뉴 6종
  *  - 좌측(이세계·모험): 이세계 접속 · 이계 전투 · 탐색
  *  - 우측(현실·관리): 현실 소환 · 캐릭터 관리 · 서약·덱
+ *
+ * 앱을 처음 켜면 도입부 스토리(4장면 컷신)가 로비 위에 겹쳐 재생되고,
+ * 마지막 장면·SKIP 이후 페이드아웃하며 로비로 자연스럽게 이어진다.
  */
 class MainActivity : ComponentActivity() {
-    private val viewModel = TcgGameViewModel()
+    private lateinit var viewModel: TcgGameViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 인트로를 한 번 본 뒤에는 앱을 다시 켜도 로비에서 바로 시작한다.
+        val introSeen = getSharedPreferences(IntroStoryEngine.PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(IntroStoryEngine.PREF_INTRO_SEEN, false)
+        viewModel = TcgGameViewModel(introAlreadySeen = introSeen)
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -72,98 +91,169 @@ class MainActivity : ComponentActivity() {
 fun TcgApp(viewModel: TcgGameViewModel) {
     val state by viewModel.uiState.collectAsState()
     val screen = state.currentScreen
+    val isIntroPlaying = state.isIntroPlaying
+    val context = LocalContext.current
 
-    // Android 시스템 뒤로가기 → 메인 로비
-    BackHandler(enabled = screen != LobbyDestination.LOBBY) { viewModel.backToLobby() }
+    // 인트로를 끝까지 보거나 SKIP 했다면 다음 실행부터는 재생하지 않는다.
+    LaunchedEffect(state.introStory.hasSeenIntro) {
+        if (state.introStory.hasSeenIntro) {
+            context.getSharedPreferences(IntroStoryEngine.PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(IntroStoryEngine.PREF_INTRO_SEEN, true)
+                .apply()
+        }
+    }
 
-    Scaffold(
-        containerColor = TcgColors.Background,
-        bottomBar = { TcgStatusBar(message = state.statusMessage) }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            if (screen != LobbyDestination.LOBBY) {
-                LobbyBackBar(
-                    screen = screen,
-                    gold = state.gold,
-                    gems = state.gems,
-                    onBack = { viewModel.backToLobby() }
-                )
+    // Android 시스템 뒤로가기 → 인트로 중이면 SKIP, 그 외에는 메인 로비
+    BackHandler(enabled = isIntroPlaying || screen != LobbyDestination.LOBBY) {
+        if (isIntroPlaying) viewModel.skipIntro() else viewModel.backToLobby()
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            bottomBar = {
+                // 전투 화면은 자체 티커·컨트롤 바를 쓰므로 하단 상태 바를 겹치지 않게 숨긴다.
+                if (screen != LobbyDestination.BATTLE) TcgStatusBar(message = state.statusMessage)
             }
-
-            Box(modifier = Modifier.fillMaxSize()) {
-                when (screen) {
-                    LobbyDestination.LOBBY -> MainLobbyScreen(
-                        state = state,
-                        onOpenScreen = { destination -> viewModel.openScreen(destination) },
-                        onSelectHero = { id -> viewModel.selectLobbyHero(id) },
-                        onCycleHero = { direction -> viewModel.cycleLobbyHero(direction) },
-                        onSelectVisual = { visual -> viewModel.selectLobbyVisual(visual) }
-                    )
-                    LobbyDestination.SCENARIO -> ScenarioScreen(
-                        state = state,
-                        onNextStep = { viewModel.advanceStory() },
-                        onPrevStep = { viewModel.previousStory() },
-                        onChooseEventA = { talk -> viewModel.chooseEventA(talk) },
-                        onChooseEventB = { fight -> viewModel.chooseEventB(fight) },
-                        onResolveTrustRift = { choice -> viewModel.resolveTrustRift(choice) },
-                        onOpenChapter2 = { viewModel.openChapter2Prelude() },
-                        onStartChapter2Boss = { viewModel.startChapter2BossBattle() }
-                    )
-                    LobbyDestination.BATTLE -> BattleScreen(
-                        state = state,
-                        onAttackFront = { viewModel.attackFront() },
-                        onAttackBack = { viewModel.attackBack() },
-                        onNextTurn = { viewModel.nextTurn() },
-                        onRetreat = { slot -> viewModel.retreat(slot) },
-                        onEmergencyRetreat = { viewModel.emergencyRetreat() },
-                        onReacquire = { id -> viewModel.reacquire(id) },
-                        onRedeploy = { id -> viewModel.redeploy(id) },
-                        onStartDemonLordBattle = { viewModel.startDemonLordBattle() },
-                        onStartFieldBattle = { viewModel.startFieldBattle() },
-                        onPairUltimate = { viewModel.activatePairUltimate() },
-                        onOpenPartyEdit = { viewModel.openScreen(LobbyDestination.COLLECTION) }
-                    )
-                    LobbyDestination.EXPLORATION -> ExplorationScreen(
-                        state = state,
-                        onExplore = { mode -> viewModel.explore(mode) },
-                        onOpenBattle = { viewModel.openScreen(LobbyDestination.BATTLE) },
-                        onOpenCollection = { viewModel.openScreen(LobbyDestination.COLLECTION) },
-                        onOpenRealWorld = { viewModel.openScreen(LobbyDestination.REAL_WORLD) }
-                    )
-                    LobbyDestination.REAL_WORLD -> RealWorldScreen(
-                        state = state,
-                        onInteract = { activity -> viewModel.interactRealWorld(activity) },
-                        onBondMemoryPartner = { id -> viewModel.bondMemoryResetPartner(id) }
-                    )
-                    LobbyDestination.COLLECTION -> CollectionScreen(
-                        state = state,
-                        onSelectCard = { id -> viewModel.selectCard(id) },
-                        onSelectVisual = { visual -> viewModel.selectVisual(visual) },
-                        onGaze = { viewModel.gazeAtDemonLord() },
-                        onPurify = { viewModel.purify() },
-                        onLimitBreak = { viewModel.limitBreakSelected() },
-                        onCraftNew = { viewModel.craftNewCharacter() },
-                        onMemoryRecall = { id -> viewModel.openMemoryRecall(id) },
-                        onSetLobbyHero = { id ->
-                            viewModel.selectLobbyHero(id)
-                            viewModel.openScreen(LobbyDestination.LOBBY)
-                        },
-                        onDeployToParty = { id, slot -> viewModel.deployToParty(id, slot) },
-                        onUndeployFromParty = { id -> viewModel.undeployFromParty(id) }
-                    )
-                    LobbyDestination.DECK -> DeckScreen(
-                        state = state,
-                        onGaze = { viewModel.gazeAtDemonLord() },
-                        onPurify = { viewModel.purify() },
-                        onSetLobbyHero = { id -> viewModel.selectLobbyHero(id) },
-                        onOpenCollection = { viewModel.openScreen(LobbyDestination.COLLECTION) }
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                // 전투 · 덱 편성은 자체 전체 화면 헤더(FIGHT / DECK)를 쓰므로 상단 복귀 바를 겹치지 않게 한다.
+                if (screen != LobbyDestination.LOBBY && screen != LobbyDestination.BATTLE && screen != LobbyDestination.DECK) {
+                    LobbyBackBar(
+                        screen = screen,
+                        gold = state.gold,
+                        gems = state.gems,
+                        onBack = { viewModel.backToLobby() }
                     )
                 }
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    when (screen) {
+                        LobbyDestination.LOBBY -> MainLobbyScreen(
+                            state = state,
+                            onOpenScreen = { destination -> viewModel.openScreen(destination) },
+                            onSelectHero = { id -> viewModel.selectLobbyHero(id) },
+                            onCycleHero = { direction -> viewModel.cycleLobbyHero(direction) },
+                            onSelectVisual = { visual -> viewModel.selectLobbyVisual(visual) },
+                            onReplayIntro = { viewModel.replayIntro() }
+                        )
+                        LobbyDestination.SCENARIO -> ScenarioScreen(
+                            state = state,
+                            onNextStep = { viewModel.advanceStory() },
+                            onPrevStep = { viewModel.previousStory() },
+                            onChooseEventA = { talk -> viewModel.chooseEventA(talk) },
+                            onChooseEventB = { fight -> viewModel.chooseEventB(fight) },
+                            onResolveTrustRift = { choice -> viewModel.resolveTrustRift(choice) },
+                            onOpenChapter2 = { viewModel.openChapter2Prelude() },
+                            onStartChapter2Boss = { viewModel.startChapter2BossBattle() }
+                        )
+                        LobbyDestination.BATTLE -> BattleScreen(
+                            state = state,
+                            onAttackFront = { viewModel.attackFront() },
+                            onAttackBack = { viewModel.attackBack() },
+                            onNextTurn = { viewModel.nextTurn() },
+                            onRetreat = { slot -> viewModel.retreat(slot) },
+                            onEmergencyRetreat = { viewModel.emergencyRetreat() },
+                            onReacquire = { id -> viewModel.reacquire(id) },
+                            onRedeploy = { id -> viewModel.redeploy(id) },
+                            onStartDemonLordBattle = { viewModel.startDemonLordBattle() },
+                            onStartFieldBattle = { viewModel.startFieldBattle() },
+                            onPairUltimate = { viewModel.activatePairUltimate() },
+                            onOpenPartyEdit = { viewModel.openScreen(LobbyDestination.DECK) },
+                            onBack = { viewModel.backToLobby() }
+                        )
+                        LobbyDestination.EXPLORATION -> ExplorationScreen(
+                            state = state,
+                            onExplore = { mode -> viewModel.explore(mode) },
+                            onOpenBattle = { viewModel.openScreen(LobbyDestination.BATTLE) },
+                            onOpenCollection = { viewModel.openScreen(LobbyDestination.COLLECTION) },
+                            onOpenRealWorld = { viewModel.openScreen(LobbyDestination.REAL_WORLD) }
+                        )
+                        LobbyDestination.STAGE -> StageScreen(
+                            state = state,
+                            onSelectStage = { number -> viewModel.selectStage(number) },
+                            onStartStage = { number -> viewModel.startStageBattle(number) },
+                            onOpenDeck = { viewModel.openScreen(LobbyDestination.DECK) },
+                            onOpenGrowth = { viewModel.openScreen(LobbyDestination.GROWTH) },
+                            onOpenShop = { viewModel.openScreen(LobbyDestination.SHOP) }
+                        )
+                        LobbyDestination.SHOP -> PackShopScreen(
+                            state = state,
+                            onOpenPack = { packId -> viewModel.openPack(packId) },
+                            onOpenGrowth = { viewModel.openScreen(LobbyDestination.GROWTH) },
+                            onOpenCollection = { viewModel.openScreen(LobbyDestination.COLLECTION) }
+                        )
+                        LobbyDestination.GROWTH -> GrowthScreen(
+                            state = state,
+                            onSelectCard = { id -> viewModel.selectGrowthCard(id) },
+                            onUpgrade = { id -> viewModel.upgradeCard(id) },
+                            onCraft = { id -> viewModel.craftCharacter(id) },
+                            onTranscend = { id -> viewModel.transcendCard(id) },
+                            onBuyEquipment = { itemId -> viewModel.buyEquipment(itemId) },
+                            onEquip = { uid, cardId -> viewModel.equipItem(uid, cardId) },
+                            onUnequip = { uid -> viewModel.unequipItem(uid) },
+                            onOpenShop = { viewModel.openScreen(LobbyDestination.SHOP) },
+                            onOpenStage = { viewModel.openScreen(LobbyDestination.STAGE) }
+                        )
+                        LobbyDestination.REAL_WORLD -> RealWorldScreen(
+                            state = state,
+                            onInteract = { activity -> viewModel.interactRealWorld(activity) },
+                            onBondMemoryPartner = { id -> viewModel.bondMemoryResetPartner(id) },
+                            onSummon = { id -> viewModel.summonToReality(id) },
+                            onSelectSummonCard = { id -> viewModel.selectSummonCard(id) }
+                        )
+                        LobbyDestination.COLLECTION -> CollectionScreen(
+                            state = state,
+                            onSelectCard = { id -> viewModel.selectCard(id) },
+                            onSelectVisual = { visual -> viewModel.selectVisual(visual) },
+                            onGaze = { viewModel.gazeAtDemonLord() },
+                            onPurify = { viewModel.purify() },
+                            onLimitBreak = { viewModel.limitBreakSelected() },
+                            onCraftNew = { viewModel.craftNewCharacter() },
+                            onMemoryRecall = { id -> viewModel.openMemoryRecall(id) },
+                            onSetLobbyHero = { id ->
+                                viewModel.selectLobbyHero(id)
+                                viewModel.openScreen(LobbyDestination.LOBBY)
+                            },
+                            onDeployToParty = { id, slot -> viewModel.deployToParty(id, slot) },
+                            onUndeployFromParty = { id -> viewModel.undeployFromParty(id) }
+                        )
+                        LobbyDestination.DECK -> DeckBuilderScreen(
+                            state = state,
+                            onBack = { viewModel.backToLobby() },
+                            onAutoEquip = { viewModel.autoEquipParty() },
+                            onUnloadAll = { viewModel.unloadAllParty() },
+                            onToggleCard = { id -> viewModel.toggleEquipCard(id) },
+                            onUnloadSlot = { slot -> viewModel.unloadSlot(slot) },
+                            onTrain = { viewModel.trainForExp() },
+                            onOpenCollection = { viewModel.openScreen(LobbyDestination.COLLECTION) },
+                            onOpenBattle = { viewModel.openScreen(LobbyDestination.BATTLE) },
+                            onGaze = { viewModel.gazeAtDemonLord() },
+                            onPurify = { viewModel.purify() },
+                            onSetLobbyHero = { id -> viewModel.selectLobbyHero(id) }
+                        )
+                    }
+                }
             }
+        }
+
+        // ── 도입부 스토리 컷신 — 로비 위에 겹쳐 재생하고, 끝나면 페이드아웃으로 로비가 드러난다 ──
+        AnimatedVisibility(
+            visible = isIntroPlaying,
+            enter = fadeIn(tween(durationMillis = 450)),
+            exit = fadeOut(tween(durationMillis = 650)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            IntroStoryScreen(
+                state = state.introStory,
+                onNext = { viewModel.advanceIntro() },
+                onSkip = { viewModel.skipIntro() }
+            )
         }
     }
 }

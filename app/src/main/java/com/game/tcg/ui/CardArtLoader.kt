@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
@@ -82,6 +83,7 @@ fun CardArtImage(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
+    alignment: Alignment = Alignment.Center,
     targetWidthPx: Int = 540
 ) {
     val context = LocalContext.current
@@ -107,6 +109,7 @@ fun CardArtImage(
             bitmap = loaded,
             contentDescription = contentDescription,
             contentScale = contentScale,
+            alignment = alignment,
             modifier = modifier
         )
     }

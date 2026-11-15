@@ -184,6 +184,13 @@ object CharacterArtRegistry {
         168 to intArrayOf(R.drawable.char_168_battle, R.drawable.char_168_casual, R.drawable.char_168_date),
         169 to intArrayOf(R.drawable.char_169_battle, R.drawable.char_169_casual, R.drawable.char_169_date),
         184 to intArrayOf(R.drawable.char_184_battle, R.drawable.char_184_casual, R.drawable.char_184_date),
+        // ── 중간 보스 6명 (No.170~175 · 2026-11-16 탑재, 540×810 JPG 18장) ──
+        170 to intArrayOf(R.drawable.char_170_battle, R.drawable.char_170_casual, R.drawable.char_170_date),
+        171 to intArrayOf(R.drawable.char_171_battle, R.drawable.char_171_casual, R.drawable.char_171_date),
+        172 to intArrayOf(R.drawable.char_172_battle, R.drawable.char_172_casual, R.drawable.char_172_date),
+        173 to intArrayOf(R.drawable.char_173_battle, R.drawable.char_173_casual, R.drawable.char_173_date),
+        174 to intArrayOf(R.drawable.char_174_battle, R.drawable.char_174_casual, R.drawable.char_174_date),
+        175 to intArrayOf(R.drawable.char_175_battle, R.drawable.char_175_casual, R.drawable.char_175_date),
     )
 
     /** 이 카드의 3단 비주얼이 모두 등록되어 있는지 */

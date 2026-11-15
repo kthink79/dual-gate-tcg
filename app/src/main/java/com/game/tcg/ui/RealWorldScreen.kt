@@ -1,6 +1,8 @@
 package com.game.tcg.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.game.tcg.core.engine.RealWorldActivity
+import com.game.tcg.core.engine.SummonEngine
 import com.game.tcg.core.model.TcgCard
 import com.game.tcg.core.model.VisualState
 
@@ -34,15 +37,83 @@ import com.game.tcg.core.model.VisualState
 fun RealWorldScreen(
     state: TcgGameState,
     onInteract: (RealWorldActivity) -> Unit,
-    onBondMemoryPartner: (Int) -> Unit
+    onBondMemoryPartner: (Int) -> Unit,
+    onSummon: (Int) -> Unit = {},
+    onSelectSummonCard: (Int) -> Unit = {}
 ) {
     val bond = state.partnerBond
     val partner = state.ownedCards.firstOrNull { it.id == 3 }
+    val summonTarget = state.summonCard
 
     ScreenFrame {
+        // ── 현실 소환 — 차원 에너지로 보유 캐릭터를 부른다 (2026-11-16 사용자 요청 서브 플로우) ──
         SectionCard(
-            title = "현실 소환 · 아우렐리아",
-            badge = if (bond >= 100) "오의 개방" else "호감도 $bond/100",
+            title = "현실 소환 · ${summonTarget?.name ?: "대상 없음"}",
+            badge = "⚡ ${state.gateEnergy}/${state.gateEnergyMax}",
+            accent = TcgColors.Violet
+        ) {
+            Text(
+                "차원 균열 에너지 ${SummonEngine.ENERGY_COST}를 써서 보유 캐릭터를 현실로 부릅니다. " +
+                    "호감도 +${SummonEngine.BOND_GAIN} → 50에서 일상·데이트 룩, 100에서 페어 얼티밋 오의가 열리고, " +
+                    "소환 직후 ${SummonEngine.BUFF_BATTLES}회 전투 동안 아군 공격력 +${SummonEngine.BUFF_PERCENT}% 버프가 걸립니다.",
+                color = TcgColors.Muted,
+                fontSize = 9.sp,
+                lineHeight = 14.sp
+            )
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                state.ownedCards.sortedByDescending { it.bondLevel }.forEach { owned ->
+                    ChipButton(
+                        label = "${owned.name.take(6)} ${owned.bondLevel}",
+                        selected = owned.id == summonTarget?.id,
+                        accent = elementColor(owned.element)
+                    ) { onSelectSummonCard(owned.id) }
+                }
+            }
+            if (summonTarget != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Pill("호감도 ${summonTarget.bondLevel}/100", TcgColors.Gold)
+                    Pill(summonTarget.element.displayName, elementColor(summonTarget.element))
+                    if (summonTarget.bondLevel >= SummonEngine.DATE_UNLOCK_BOND) Pill("데이트 룩 해금", TcgColors.Heal)
+                    if (summonTarget.bondLevel >= SummonEngine.ULTIMATE_UNLOCK_BOND) Pill("오의 개방", TcgColors.Violet)
+                }
+                StatBar(ratio = summonTarget.bondLevel / 100f, color = TcgColors.Gold, height = 8)
+                ActionTile(
+                    label = "🌙 ${summonTarget.name} 현실 소환 (⚡ ${SummonEngine.ENERGY_COST})",
+                    hint = if (state.gateEnergy >= SummonEngine.ENERGY_COST) {
+                        "호감도 +${SummonEngine.BOND_GAIN} · 아군 공격력 +${SummonEngine.BUFF_PERCENT}% (${SummonEngine.BUFF_BATTLES}회)"
+                    } else {
+                        "차원 에너지 부족 — 이계 전투 승리로 +2 회복"
+                    },
+                    accent = TcgColors.Violet,
+                    enabled = state.gateEnergy >= SummonEngine.ENERGY_COST,
+                    onClick = { onSummon(summonTarget.id) }
+                )
+            }
+            if (state.hasSummonBuff) {
+                Pill(
+                    "소환 버프 유지 중 · 공격력 +${state.summonBuffPercent}% (${state.summonBuffBattles}회)",
+                    TcgColors.Heal,
+                    filled = true
+                )
+            }
+            if (state.summonMessage != null) {
+                Text(state.summonMessage, color = TcgColors.Text.copy(alpha = 0.88f), fontSize = 10.sp, lineHeight = 15.sp)
+            }
+            Text(
+                "소환 ${state.summonCount}회 · 교감은 아래 「오늘의 교감」에서 이어집니다.",
+                color = TcgColors.Muted,
+                fontSize = 9.sp
+            )
+        }
+        val partnerName = summonTarget?.name ?: "파트너"
+        val partnerBondNow = summonTarget?.bondLevel ?: bond
+        val partnerLook = summonTarget?.currentVisual ?: state.partnerVisual
+        SectionCard(
+            title = "현실 교감 · $partnerName",
+            badge = if (partnerBondNow >= 100) "오의 개방" else "호감도 $partnerBondNow/100",
             accent = TcgColors.Gold
         ) {
             Box(
@@ -52,9 +123,9 @@ fun RealWorldScreen(
                     .clip(RoundedCornerShape(14.dp))
             ) {
                 CardArtImage(
-                    cardId = 3,
-                    visual = state.partnerVisual,
-                    contentDescription = "아우렐리아",
+                    cardId = summonTarget?.id ?: TcgGameViewModel.DEFAULT_LOBBY_HERO_ID,
+                    visual = partnerLook,
+                    contentDescription = partnerName,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                     targetWidthPx = 720
@@ -73,14 +144,14 @@ fun RealWorldScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Pill(state.partnerVisual.displayName, TcgColors.Gold, filled = true)
+                        Pill(partnerLook.displayName, TcgColors.Gold, filled = true)
                         Spacer(Modifier.width(6.dp))
-                        if (state.dateLookUnlocked) Pill("데이트 룩 해금", TcgColors.Heal)
+                        if (partnerBondNow >= SummonEngine.DATE_UNLOCK_BOND) Pill("데이트 룩 해금", TcgColors.Heal)
                     }
                     Text(
                         when {
-                            bond >= 100 -> "「오의가 열렸습니다. 제 모든 것을 당신의 검에 맡기죠.」"
-                            bond >= 50 -> "「이런 옷… 어울릴까요? 당신 앞에서만 입어 볼게요.」"
+                            partnerBondNow >= 100 -> "「오의가 열렸습니다. 제 모든 것을 당신의 검에 맡기죠.」"
+                            partnerBondNow >= 50 -> "「이런 옷… 어울릴까요? 당신 앞에서만 입어 볼게요.」"
                             else -> "「오늘도 부르셨습니까, 계약자.」"
                         },
                         color = TcgColors.Text,
@@ -89,7 +160,7 @@ fun RealWorldScreen(
                     )
                 }
             }
-            StatBar(ratio = bond / 100f, color = TcgColors.Gold, height = 10)
+            StatBar(ratio = partnerBondNow / 100f, color = TcgColors.Gold, height = 10)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("0", color = TcgColors.Muted, fontSize = 8.sp)
                 Text("50 · 일상 사복 진화", color = TcgColors.Heal, fontSize = 8.sp)
@@ -193,9 +264,9 @@ fun RealWorldScreen(
         }
 
         SectionCard(
-            title = "데이트 룩 해금 연출",
-            badge = if (state.dateLookUnlocked) "해금" else "잠금",
-            accent = if (state.dateLookUnlocked) TcgColors.Heal else TcgColors.Muted
+            title = "데이트 룩 해금 연출 · $partnerName",
+            badge = if (partnerBondNow >= SummonEngine.DATE_UNLOCK_BOND) "해금" else "잠금",
+            accent = if (partnerBondNow >= SummonEngine.DATE_UNLOCK_BOND) TcgColors.Heal else TcgColors.Muted
         ) {
             Box(
                 modifier = Modifier
@@ -204,14 +275,18 @@ fun RealWorldScreen(
                     .clip(RoundedCornerShape(14.dp))
             ) {
                 CardArtImage(
-                    cardId = 3,
-                    visual = if (state.dateLookUnlocked) VisualState.ROMANTIC_DATE else VisualState.CASUAL_CUTE,
+                    cardId = summonTarget?.id ?: TcgGameViewModel.DEFAULT_LOBBY_HERO_ID,
+                    visual = if (partnerBondNow >= SummonEngine.DATE_UNLOCK_BOND) {
+                        VisualState.ROMANTIC_DATE
+                    } else {
+                        VisualState.CASUAL_CUTE
+                    },
                     contentDescription = "데이트 룩",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                     targetWidthPx = 540
                 )
-                if (!state.dateLookUnlocked) {
+                if (partnerBondNow < SummonEngine.DATE_UNLOCK_BOND) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -219,7 +294,7 @@ fun RealWorldScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "호감도 50 달성 시 해금\n(현재 ${state.partnerBond}/100)",
+                            "호감도 50 달성 시 해금\n(현재 $partnerBondNow/100)",
                             color = TcgColors.Text,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
@@ -227,7 +302,7 @@ fun RealWorldScreen(
                     }
                 }
             }
-            if (state.dateLookUnlocked) {
+            if (partnerBondNow >= SummonEngine.DATE_UNLOCK_BOND) {
                 Text(
                     "「이 옷, 당신이 좋아할까 싶어서…」 — 데이트 룩이 개방되었습니다. 도감 ②③ 탭에서도 확인할 수 있습니다.",
                     color = TcgColors.Heal,
@@ -235,9 +310,9 @@ fun RealWorldScreen(
                     lineHeight = 15.sp
                 )
             }
-            if (state.ultimateUnlocked) {
+            if (partnerBondNow >= SummonEngine.ULTIMATE_UNLOCK_BOND) {
                 Text(
-                    "페어 얼티밋 오의 개방 — 아우렐리아와의 서약이 완성되었습니다. (전투 데미지 +25%)",
+                    "페어 얼티밋 오의 개방 — $partnerName 와(과)의 서약이 완성되었습니다. (전투 데미지 +25%)",
                     color = TcgColors.Gold,
                     fontSize = 10.sp,
                     lineHeight = 15.sp

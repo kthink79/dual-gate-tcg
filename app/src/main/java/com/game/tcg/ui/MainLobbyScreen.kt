@@ -45,7 +45,8 @@ fun MainLobbyScreen(
     onOpenScreen: (LobbyDestination) -> Unit,
     onSelectHero: (Int) -> Unit,
     onCycleHero: (Int) -> Unit,
-    onSelectVisual: (VisualState) -> Unit
+    onSelectVisual: (VisualState) -> Unit,
+    onReplayIntro: () -> Unit = {}
 ) {
     val hero = state.lobbyHero
     val profile = state.lobbyHeroProfile
@@ -103,7 +104,15 @@ fun MainLobbyScreen(
                 Pill("⚡ 차원 ${state.gateEnergy}/${state.gateEnergyMax}", TcgColors.Mana)
                 Pill("🪙 ${state.gold}G", TcgColors.Gold)
                 Pill("💎 ${state.gems}", TcgColors.Violet)
-                Pill("💧 ${state.holyWater}", TcgColors.Heal)
+                Pill("🎟 ${state.packTickets}", TcgColors.Heal)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Pill("🗺 ${state.stageCleared.size}/30 스테이지", TcgColors.Violet)
+                Pill("⚔ 덱 ${state.deckTotalPower}", TcgColors.Heal)
+                Pill("🎴 보유 ${state.ownedCards.size}명", TcgColors.Gold)
+                if (state.hasSummonBuff) {
+                    Pill("소환 +${state.summonBuffPercent}% (${state.summonBuffBattles})", TcgColors.Mana)
+                }
             }
             if (state.lobbyAlerts.isNotEmpty()) {
                 Row(
@@ -122,6 +131,19 @@ fun MainLobbyScreen(
                             )
                         }
                     }
+                }
+            }
+            // 「🎬 인트로 다시보기」 — 도입부 4장면 컷신을 언제든 다시 감상
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .clickable { onReplayIntro() }
+                ) {
+                    Pill("🎬 인트로 다시보기", TcgColors.Violet)
                 }
             }
         }

@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.game.tcg.core.model.CardCatalog
+import com.game.tcg.core.model.DeckRules
 import com.game.tcg.core.model.TcgCard
 import com.game.tcg.core.model.VisualState
 
@@ -60,11 +61,13 @@ fun CollectionScreen(
     ScreenFrame {
         // ── 카드 선택 (170인 전체 스크롤 목록) ──
         val allProfiles = TcgGameViewModel.profiles()
+        val ownedIds = state.ownedCardIds
         var catalogFilter by remember { mutableStateOf(CatalogFilter.ALL) }
         val shownProfiles = when (catalogFilter) {
             CatalogFilter.ALL -> allProfiles
             CatalogFilter.NEW_WAVE -> allProfiles.filter { CardCatalog.isNewWave(it.cardId) }
             CatalogFilter.ORIGINAL -> allProfiles.filter { !CardCatalog.isNewWave(it.cardId) }
+            CatalogFilter.BOSS -> TcgGameViewModel.midBossProfiles()
         }
         SectionCard(
             title = "도감 카드",
@@ -81,12 +84,17 @@ fun CollectionScreen(
                 ChipButton("기존 155인", catalogFilter == CatalogFilter.ORIGINAL, TcgColors.Mana) {
                     catalogFilter = CatalogFilter.ORIGINAL
                 }
+                ChipButton("보스 6", catalogFilter == CatalogFilter.BOSS, TcgColors.Danger) {
+                    catalogFilter = CatalogFilter.BOSS
+                }
             }
             Text(
                 if (catalogFilter == CatalogFilter.NEW_WAVE) {
                     "No.155~169 신규 15인 — 매력 유지 + 얼굴형·포즈 다양화로 다시 그린 세트입니다."
                 } else if (catalogFilter == CatalogFilter.ORIGINAL) {
                     "No.1~154 · No.184 아메넷 — 기존 155인. 전원 3단 비주얼(전투·일상·데이트)이 들어 있습니다."
+                } else if (catalogFilter == CatalogFilter.BOSS) {
+                    "No.170~175 중간 보스 6인 — 챕터 마일스톤 관문. 격파 후 「심연 연성」으로 계약하면 아군이 됩니다."
                 } else {
                     "도감 번호를 누르면 카드 상세와 3단 비주얼이 열립니다. (170명 × 3 = JPG 510장, 1캐릭터 = 1장 유일성)"
                 },
@@ -109,9 +117,14 @@ fun CollectionScreen(
                             rowItems.forEach { profileItem ->
                                 Box(modifier = Modifier.weight(1f)) {
                                     ChipButton(
-                                        label = "#${profileItem.cardId} ${profileItem.displayName}",
+                                        label = "#${profileItem.cardId} ${profileItem.displayName}" +
+                                            if (profileItem.cardId in ownedIds) "" else " 🔒",
                                         selected = profileItem.cardId == state.selectedCardId,
-                                        accent = elementColor(profileItem.element),
+                                        accent = if (profileItem.cardId in ownedIds) {
+                                            elementColor(profileItem.element)
+                                        } else {
+                                            TcgColors.Line
+                                        },
                                         onClick = { onSelectCard(profileItem.cardId) }
                                     )
                                 }
@@ -159,6 +172,22 @@ fun CollectionScreen(
                             )
                         )
                 )
+                // 미보유 카드는 잠금(실루엣) 오버레이로 표시 — 도감 열람만 가능
+                if (!isOwned) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xD90B0A12)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "🔒 미보유 — 카드팩·연성으로 획득",
+                            color = TcgColors.Text.copy(alpha = 0.8f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
@@ -200,24 +229,27 @@ fun CollectionScreen(
             val currentSlot = state.party.firstOrNull { it.card.id == selected.id }
             Text(
                 if (currentSlot != null) {
-                    "전투 편성: ${if (currentSlot.isFrontRow) "전열" else "후열"} ${currentSlot.slotIndex}번 슬롯 (HP ${currentSlot.hp}/${currentSlot.maxHp})"
+                    "전투 편성: ${DeckRules.slotLabel(currentSlot.slotIndex)} 슬롯 (HP ${currentSlot.hp}/${currentSlot.maxHp})"
                 } else {
-                    "전투 편성: 현재 미배치 — 슬롯을 눌러 소환하세요."
+                    "전투 편성: 현재 미배치 — 슬롯을 눌러 소환하세요. (${state.party.size}/${state.unlockedDeckSize}장)"
                 },
                 color = if (currentSlot != null) TcgColors.Heal else TcgColors.Muted,
                 fontSize = 10.sp
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                (0..4).forEach { slot ->
-                    Box(modifier = Modifier.weight(1f)) {
-                        ChipButton(
-                            label = if (slot < 3) "전${slot + 1}" else "후${slot - 2}",
-                            selected = currentSlot?.slotIndex == slot,
-                            accent = if (slot < 3) TcgColors.Hp else TcgColors.Mana
-                        ) {
-                            if (isOwned) onDeployToParty(selected.id, slot)
+            (0 until state.unlockedDeckSize).chunked(4).forEach { rowSlots ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    rowSlots.forEach { slot ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            ChipButton(
+                                label = DeckRules.slotLabel(slot),
+                                selected = currentSlot?.slotIndex == slot,
+                                accent = if (DeckRules.isFrontSlot(slot)) TcgColors.Hp else TcgColors.Mana
+                            ) {
+                                if (isOwned) onDeployToParty(selected.id, slot)
+                            }
                         }
                     }
+                    repeat(4 - rowSlots.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
             if (currentSlot != null) {
@@ -504,4 +536,4 @@ private fun StatColumn(label: String, value: String, color: Color) {
 }
 
 /** 도감 목록 필터 */
-private enum class CatalogFilter { ALL, NEW_WAVE, ORIGINAL }
+private enum class CatalogFilter { ALL, NEW_WAVE, ORIGINAL, BOSS }

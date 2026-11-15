@@ -13,6 +13,9 @@ import com.game.tcg.core.engine.IBattleEngine
 import com.game.tcg.core.engine.IExplorationEngine
 import com.game.tcg.core.engine.IDualWorldEngine
 import com.game.tcg.core.engine.IManaEngine
+import com.game.tcg.core.engine.IntroScript
+import com.game.tcg.core.engine.IntroStoryEngine
+import com.game.tcg.core.engine.IntroStoryState
 import com.game.tcg.core.engine.IMemoryRecallEngine
 import com.game.tcg.core.engine.IPairUltimateEngine
 import com.game.tcg.core.engine.IRoguelikeLifecycleEngine
@@ -30,6 +33,34 @@ import com.game.tcg.core.engine.StoryArcNode
 import com.game.tcg.core.engine.TacticalRetreatEngine
 import com.game.tcg.core.engine.TemptationEngine
 import com.game.tcg.core.engine.TrustRiftEngine
+import com.game.tcg.core.engine.DeckAutoBuilder
+import com.game.tcg.core.engine.AdvancedSynthesisEngine
+import com.game.tcg.core.engine.CardUpgradeEngine
+import com.game.tcg.core.engine.CraftKind
+import com.game.tcg.core.engine.CraftResult
+import com.game.tcg.core.engine.CraftTarget
+import com.game.tcg.core.engine.EquipResult
+import com.game.tcg.core.engine.EquipmentEngine
+import com.game.tcg.core.engine.ICardUpgradeEngine
+import com.game.tcg.core.engine.IPackShopEngine
+import com.game.tcg.core.engine.PackShopEngine
+import com.game.tcg.core.engine.StageClearOutcome
+import com.game.tcg.core.engine.StageEngine
+import com.game.tcg.core.engine.SummonEngine
+import com.game.tcg.core.engine.SummonResult
+import com.game.tcg.core.engine.TranscendResult
+import com.game.tcg.core.engine.UpgradeResult
+import com.game.tcg.core.model.CardRarity
+import com.game.tcg.core.model.EquipmentCatalog
+import com.game.tcg.core.model.EquipmentItem
+import com.game.tcg.core.model.PackCatalog
+import com.game.tcg.core.model.PackDefinition
+import com.game.tcg.core.model.PackOpenResult
+import com.game.tcg.core.model.ShardWallet
+import com.game.tcg.core.model.StageCatalog
+import com.game.tcg.core.model.StageDefinition
+import com.game.tcg.core.model.StartingRoster
+import kotlin.random.Random
 import com.game.tcg.core.model.AcquisitionResult
 import com.game.tcg.core.model.BattleCardHp
 import com.game.tcg.core.model.BattleRetreatInfo
@@ -37,6 +68,7 @@ import com.game.tcg.core.model.BattleSlot
 import com.game.tcg.core.model.BattleState
 import com.game.tcg.core.model.CardCatalog
 import com.game.tcg.core.model.CombatPenalty
+import com.game.tcg.core.model.DeckRules
 import com.game.tcg.core.model.DemonLordRegistry
 import com.game.tcg.core.model.Element
 import com.game.tcg.core.model.EmergencyRetreatResult
@@ -46,6 +78,7 @@ import com.game.tcg.core.model.MemoryRecallDialogue
 import com.game.tcg.core.model.MemoryRecallResult
 import com.game.tcg.core.model.PairUltimateReady
 import com.game.tcg.core.model.PairUltimateResult
+import com.game.tcg.core.model.PlayerProgress
 import com.game.tcg.core.model.ReincarnatedCard
 import com.game.tcg.core.model.RetreatResult
 import com.game.tcg.core.model.TcgCard
@@ -195,7 +228,8 @@ data class StoryChoice(
 // ============================================================================
 
 /**
- * 전열 3 / 후열 2 슬롯에 배치된 파티원 (전장 HP 별도 추적)
+ * 출전 덱 슬롯(전열 3 + 후열·대기 최대 9 = 12칸)에 배치된 파티원 (전장 HP 별도 추적)
+ * slotIndex 0~2 = 전열, 3 이상 = 후열·대기.
  */
 data class PartyMember(
     val card: TcgCard,
@@ -248,20 +282,23 @@ enum class LobbyDestination(
 
     // ── 좌측 · 이세계 · 모험 ──
     SCENARIO("이세계 접속", "📖", "차원의 문이 열리고 이야기가 이어집니다.", SideRail.LEFT),
-    BATTLE("이계 전투", "⚔", "전열 3 · 후열 2 전술 결전.", SideRail.LEFT),
+    STAGE("스테이지", "🗺", "6챕터 30스테이지 캠페인 — 보상과 보스 관문.", SideRail.LEFT),
+    BATTLE("이계 전투", "⚔", "출전 덱 9~12장 · 전열 3 전술 결전.", SideRail.LEFT),
     EXPLORATION("탐색", "🧭", "차원 틈새 탐색 · 기억 파편 수색 · 랜덤 조우.", SideRail.LEFT),
 
     // ── 우측 · 현실 · 관리 ──
     REAL_WORLD("현실 소환", "🏙", "현실에서 파트너를 부르고 교감합니다.", SideRail.RIGHT),
+    SHOP("카드팩", "🛒", "카드팩 구매·개봉 → 신규 동료와 조각.", SideRail.RIGHT),
+    GROWTH("성장", "⚒", "카드 강화 · 조각 연성 · 장비 장착.", SideRail.RIGHT),
     COLLECTION("캐릭터 관리", "🃏", "도감 · 합성 · 환생 재획득 · 대표 캐릭터 설정.", SideRail.RIGHT),
-    DECK("서약·덱", "📜", "20+10 · 1인 1장 서약 덱과 마왕 정화.", SideRail.RIGHT);
+    DECK("서약·덱", "📜", "9~12장 출전 덱 편성 · 자동 편성 · 마왕 정화.", SideRail.RIGHT);
 
     companion object {
         /** 좌측 레일에 도킹되는 서브메뉴 (이세계·모험) */
-        val LEFT_ITEMS: List<LobbyDestination> = listOf(SCENARIO, BATTLE, EXPLORATION)
+        val LEFT_ITEMS: List<LobbyDestination> = listOf(SCENARIO, STAGE, BATTLE, EXPLORATION)
 
         /** 우측 레일에 도킹되는 서브메뉴 (현실·관리) */
-        val RIGHT_ITEMS: List<LobbyDestination> = listOf(REAL_WORLD, COLLECTION, DECK)
+        val RIGHT_ITEMS: List<LobbyDestination> = listOf(REAL_WORLD, SHOP, GROWTH, COLLECTION, DECK)
     }
 }
 
@@ -318,13 +355,20 @@ data class TcgGameState(
     val isDemonLordBattle: Boolean = false,
     val turn: Int = 1,
     val mana: ManaState = ManaState(1, 1),
-    val battleLog: List<String> = listOf("[원정 준비] 전열 3 · 후열 2 슬롯 편성 완료. 턴 1 시작."),
+    val battleLog: List<String> = listOf("[원정 준비] 출전 덱 편성 완료. 턴 1 시작."),
     val retreatInfo: BattleRetreatInfo = BattleRetreatInfo(),
     val lastRetreatMessage: String? = null,
     val reincarnationPool: List<ReincarnatedCard> = emptyList(),
     val battleVictories: Int = 0,
     val lootGold: Int = 0,
     val lootGems: Int = 0,
+    // ── 비주얼 전투 연출 (데미지 팝업 · 공격 포커스) ──
+    val lastEnemyHitDamage: Int = 0,
+    val lastEnemyHitTick: Int = 0,
+    val lastAttackerSlot: Int = -1,
+    val lastAllyHitDamage: Int = 0,
+    val lastAllyHitSlot: Int = -1,
+    val lastAllyHitTick: Int = 0,
     val pendingLootGold: Int = 300,
     val pendingLootGems: Int = 5,
     val lastAcquisition: String? = null,
@@ -355,6 +399,34 @@ data class TcgGameState(
     val chapter2PreludeOpened: Boolean = false,
     val chapter2Message: String? = null,
     val isChapter2BossBattle: Boolean = false,
+    // ── 플레이어 레벨 · 덱 해금 (2026-11-16 사용자 확정: 기본 9장 → 최대 12장) ──
+    val playerExp: Int = 0,
+    // ── 메인 루프: 스테이지 캠페인 (6챕터 × 5스테이지) ──
+    val stageCleared: Set<Int> = emptySet(),
+    val selectedStage: Int = 1,
+    /** 지금 VS 전투 화면에서 싸우고 있는 스테이지 번호 (null = 자유 원정·마왕전) */
+    val activeStage: Int? = null,
+    val lastStageOutcome: StageClearOutcome? = null,
+    val stageMessage: String? = null,
+    // ── 재화: 조각 · 카드팩 티켓 · 장비 소지품 ──
+    val shards: ShardWallet = ShardWallet(),
+    val packTickets: Int = 0,
+    val equipment: List<EquipmentItem> = emptyList(),
+    val lastPackOpen: PackOpenResult? = null,
+    val shopMessage: String? = null,
+    // ── 성장: 강화(업그레이드) · 연성(합성) ──
+    val growthCardId: Int = 0,
+    val growthMessage: String? = null,
+    val lastCraft: CraftResult? = null,
+    // ── 현실 소환 ──
+    val summonCardId: Int = 0,
+    val summonBuffPercent: Int = 0,
+    val summonBuffBattles: Int = 0,
+    val lastSummon: SummonResult? = null,
+    val summonCount: Int = 0,
+    val summonMessage: String? = null,
+    // ── 도입부 스토리(4장면 컷신) ──
+    val introStory: IntroStoryState = IntroStoryState(),
     // ── 메인 로비 (캐릭터 중심) · 탐색 ──
     val currentScreen: LobbyDestination = LobbyDestination.LOBBY,
     val lobbyHeroId: Int = TcgGameViewModel.DEFAULT_LOBBY_HERO_ID,
@@ -366,6 +438,85 @@ data class TcgGameState(
 ) {
     /** 생존 아군 수 (오의 조건 판정용) */
     val aliveSurvivorCount: Int get() = party.count { it.isAlive }
+
+    // ── 플레이어 레벨 · 덱 해금 파생 상태 ──
+
+    /** 경험치로 계산한 플레이어 레벨 */
+    val playerLevel: Int get() = PlayerProgress.levelForExp(playerExp)
+
+    /** 현재 레벨에서 편성 가능한 덱 크기 (9 ~ 12) */
+    val unlockedDeckSize: Int get() = DeckRules.deckSizeForLevel(playerLevel)
+
+    /** 아직 잠긴 슬롯 수 (최대 12칸 기준) */
+    val lockedDeckSlots: Int get() = DeckRules.lockedSlotCount(playerLevel)
+
+    /** 현재 레벨에서 다음 해금 단계 (최대치면 null) */
+    val nextDeckUnlock: DeckRules.Unlock? get() = DeckRules.nextUnlock(playerLevel)
+
+    /** 다음 레벨까지 진행률 (0~1) */
+    val levelProgress: Float get() = PlayerProgress.levelProgress(playerExp)
+
+    /** 덱에 장착된 카드 id 집합 (컬렉션 그리드의 장착중 표시용) */
+    val equippedCardIds: Set<Int> get() = party.map { it.card.id }.toSet()
+
+    /** 장착된 카드 목록 */
+    val equippedCards: List<TcgCard> get() = party.sortedBy { it.slotIndex }.map { it.card }
+
+    /** 덱 총 전투력 표기 합계 (카드 전투력/100 합) — 상단 DECK 배지 */
+    val deckDisplayPower: Int get() = DeckAutoBuilder.displayTotalPower(equippedCards)
+
+    /** 슬롯 0~11 중 배치된 카드 (없으면 null) */
+    fun memberAt(slotIndex: Int): PartyMember? = party.firstOrNull { it.slotIndex == slotIndex }
+
+    // ── 진행 루프 파생 상태 ──
+
+    /** 보유 카드 번호 집합 */
+    val ownedCardIds: Set<Int> get() = ownedCards.map { it.id }.toSet()
+
+    /** 덱 총 전투력 (ATK + DEF 합계) — 스테이지 권장 전투력과 비교하는 값 */
+    val deckTotalPower: Int get() = equippedCards.sumOf { it.atk + it.def }
+
+    /** 지금 도전할 앞 스테이지 번호 */
+    val frontStageNumber: Int get() = StageEngine.frontStage(stageCleared)
+
+    /** 선택한 스테이지 정의 (기본은 앞 스테이지) */
+    val selectedStageDefinition: StageDefinition
+        get() = StageCatalog.find(selectedStage) ?: StageCatalog.require(frontStageNumber)
+
+    /** 스테이지 진행도 라벨 (예: "12/30 스테이지 · 3장 빙결의 회랑") */
+    val stageProgressLabel: String
+        get() = "${stageCleared.size}/${StageCatalog.TOTAL_STAGES} 스테이지 · ${selectedStageDefinition.chapter}장 ${selectedStageDefinition.chapterName}"
+
+    /** 스테이지 목록에 쓰는 잠금 여부 */
+    fun isStageUnlocked(stageNumber: Int): Boolean = StageEngine.isUnlocked(stageNumber, stageCleared)
+
+    /** 선택한 스테이지의 난이도 판정 */
+    val selectedStageReadiness get() = StageEngine.readiness(deckTotalPower, selectedStageDefinition)
+
+    /** 보유 조각 총합 */
+    val shardTotal: Int get() = shards.total
+
+    /** 성장 화면에서 다루는 카드 (미지정이면 덱 1번 슬롯 → 첫 보유 카드) */
+    val growthCard: TcgCard?
+        get() = ownedCards.firstOrNull { it.id == growthCardId }
+            ?: equippedCards.firstOrNull()
+            ?: ownedCards.firstOrNull()
+
+    /** 현실 소환 대상 (미지정이면 대표 캐릭터 → 첫 보유 카드) */
+    val summonCard: TcgCard?
+        get() = ownedCards.firstOrNull { it.id == summonCardId }
+            ?: ownedCards.firstOrNull { it.id == lobbyHeroId }
+            ?: ownedCards.firstOrNull()
+
+    /** 연성 후보 전체 (미보유 신규 + 해금된 중간 보스) */
+    val craftTargets: List<CraftTarget>
+        get() = AdvancedSynthesisEngine.targets(ownedCardIds, stageCleared, shards, gold)
+
+    /** 지금 바로 연성할 수 있는 후보 */
+    val availableCrafts: List<CraftTarget> get() = craftTargets.filter { it.isAvailable }
+
+    /** 소환 버프가 걸려 있는지 */
+    val hasSummonBuff: Boolean get() = summonBuffBattles > 0 && summonBuffPercent > 0
 
     /** 페어 얼티밋 오의 발동 조건 (아군 2명 이상 생존 + 마나 3 이상 + 전투당 1회) */
     val canActivatePairUltimate: Boolean
@@ -413,9 +564,18 @@ data class TcgGameState(
     /** 상단 상태 스트립의 진행도 라벨 */
     val storyProgressLabel: String get() = "제1장 ${storyStepIndex + 1}/${StoryScript.STEPS.size}"
 
+    /** 도입부 인트로가 지금 화면을 덮고 있는지 */
+    val isIntroPlaying: Boolean get() = introStory.isPlaying
+
     /** 메인 로비 경보 — 누르면 해당 화면으로 이동 */
     val lobbyAlerts: List<LobbyAlert>
         get() = buildList {
+            add(
+                LobbyAlert(
+                    "다음 스테이지 ${frontStageNumber} · 덱 ${deckTotalPower}",
+                    LobbyDestination.STAGE
+                )
+            )
             if (isTrustRiftAvailable) add(LobbyAlert("신뢰의 균열", LobbyDestination.SCENARIO, true))
             if (memoryResetCards.isNotEmpty()) add(LobbyAlert("기억의 잔향", LobbyDestination.REAL_WORLD))
             if (combatPenalty.totalStacks > 0) {
@@ -448,24 +608,120 @@ class TcgGameViewModel(
     private val memoryRecallEngine: IMemoryRecallEngine = MemoryRecallEngine(),
     private val trustRiftEngine: ITrustRiftEngine = TrustRiftEngine(),
     private val pairUltimateEngine: IPairUltimateEngine = PairUltimateEngine(),
-    private val explorationEngine: IExplorationEngine = ExplorationEngine()
+    private val explorationEngine: IExplorationEngine = ExplorationEngine(),
+    // ── 도입부 스토리(4장면 컷신) ──
+    private val introEngine: IntroStoryEngine = IntroStoryEngine(),
+    // ── 진행 루프(2026-11-16): 카드팩 · 강화 · 연성 · 장비 · 스테이지 ──
+    private val packShopEngine: IPackShopEngine = PackShopEngine(),
+    private val upgradeEngine: ICardUpgradeEngine = CardUpgradeEngine(),
+    /** 시작 3장 추첨 · 카드팩 개봉 · 장비 드롭에 쓰는 난수 (테스트는 고정 시드) */
+    private val random: Random = Random.Default,
+    /**
+     * 시작 보유 카드 번호를 지정한다 (null = 저코스트 풀에서 무작위 3장).
+     * 도감·로스터 전체를 대상으로 하는 검증·데모에서만 쓴다.
+     */
+    initialOwnedCardIds: List<Int>? = null,
+    // ── 시작 재화·진행도 시드 (세이브 복원·검증용) ──
+    initialGold: Int = START_GOLD,
+    initialGems: Int = START_GEMS,
+    initialPackTickets: Int = START_PACK_TICKETS,
+    initialShards: ShardWallet = ShardWallet(),
+    initialEquipmentIds: List<String> = emptyList(),
+    initialClearedStages: Set<Int> = emptySet(),
+    /** 앱을 다시 켰을 때 인트로를 이미 본 상태라면 true (MainActivity가 저장값을 넘긴다) */
+    introAlreadySeen: Boolean = false
 ) : ViewModel() {
+
+    /** 시작 보유 카드 — 저코스트 풀에서 무작위 3장 (또는 테스트 지정 목록) */
+    private val starterCards: List<TcgCard> =
+        (initialOwnedCardIds ?: StartingRoster.draw(random))
+            .distinct()
+            .map { TcgGameViewModel.characterCard(it) }
+
+    /** 시작 덱 — 뽑힌 카드를 전열 1~3칸에 자동 배치 */
+    private val starterParty: List<PartyMember> =
+        StartingRoster.deploySlots(starterCards).map { (card, slot) ->
+            val maxHp = TcgGameViewModel.maxHpOf(card)
+            PartyMember(card, slot, DeckRules.isFrontSlot(slot), maxHp, maxHp)
+        }
 
     private val _uiState = MutableStateFlow(
         TcgGameState(
-            party = initialParty(),
-            ownedCards = initialOwnedCards()
+            gold = initialGold,
+            gems = initialGems,
+            junkCards = 0,
+            packTickets = initialPackTickets,
+            shards = initialShards,
+            equipment = initialEquipmentIds.mapNotNull { EquipmentCatalog.instantiate(it) },
+            stageCleared = initialClearedStages,
+            selectedStage = StageEngine.frontStage(initialClearedStages),
+            party = starterParty,
+            ownedCards = starterCards,
+            lobbyHeroId = starterParty.firstOrNull()?.card?.id
+                ?: starterCards.firstOrNull()?.id
+                ?: TcgGameViewModel.DEFAULT_LOBBY_HERO_ID,
+            growthCardId = starterParty.firstOrNull()?.card?.id ?: 0,
+            summonCardId = starterParty.firstOrNull()?.card?.id ?: 0,
+            statusMessage = "[시작] 봉인 카드팩에서 동료 ${starterCards.size}명과 계약했습니다. 스테이지 1에 도전하세요.",
+            introStory = introEngine.initialState(alreadySeen = introAlreadySeen)
         )
     )
     val uiState: StateFlow<TcgGameState> = _uiState.asStateFlow()
 
     init {
-        initialOwnedCards().forEach { lifecycleEngine.registerOwnedCard(it) }
+        starterCards.forEach { lifecycleEngine.registerOwnedCard(it) }
     }
 
     // ──────────────────────────────────────────────────────────────
     // 메인 로비 — 대표 캐릭터 · 좌·우측 서브메뉴 · 화면 전환
     // ──────────────────────────────────────────────────────────────
+
+    // ──────────────────────────────────────────────────────────────
+    // 도입부 스토리 인트로 — 우연한 발견 → 봉인 해제 → 듀얼 게이트 → 소환과 시작
+    // ──────────────────────────────────────────────────────────────
+
+    /** 인트로 한 장면 넘기기 (화면 탭 · 자동 진행). 마지막 장면이면 로비로 진입한다. */
+    fun advanceIntro() {
+        _uiState.update { s -> applyIntroTransition(s, introEngine.advance(s.introStory)) }
+    }
+
+    /** SKIP — 인트로를 즉시 닫고 로비로 진입한다. */
+    fun skipIntro() {
+        _uiState.update { s -> applyIntroTransition(s, introEngine.skip(s.introStory)) }
+    }
+
+    /** 로비의 「🎬 인트로 다시보기」 — 1장면부터 다시 재생한다. */
+    fun replayIntro() {
+        _uiState.update { s ->
+            s.copy(
+                currentScreen = LobbyDestination.LOBBY,
+                introStory = introEngine.replay(s.introStory),
+                statusMessage = "[도입부] 다시보기 — ${IntroScript.SCENES.first().title}부터 재생합니다."
+            )
+        }
+    }
+
+    /** 인트로 상태 전이 결과를 상태·안내문에 반영 (끝나면 로비로 복귀) */
+    private fun applyIntroTransition(s: TcgGameState, next: IntroStoryState): TcgGameState {
+        if (next == s.introStory) return s
+        if (next.isPlaying) {
+            return s.copy(
+                introStory = next,
+                statusMessage = "[도입부] ${next.scene.act} · ${next.scene.title}"
+            )
+        }
+        val heroName = s.lobbyHeroProfile?.displayName ?: s.lobbyHero.name
+        val message = if (next.skipped) {
+            "[메인 로비] 인트로를 건너뛰었습니다. ${heroName}이(가) 기다리고 있었습니다."
+        } else {
+            "[메인 로비] 계약이 완료되었습니다. ${heroName}이(가) 당신을 맞이합니다."
+        }
+        return s.copy(
+            currentScreen = LobbyDestination.LOBBY,
+            introStory = next,
+            statusMessage = message
+        )
+    }
 
     /** 좌·우측 측면 서브메뉴에서 기능 화면 열기 */
     fun openScreen(destination: LobbyDestination) {
@@ -562,6 +818,20 @@ class TcgGameViewModel(
     private fun heroDisplayName(cardId: Int): String =
         TcgGameViewModel.profileOf(cardId)?.displayName
             ?: TcgGameViewModel.characterCard(cardId).name
+
+    /** 경험치 획득으로 레벨·덱 해금이 바뀌었을 때 상태 메시지에 붙이는 문구 */
+    private fun levelLineFor(beforeExp: Int, gainedExp: Int): String {
+        val beforeLevel = PlayerProgress.levelForExp(beforeExp)
+        val afterLevel = PlayerProgress.levelForExp(beforeExp + gainedExp)
+        if (afterLevel <= beforeLevel) return ""
+        val beforeSize = DeckRules.deckSizeForLevel(beforeLevel)
+        val afterSize = DeckRules.deckSizeForLevel(afterLevel)
+        return if (afterSize > beforeSize) {
+            " · Lv.$afterLevel 달성 — 덱 ${afterSize}장 해금!"
+        } else {
+            " · Lv.$afterLevel 달성"
+        }
+    }
 
     private fun bondOf(s: TcgGameState, cardId: Int): Int =
         if (cardId == 3) {
@@ -677,8 +947,10 @@ class TcgGameViewModel(
                 },
                 explorationCount = s.explorationCount + 1,
                 lastExploration = result,
+                playerExp = s.playerExp + PlayerProgress.EXP_EXPLORATION,
                 explorationLog = (s.explorationLog + logLine + listOfNotNull(fragmentMessage)).takeLast(8),
-                statusMessage = "[탐색 · ${mode.displayName}] ${result.title} — ${result.rewardSummary}"
+                statusMessage = "[탐색 · ${mode.displayName}] ${result.title} — ${result.rewardSummary}" +
+                        levelLineFor(s.playerExp, PlayerProgress.EXP_EXPLORATION)
             )
 
             if (result.startsBattle) {
@@ -915,22 +1187,31 @@ class TcgGameViewModel(
             val attacker = attackers[(s.turn - 1) % attackers.size]
             val base = battleEngine.calculateDamageWithTemptation(attacker.card, enemyCard(s), s.combatPenalty)
             val intelMultiplier = 1.0 + (s.intelBonusPercent / 100.0)
-            val finalDamage = (base.finalDamage * intelMultiplier).toInt()
+            val summonMultiplier = 1.0 + (s.summonBuffPercent / 100.0)
+            val finalDamage = (base.finalDamage * intelMultiplier * summonMultiplier).toInt()
             val newEnemyHp = (s.enemyHp - finalDamage).coerceAtLeast(0)
             val newMana = s.mana.copy(currentMana = s.mana.currentMana - 1)
 
             val logLine = "[턴 ${s.turn}] ${attacker.card.name} → ${s.enemyName} : ${finalDamage} 데미지 " +
                     "(상성 ${base.multiplier}x" +
                     (if (s.intelBonusPercent > 0) ", 급소 +${s.intelBonusPercent}%" else "") +
+                    (if (s.summonBuffPercent > 0) ", 현실 소환 +${s.summonBuffPercent}%" else "") +
                     (if (s.combatPenalty.isCharmed) ", 홀림 -${s.combatPenalty.attackReductionPercent}%" else "") +
                     ") · 적 잔여 HP ${newEnemyHp}"
 
             if (newEnemyHp <= 0) {
-                applyVictory(s, newMana, listOf(logLine))
+                applyVictory(s, newMana, listOf(logLine)).copy(
+                    lastEnemyHitDamage = finalDamage,
+                    lastEnemyHitTick = s.lastEnemyHitTick + 1,
+                    lastAttackerSlot = attacker.slotIndex
+                )
             } else {
                 s.copy(
                     enemyHp = newEnemyHp,
                     mana = newMana,
+                    lastEnemyHitDamage = finalDamage,
+                    lastEnemyHitTick = s.lastEnemyHitTick + 1,
+                    lastAttackerSlot = attacker.slotIndex,
                     battleLog = s.battleLog + logLine,
                     statusMessage = "[공격] ${attacker.card.name} ${finalDamage} 데미지 — 적 HP ${newEnemyHp}/${s.enemyMaxHp}"
                 )
@@ -962,17 +1243,70 @@ class TcgGameViewModel(
             mana = newMana,
             ownedCards = s.ownedCards.toList(),
             battleLog = s.battleLog + logLines +
-                    "[전투 승리] ${s.enemyName} 토벌 완료! (전리품 금화 ${rewardGold}G · 보석 ${rewardGems})" +
+                    "[전투 승리] ${s.enemyName} 토벌 완료!" +
+                    (if (rewardGold > 0 || rewardGems > 0) " (전리품 금화 ${rewardGold}G · 보석 ${rewardGems})" else "") +
                     fragmentLogs,
             gold = s.gold + rewardGold,
             gems = s.gems + rewardGems,
             gateEnergy = (s.gateEnergy + GATE_ENERGY_RECOVERY).coerceAtMost(s.gateEnergyMax),
             battleVictories = s.battleVictories + 1,
+            playerExp = s.playerExp + PlayerProgress.EXP_BATTLE_VICTORY,
+            summonBuffBattles = (s.summonBuffBattles - 1).coerceAtLeast(0),
+            summonBuffPercent = if (s.summonBuffBattles - 1 <= 0) 0 else s.summonBuffPercent,
             pairUltimateUsedThisBattle = false,
             frontRowDefensePenaltyPercent = 0,
             storyStepIndex = if (s.storyStepIndex <= 2) 3 else s.storyStepIndex,
-            statusMessage = "[전투 승리] ${s.enemyName}을(를) 쓰러뜨렸습니다. 획득 금화 ${rewardGold}G."
+            statusMessage = "[전투 승리] ${s.enemyName}을(를) 쓰러뜨렸습니다. 획득 금화 ${rewardGold}G." +
+                    levelLineFor(s.playerExp, PlayerProgress.EXP_BATTLE_VICTORY)
         )
+
+        // ── 메인 루프: 스테이지 클리어 정산 (골드·경험치·티켓·조각·장비 드롭) ──
+        val activeStageNumber = s.activeStage
+        if (activeStageNumber != null) {
+            val stage = StageCatalog.find(activeStageNumber)
+            if (stage != null) {
+                val alreadyCleared = activeStageNumber in s.stageCleared
+                val outcome = StageEngine.settle(stage, alreadyCleared, random)
+                var wallet = state.shards
+                if (outcome.shardCardId != null && outcome.shardCount > 0) {
+                    wallet = wallet.add(outcome.shardCardId, outcome.shardCount)
+                }
+                var owned = state.ownedCards
+                val extraLogs = mutableListOf<String>()
+                // 대마왕 스테이지: 토벌하면 서약 파트너로 아군에 합류한다
+                val lordId = stage.bossId
+                if (stage.bossKind == com.game.tcg.core.model.BossKind.DEMON_LORD &&
+                    lordId != null && owned.none { it.id == lordId }
+                ) {
+                    val lordCard = characterCard(lordId)
+                    owned = owned + lordCard
+                    extraLogs += "[서약] ${lordCard.name}이(가) 가면을 벗고 파트너로 합류했습니다. (조각·강화 상태 초기)"
+                }
+                // 심연 연성 해금 안내
+                if (stage.bossKind == com.game.tcg.core.model.BossKind.MID_BOSS && !alreadyCleared) {
+                    val bossName = stage.bossRecord?.name ?: stage.enemyName
+                    extraLogs += "[심연 연성] '${bossName}'이(가) 성장 화면의 연성 목록에 추가되었습니다."
+                }
+                val drop = outcome.equipmentDrop
+                val dropLogs = if (drop != null) listOf("[장비 드롭] ${drop.name} (${drop.slot.displayName}) ${drop.statSummary}") else emptyList()
+                state = state.copy(
+                    gold = state.gold + outcome.gold,
+                    gems = state.gems + outcome.gems,
+                    packTickets = state.packTickets + outcome.tickets,
+                    playerExp = state.playerExp + outcome.exp,
+                    shards = wallet,
+                    equipment = state.equipment + listOfNotNull(drop),
+                    ownedCards = owned,
+                    stageCleared = if (alreadyCleared) state.stageCleared else state.stageCleared + activeStageNumber,
+                    selectedStage = outcome.nextStageNumber ?: activeStageNumber,
+                    activeStage = null,
+                    lastStageOutcome = outcome,
+                    stageMessage = outcome.message,
+                    battleLog = state.battleLog + outcome.message + extraLogs + dropLogs,
+                    statusMessage = outcome.message + if (extraLogs.isNotEmpty()) " " + extraLogs.first() else ""
+                )
+            }
+        }
 
         if (s.isDemonLordBattle) {
             val afterDefeat = temptationEngine.onDemonLordDefeated(
@@ -1031,6 +1365,9 @@ class TcgGameViewModel(
             var post = s.copy(
                 turn = nextTurnNo,
                 mana = mana,
+                lastAllyHitDamage = mitigated,
+                lastAllyHitSlot = victim.slotIndex,
+                lastAllyHitTick = s.lastAllyHitTick + 1,
                 retreatInfo = s.retreatInfo.copy(turn = nextTurnNo, retreatUsedThisTurn = false),
                 lastRetreatMessage = null,
                 party = s.party.map { if (it.slotIndex == victim.slotIndex) it.copy(hp = newHp) else it },
@@ -1055,10 +1392,15 @@ class TcgGameViewModel(
             causeOfDeath = "전투 중 HP 0 (턴 ${s.turn}, ${s.enemyName})",
             diedAtTurn = s.turn
         )
+        if (result.isSuccess) {
+            // 쓰러진 카드의 장비는 소지품으로 회수한다 (재획득 카드는 초기 상태로 돌아오므로)
+            s.equipment.filter { it.equippedTo == victim.card.id }.forEach { it.equippedTo = null }
+        }
         return if (result.isSuccess) {
             s.copy(
                 reincarnationPool = lifecycleEngine.collection.reincarnationQueue(),
                 ownedCards = s.ownedCards.filterNot { it.id == victim.card.id },
+                equipment = s.equipment.toList(),
                 battleLog = s.battleLog + result.message.split("\n"),
                 statusMessage = "[영구 상실] ${victim.card.name}이(가) 쓰러졌습니다. 기억·강화 초기화 — 재획득 필요."
             )
@@ -1081,13 +1423,10 @@ class TcgGameViewModel(
                 )
             }
             val card = result.card
-            val slot = when (card.id) {
-                1 -> 1
-                2 -> 2
-                3 -> 0
-                else -> 4
-            }
-            val maxHp = maxHpOf(card)
+            val slot = DeckAutoBuilder.firstEmptySlot(s.party.map { it.slotIndex }, s.unlockedDeckSize)
+                ?: (0 until s.unlockedDeckSize).firstOrNull { idx -> s.party.none { it.slotIndex == idx } }
+                ?: 0
+            val maxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
             val member = PartyMember(card = card, slotIndex = slot, isFrontRow = slot < 3, hp = maxHp, maxHp = maxHp)
             s.copy(
                 party = (s.party.filterNot { it.slotIndex == slot || it.card.id == card.id } + member).sortedBy { it.slotIndex },
@@ -1166,39 +1505,165 @@ class TcgGameViewModel(
         _uiState.update { s ->
             val card = s.battleReserve.firstOrNull { it.id == cardId } ?: return@update s
             val occupied = s.party.map { it.slotIndex }.toSet()
-            val slot = (0 until 5).firstOrNull { it !in occupied } ?: return@update s.copy(
-                statusMessage = "[재투입 불가] 빈 슬롯이 없습니다."
+            val slot = DeckAutoBuilder.firstEmptySlot(occupied, s.unlockedDeckSize) ?: return@update s.copy(
+                statusMessage = "[재투입 불가] 빈 슬롯이 없습니다. (${s.unlockedDeckSize}장 편성)"
             )
-            val maxHp = maxHpOf(card)
+            val maxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
             s.copy(
-                party = (s.party + PartyMember(card, slot, slot < 3, maxHp, maxHp)).sortedBy { it.slotIndex },
+                party = (s.party + PartyMember(card, slot, DeckRules.isFrontSlot(slot), maxHp, maxHp)).sortedBy { it.slotIndex },
                 battleReserve = s.battleReserve.filterNot { it.id == cardId },
-                battleLog = s.battleLog + "[재투입] ${card.name} → ${slot}번 슬롯 (${if (slot < 3) "전열" else "후열"})",
+                battleLog = s.battleLog + "[재투입] ${card.name} → ${DeckRules.slotLabel(slot)} 슬롯 (${if (DeckRules.isFrontSlot(slot)) "전열" else "후열"})",
                 statusMessage = "[재투입] ${card.name}이(가) ${slot}번 슬롯에 복귀했습니다."
             )
         }
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 전투 편성 — 보유 캐릭터를 전열 3 · 후열 2 슬롯에 직접 소환
+    // 덱 편성 (비주얼 DECK) — 9장 기본 · 최대 12장, 레벨 해금
     // ──────────────────────────────────────────────────────────────
 
     /**
-     * 보유 캐릭터를 전장 슬롯(0~4)에 배치한다. 같은 캐릭터가 다른 슬롯에 있으면 그 자리에서 빠진다.
-     * 0~2 = 전열, 3~4 = 후열.
+     * 자동 편성 — 보유 카드 중 전투력 상위 N장을 지금 해금된 슬롯(N = 9~12)에 채운다.
+     * DEF가 높은 3장은 전열, 나머지는 후열·대기 슬롯으로 들어간다.
+     */
+    fun autoEquipParty() {
+        _uiState.update { s ->
+            if (s.ownedCards.isEmpty()) {
+                return@update s.copy(statusMessage = "[자동 편성] 보유 캐릭터가 없습니다. 신규 연성으로 계약하세요.")
+            }
+            val slots = DeckAutoBuilder.autoEquip(s.ownedCards, s.unlockedDeckSize)
+            val newParty = slots.mapIndexedNotNull { slotIndex, cardId ->
+                cardId?.let { id ->
+                    s.ownedCards.firstOrNull { it.id == id }?.let { card ->
+                        val maxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
+                        PartyMember(card, slotIndex, DeckRules.isFrontSlot(slotIndex), maxHp, maxHp)
+                    }
+                }
+            }
+            val frontCount = newParty.count { it.isFrontRow }
+            s.copy(
+                party = newParty,
+                battleReserve = s.battleReserve.filterNot { r -> newParty.any { it.card.id == r.id } },
+                battleLog = s.battleLog + "[자동 편성] 전투력 상위 ${newParty.size}장 장착 (전열 $frontCount · 후열 ${newParty.size - frontCount})",
+                statusMessage = "[자동 편성] ${newParty.size}장 장착 — 총 전투력 ${DeckAutoBuilder.displayTotalPower(newParty.map { it.card })}"
+            )
+        }
+    }
+
+    /** 전체 해제 — 출전 덱을 모두 비우고 장착 카드를 대기열로 돌린다. */
+    fun unloadAllParty() {
+        _uiState.update { s ->
+            if (s.party.isEmpty()) {
+                return@update s.copy(statusMessage = "[전체 해제] 이미 덱이 비어 있습니다.")
+            }
+            val removed = s.party.map { it.card }
+            s.copy(
+                party = emptyList(),
+                battleReserve = (s.battleReserve + removed).distinctBy { it.id },
+                battleLog = s.battleLog + "[전체 해제] ${removed.size}장을 대기열로 돌렸습니다.",
+                statusMessage = "[전체 해제] 덱 ${removed.size}장 해제 — 빈 슬롯에 카드를 탭해 다시 채우세요."
+            )
+        }
+    }
+
+    /**
+     * 빈 슬롯에 즉시 장착 — 해금된 슬롯(0~8/0~11) 중 가장 앞자리에 넣는다.
+     * 이미 들어 있는 카드·가득 참·미보유·잠금 해제 전 슬롯은 상태 메시지로 돌려준다.
+     */
+    fun equipToFirstEmptySlot(cardId: Int) {
+        _uiState.update { s ->
+            val card = s.ownedCards.firstOrNull { it.id == cardId }
+                ?: return@update s.copy(statusMessage = "[장착 실패] 아직 계약하지 않은 캐릭터입니다. (도감 #$cardId)")
+            if (s.party.any { it.card.id == cardId }) {
+                return@update s.copy(statusMessage = "[장착] ${card.name}은(는) 이미 편성되어 있습니다.")
+            }
+            val slot = DeckAutoBuilder.firstEmptySlot(s.party.map { it.slotIndex }, s.unlockedDeckSize)
+                ?: return@update s.copy(
+                    statusMessage = "[장착 실패] ${s.unlockedDeckSize}칸이 모두 찼습니다. " +
+                            "덱에서 카드를 눌러 해제하거나 Lv.${s.nextDeckUnlock?.level ?: s.playerLevel}에서 1칸 더 열립니다."
+                )
+            val maxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
+            val member = PartyMember(card, slot, DeckRules.isFrontSlot(slot), maxHp, maxHp)
+            s.copy(
+                party = (s.party + member).sortedBy { it.slotIndex },
+                battleReserve = s.battleReserve.filterNot { it.id == cardId },
+                battleLog = s.battleLog + "[편성] ${card.name} → ${DeckRules.slotLabel(slot)} 슬롯",
+                statusMessage = "[편성] ${card.name}을(를) ${DeckRules.slotLabel(slot)} 슬롯에 장착했습니다. " +
+                        "(${s.party.size + 1}/${s.unlockedDeckSize}장)"
+            )
+        }
+    }
+
+    /** 컬렉션 카드 탭 — 장착되어 있으면 해제, 아니면 빈 슬롯에 장착. */
+    fun toggleEquipCard(cardId: Int) {
+        val equipped = _uiState.value.party.any { it.card.id == cardId }
+        if (equipped) {
+            undeployFromParty(cardId)
+        } else {
+            equipToFirstEmptySlot(cardId)
+        }
+    }
+
+    /** 슬롯 단위 해제 (덱 상단 슬롯 탭) */
+    fun unloadSlot(slotIndex: Int) {
+        val member = _uiState.value.party.firstOrNull { it.slotIndex == slotIndex } ?: return
+        undeployFromParty(member.card.id)
+    }
+
+    /** 훈련(연습) — 경험치 +120. 덱 해금(Lv.5/10/15)을 바로 확인할 수 있게 둔 테스트·확인용 경로. */
+    fun trainForExp(amount: Int = PlayerProgress.EXP_TRAINING) {
+        grantPlayerExp(amount)
+    }
+
+    /** 경험치 획득 — 레벨이 오르면 덱 슬롯 해금을 함께 알린다. */
+    fun grantPlayerExp(amount: Int) {
+        if (amount <= 0) return
+        _uiState.update { s ->
+            val beforeLevel = s.playerLevel
+            val beforeSize = s.unlockedDeckSize
+            val gained = s.playerExp + amount
+            val afterLevel = PlayerProgress.levelForExp(gained)
+            val afterSize = DeckRules.deckSizeForLevel(afterLevel)
+            val levelLine = if (afterLevel > beforeLevel) {
+                "[레벨 업] Lv.$beforeLevel → Lv.$afterLevel " +
+                        if (afterSize > beforeSize) "— 덱 슬롯 ${afterSize}장 해금!" else ""
+            } else {
+                "[경험치] +$amount (Lv.$afterLevel · ${gained % PlayerProgress.EXP_PER_LEVEL}/${PlayerProgress.EXP_PER_LEVEL})"
+            }
+            s.copy(
+                playerExp = gained,
+                battleLog = if (afterLevel > beforeLevel) s.battleLog + levelLine else s.battleLog,
+                statusMessage = levelLine
+            )
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 전투 편성 — 보유 캐릭터를 출전 덱 슬롯(전열 3 + 후열·대기)에 직접 소환
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 보유 캐릭터를 출전 덱 슬롯(0 ~ 해금 슬롯-1)에 배치한다. 같은 캐릭터가 다른 슬롯에 있으면 그 자리에서 빠진다.
+     * 0~2 = 전열, 3 이상 = 후열·대기.
      */
     fun deployToParty(cardId: Int, slotIndex: Int) {
         _uiState.update { s ->
-            if (slotIndex !in 0..4) {
-                return@update s.copy(statusMessage = "[편성 실패] 슬롯 번호는 0~4만 가능합니다.")
+            if (slotIndex !in 0 until s.unlockedDeckSize) {
+                return@update s.copy(
+                    statusMessage = if (slotIndex in 0 until DeckRules.MAX_DECK_SIZE) {
+                        "[편성 실패] ${DeckRules.slotLabel(slotIndex)} 슬롯은 Lv.${DeckRules.requiredLevelForSlot(slotIndex)}에 열립니다. (현재 Lv.${s.playerLevel} · ${s.unlockedDeckSize}장)"
+                    } else {
+                        "[편성 실패] 슬롯 번호는 0~${DeckRules.MAX_DECK_SIZE - 1}만 가능합니다."
+                    }
+                )
             }
             val card = s.ownedCards.firstOrNull { it.id == cardId }
                 ?: return@update s.copy(statusMessage = "[편성 실패] 아직 계약하지 않은 캐릭터입니다. (도감 #$cardId)")
-            val maxHp = maxHpOf(card)
+            val maxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
             val others = s.party.filterNot { it.slotIndex == slotIndex || it.card.id == cardId }
-            val member = PartyMember(card, slotIndex, slotIndex < 3, maxHp, maxHp)
+            val member = PartyMember(card, slotIndex, DeckRules.isFrontSlot(slotIndex), maxHp, maxHp)
             val newParty = (others + member).sortedBy { it.slotIndex }
-            val rowName = if (slotIndex < 3) "전열" else "후열"
+            val rowName = if (DeckRules.isFrontSlot(slotIndex)) "전열" else "후열"
             s.copy(
                 party = newParty,
                 battleLog = s.battleLog + "[편성] ${card.name} → $rowName ${slotIndex}번 슬롯 (HP $maxHp)",
@@ -1219,6 +1684,398 @@ class TcgGameViewModel(
                 statusMessage = "[편성] ${member.card.name}을(를) 대기열로 보냈습니다."
             )
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 메인 루프 ①: 스테이지 캠페인 — 클리어 → 보상 → 다음 스테이지
+    // ──────────────────────────────────────────────────────────────
+
+    /** 스테이지 목록에서 스테이지 선택 (상세·보상 미리보기) */
+    fun selectStage(stageNumber: Int) {
+        _uiState.update { s ->
+            val stage = StageCatalog.find(stageNumber)
+                ?: return@update s.copy(stageMessage = "[스테이지] ${stageNumber}번은 없습니다.")
+            s.copy(
+                selectedStage = stage.number,
+                stageMessage = "[스테이지 ${stage.number}] ${stage.name} · ${stage.enemyName} · ${stage.reward.preview}",
+                statusMessage = if (isStageUnlockedFor(s, stage.number)) {
+                    "[스테이지 ${stage.number}] ${stage.name} — 권장 전투력 ${stage.recommendedPower} (내 덱 ${s.deckTotalPower})"
+                } else {
+                    "[스테이지 ${stage.number}] 아직 잠겨 있습니다. ${stage.number - 1}번을 먼저 클리어하세요."
+                }
+            )
+        }
+    }
+
+    private fun isStageUnlockedFor(s: TcgGameState, stageNumber: Int): Boolean =
+        StageEngine.isUnlocked(stageNumber, s.stageCleared)
+
+    /**
+     * 스테이지 출전 — 해당 스테이지의 적 편성으로 VS 전투 화면을 연다.
+     * @return 출전 성공 여부
+     */
+    fun startStageBattle(stageNumber: Int = 0): Boolean {
+        var started = false
+        _uiState.update { s ->
+            val number = if (stageNumber <= 0) s.frontStageNumber else stageNumber
+            val stage = StageCatalog.find(number)
+                ?: return@update s.copy(statusMessage = "[스테이지] ${number}번은 없습니다.")
+            if (!isStageUnlockedFor(s, number)) {
+                return@update s.copy(
+                    stageMessage = "[잠김] ${number}번 스테이지는 ${number - 1}번 클리어 후 열립니다.",
+                    statusMessage = "[스테이지] ${number}번은 아직 잠겨 있습니다."
+                )
+            }
+            if (s.party.isEmpty()) {
+                return@update s.copy(
+                    stageMessage = "[출전 불가] 출전 덱이 비어 있습니다.",
+                    statusMessage = "[스테이지] 덱 편성에서 카드를 먼저 배치하세요."
+                )
+            }
+            started = true
+            val bossLine = when (stage.bossKind) {
+                com.game.tcg.core.model.BossKind.MID_BOSS -> " · 중간 보스 관문"
+                com.game.tcg.core.model.BossKind.DEMON_LORD -> " · 대마왕 관문"
+                else -> ""
+            }
+            s.copy(
+                enemyName = stage.enemyName,
+                enemyElement = stage.enemyElement,
+                enemyHp = stage.enemyHp,
+                enemyMaxHp = stage.enemyHp,
+                enemyAtk = stage.enemyAtk,
+                isDemonLordBattle = false,
+                isChapter2BossBattle = false,
+                activeStage = number,
+                selectedStage = number,
+                turn = 1,
+                mana = ManaState(1, 1),
+                party = freshParty(s),
+                retreatInfo = BattleRetreatInfo(turn = 1),
+                pairUltimateUsedThisBattle = false,
+                pairUltimateBanner = null,
+                pairUltimateBannerSubtitle = null,
+                pendingLootGold = 0,
+                pendingLootGems = 0,
+                currentScreen = LobbyDestination.BATTLE,
+                stageMessage = "[스테이지 $number] ${stage.name} — ${stage.enemyName}",
+                battleLog = s.battleLog + listOf(
+                    "[스테이지 $number] ${stage.chapter}장 ${stage.chapterName} · ${stage.name}$bossLine",
+                    "${stage.enemyName} — HP ${stage.enemyHp} / 공격력 ${stage.enemyAtk} / 속성 ${stage.enemyElement.displayName}",
+                    "권장 전투력 ${stage.recommendedPower} · 내 덱 ${s.deckTotalPower} (${StageEngine.readiness(s.deckTotalPower, stage).label})"
+                ),
+                statusMessage = "[스테이지 $number] ${stage.name} 출전 — ${StageEngine.readiness(s.deckTotalPower, stage).label}"
+            )
+        }
+        return started
+    }
+
+    /** 지금 도전할 앞 스테이지로 바로 출전 */
+    fun startFrontStageBattle(): Boolean = startStageBattle()
+
+    // ──────────────────────────────────────────────────────────────
+    // 메인 루프 ②: 카드팩 상점 — 구매·개봉 → 신규 캐릭터 / 중복 조각
+    // ──────────────────────────────────────────────────────────────
+
+    /** 이 팩을 지금 살 수 있는지 (🎟 티켓 우선) */
+    fun canBuyPack(packId: String): Boolean {
+        val s = _uiState.value
+        val pack = PackCatalog.find(packId) ?: return false
+        return if (pack.ticketCost > 0 && s.packTickets >= pack.ticketCost) true else s.gold >= pack.goldCost
+    }
+
+    /** 카드팩 구매 + 개봉 (티켓이 있으면 티켓을 먼저 쓴다) */
+    fun openPack(packId: String): PackOpenResult? {
+        var resultOut: PackOpenResult? = null
+        _uiState.update { s ->
+            val pack = PackCatalog.find(packId)
+                ?: return@update s.copy(shopMessage = "[상점] 없는 상품입니다. ($packId)")
+            val useTicket = pack.ticketCost > 0 && s.packTickets >= pack.ticketCost
+            val goldCost = if (useTicket) 0 else pack.goldCost
+            if (!useTicket && s.gold < pack.goldCost) {
+                return@update s.copy(
+                    shopMessage = "[구매 불가] ${pack.name} — ${goldCost}G가 필요합니다. (보유 ${s.gold}G · 🎟 ${s.packTickets})",
+                    statusMessage = "[상점] 골드가 부족합니다."
+                )
+            }
+            val opened = packShopEngine.open(pack, s.ownedCardIds, random)
+            val actualTickets = if (useTicket) pack.ticketCost else 0
+            val applied = opened.copy(goldSpent = goldCost, ticketsSpent = actualTickets)
+            resultOut = applied
+
+            var wallet = s.shards
+            opened.draws.filter { !it.isNew && it.shards > 0 }.forEach { draw ->
+                wallet = wallet.add(draw.cardId, draw.shards)
+            }
+            val newCards = opened.newCardIds.map { TcgGameViewModel.characterCard(it) }
+            newCards.forEach { lifecycleEngine.registerOwnedCard(it) }
+            val ticketLine = if (useTicket) " (🎟 ${pack.ticketCost} 사용)" else " (${goldCost}G)"
+            s.copy(
+                gold = s.gold - goldCost + opened.totalGold,
+                packTickets = s.packTickets - actualTickets,
+                ownedCards = (s.ownedCards + newCards).distinctBy { it.id },
+                shards = wallet,
+                lastPackOpen = applied,
+                shopMessage = opened.message + ticketLine,
+                statusMessage = opened.message + ticketLine
+            )
+        }
+        return resultOut
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 서브 플로우 ①: 카드 강화 (골드 + 조각 → Lv.1~10, ATK/DEF 상승)
+    // ──────────────────────────────────────────────────────────────
+
+    fun selectGrowthCard(cardId: Int) {
+        _uiState.update { s ->
+            if (s.ownedCards.none { it.id == cardId }) {
+                return@update s.copy(growthMessage = "[강화] 보유하지 않은 카드입니다. (도감 #$cardId)")
+            }
+            s.copy(growthCardId = cardId, growthMessage = null)
+        }
+    }
+
+    /** 선택한(또는 지정한) 카드를 강화한다 */
+    fun upgradeCard(cardId: Int = 0): UpgradeResult? {
+        var resultOut: UpgradeResult? = null
+        _uiState.update { s ->
+            val targetId = if (cardId > 0) cardId else s.growthCard?.id ?: 0
+            val card = s.ownedCards.firstOrNull { it.id == targetId }
+                ?: return@update s.copy(growthMessage = "[강화] 강화할 카드가 없습니다. 보유 카드를 먼저 선택하세요.")
+            val result = upgradeEngine.upgrade(card, s.gold, s.shards)
+            resultOut = result
+            if (!result.isSuccess) {
+                return@update s.copy(growthMessage = "[강화 불가] ${result.failureReason}")
+            }
+            val newMaxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
+            s.copy(
+                ownedCards = s.ownedCards.map { if (it.id == card.id) card else it },
+                party = s.party.map { member ->
+                    if (member.card.id == card.id) member.copy(card = card, hp = newMaxHp, maxHp = newMaxHp) else member
+                },
+                gold = s.gold - result.goldSpent,
+                shards = result.walletAfter,
+                growthCardId = card.id,
+                growthMessage = result.message,
+                statusMessage = result.message
+            )
+        }
+        return resultOut
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 서브 플로우 ②: 연성(확정 계약) · 초월(조각 한계 돌파)
+    // ──────────────────────────────────────────────────────────────
+
+    /** 미보유 캐릭터(또는 해금된 중간 보스)를 조각으로 확정 연성한다 */
+    fun craftCharacter(cardId: Int): CraftResult? {
+        var resultOut: CraftResult? = null
+        _uiState.update { s ->
+            val record = CardCatalog.find(cardId)
+                ?: return@update s.copy(growthMessage = "[연성] 등록되지 않은 카드입니다. (#$cardId)")
+            if (s.ownedCards.any { it.id == cardId }) {
+                return@update s.copy(growthMessage = "[연성] 이미 보유한 카드입니다. (${record.fullName})")
+            }
+            val isMidBoss = com.game.tcg.core.model.MidBossCatalog.isMidBoss(cardId)
+            val kind = if (isMidBoss) CraftKind.MID_BOSS else CraftKind.STANDARD
+            if (isMidBoss) {
+                val stage = AdvancedSynthesisEngine.midBossStageOf(cardId)
+                if (stage == null || stage !in s.stageCleared) {
+                    return@update s.copy(
+                        growthMessage = "[심연 연성] ${record.name}은(는) 스테이지 $stage 보스 격파 후 연성할 수 있습니다."
+                    )
+                }
+            } else if (record.baseCost < AdvancedSynthesisEngine.CRAFT_MIN_COST) {
+                return@update s.copy(
+                    growthMessage = "[연성] 신규 연성은 ${AdvancedSynthesisEngine.CRAFT_MIN_COST}코스트 이상 캐릭터부터 가능합니다."
+                )
+            }
+            val result = AdvancedSynthesisEngine.craft(record, kind, s.shards, s.gold)
+            resultOut = result
+            if (!result.isSuccess || result.card == null) {
+                return@update s.copy(growthMessage = "[연성 불가] ${result.failureReason}")
+            }
+            val card = result.card
+            lifecycleEngine.registerOwnedCard(card)
+            s.copy(
+                ownedCards = s.ownedCards + card,
+                gold = s.gold - result.goldSpent,
+                shards = result.walletAfter,
+                growthCardId = card.id,
+                growthMessage = result.message,
+                lastCraft = result,
+                statusMessage = result.message
+            )
+        }
+        return resultOut
+    }
+
+    /** 보유 카드를 조각으로 초월(성급 +1)한다 */
+    fun transcendCard(cardId: Int = 0): TranscendResult? {
+        var resultOut: TranscendResult? = null
+        _uiState.update { s ->
+            val targetId = if (cardId > 0) cardId else s.growthCard?.id ?: 0
+            val card = s.ownedCards.firstOrNull { it.id == targetId }
+                ?: return@update s.copy(growthMessage = "[초월] 초월할 카드를 먼저 선택하세요.")
+            val result = AdvancedSynthesisEngine.transcend(card, s.shards, s.gold)
+            resultOut = result
+            if (!result.isSuccess) {
+                return@update s.copy(growthMessage = "[초월 불가] ${result.failureReason}")
+            }
+            val newMaxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
+            s.copy(
+                ownedCards = s.ownedCards.map { if (it.id == card.id) card else it },
+                party = s.party.map { member ->
+                    if (member.card.id == card.id) member.copy(card = card, hp = newMaxHp, maxHp = newMaxHp) else member
+                },
+                gold = s.gold - result.goldSpent,
+                shards = result.walletAfter,
+                growthMessage = result.message,
+                statusMessage = result.message
+            )
+        }
+        return resultOut
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 서브 플로우 ③: 장비 — 구매 · 장착 · 해제
+    // ──────────────────────────────────────────────────────────────
+
+    /** 장비 상점에서 골드로 구매 */
+    fun buyEquipment(itemId: String): EquipResult? {
+        var resultOut: EquipResult? = null
+        _uiState.update { s ->
+            val catalogItem = EquipmentCatalog.find(itemId)
+                ?: return@update s.copy(growthMessage = "[장비] 없는 장비입니다. ($itemId)")
+            if (catalogItem.goldPrice <= 0) {
+                return@update s.copy(growthMessage = "[장비] ${catalogItem.name}은(는) 스테이지 드롭 전용입니다.")
+            }
+            if (s.gold < catalogItem.goldPrice) {
+                return@update s.copy(growthMessage = "[장비] 골드가 부족합니다. (${catalogItem.name} ${catalogItem.goldPrice}G · 보유 ${s.gold}G)")
+            }
+            val item = EquipmentCatalog.instantiate(itemId)
+                ?: return@update s.copy(growthMessage = "[장비] 장비를 만들 수 없습니다.")
+            val result = EquipResult(
+                isSuccess = true,
+                item = item,
+                message = "[장비 구매] ${item.name} (${item.slot.displayName}) ${item.statSummary} · ${catalogItem.goldPrice}G"
+            )
+            resultOut = result
+            s.copy(
+                gold = s.gold - catalogItem.goldPrice,
+                equipment = s.equipment + item,
+                growthMessage = result.message,
+                statusMessage = result.message
+            )
+        }
+        return resultOut
+    }
+
+    /** 장비 장착 — 지정(또는 성장 화면) 카드에 착용 */
+    fun equipItem(itemUid: String, cardId: Int = 0): EquipResult? {
+        var resultOut: EquipResult? = null
+        _uiState.update { s ->
+            val item = s.equipment.firstOrNull { it.uid == itemUid && it.equippedTo == null }
+                ?: s.equipment.firstOrNull { it.id == itemUid && it.equippedTo == null }
+                ?: return@update s.copy(growthMessage = "[장비] 소지품에 없는 장비입니다.")
+            val targetId = if (cardId > 0) cardId else s.growthCard?.id ?: 0
+            val card = s.ownedCards.firstOrNull { it.id == targetId }
+                ?: return@update s.copy(growthMessage = "[장비] 장착할 카드를 먼저 선택하세요.")
+            val result = EquipmentEngine.equip(card, item, s.equipment)
+            resultOut = result
+            if (!result.isSuccess) {
+                return@update s.copy(growthMessage = "[장착 불가] ${result.failureReason}")
+            }
+            val newMaxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
+            s.copy(
+                ownedCards = s.ownedCards.map { if (it.id == card.id) card else it },
+                party = s.party.map { member ->
+                    if (member.card.id == card.id) member.copy(card = card, hp = newMaxHp, maxHp = newMaxHp) else member
+                },
+                equipment = s.equipment.toList(),
+                growthCardId = card.id,
+                growthMessage = result.message,
+                statusMessage = result.message
+            )
+        }
+        return resultOut
+    }
+
+    /** 장비 해제 — 수치를 정확히 되돌리고 소지품으로 돌린다 */
+    fun unequipItem(itemUid: String): EquipResult? {
+        var resultOut: EquipResult? = null
+        _uiState.update { s ->
+            val item = s.equipment.firstOrNull { (it.uid == itemUid || it.id == itemUid) && it.equippedTo != null }
+                ?: return@update s.copy(growthMessage = "[장비] 장착 중인 장비가 아닙니다.")
+            val card = s.ownedCards.firstOrNull { it.id == item.equippedTo }
+                ?: return@update s.copy(growthMessage = "[장비] 장착 대상 카드를 찾을 수 없습니다.")
+            val result = EquipmentEngine.unequip(card, item)
+            resultOut = result
+            if (!result.isSuccess) {
+                return@update s.copy(growthMessage = "[해제 불가] ${result.failureReason}")
+            }
+            val newMaxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
+            s.copy(
+                ownedCards = s.ownedCards.map { if (it.id == card.id) card else it },
+                party = s.party.map { member ->
+                    if (member.card.id == card.id) {
+                        val hp = newMaxHp.coerceAtMost(member.hp)
+                        member.copy(card = card, hp = hp, maxHp = newMaxHp)
+                    } else {
+                        member
+                    }
+                },
+                equipment = s.equipment.toList(),
+                growthMessage = result.message,
+                statusMessage = result.message
+            )
+        }
+        return resultOut
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 서브 플로우 ④: 현실 소환 — 차원 에너지 → 호감도·룩 해금·전투 버프
+    // ──────────────────────────────────────────────────────────────
+
+    fun selectSummonCard(cardId: Int) {
+        _uiState.update { s ->
+            if (s.ownedCards.none { it.id == cardId }) {
+                return@update s.copy(statusMessage = "[현실 소환] 보유하지 않은 캐릭터입니다. (도감 #$cardId)")
+            }
+            s.copy(summonCardId = cardId, summonMessage = null)
+        }
+    }
+
+    /** 선택한(또는 지정한) 캐릭터를 현실로 소환한다 */
+    fun summonToReality(cardId: Int = 0): SummonResult? {
+        var resultOut: SummonResult? = null
+        _uiState.update { s ->
+            val targetId = if (cardId > 0) cardId else s.summonCard?.id ?: 0
+            val card = s.ownedCards.firstOrNull { it.id == targetId }
+                ?: return@update s.copy(summonMessage = "[현실 소환] 소환할 캐릭터가 없습니다.")
+            val result = SummonEngine.summon(card, s.gateEnergy)
+            resultOut = result
+            if (!result.isSuccess) {
+                return@update s.copy(summonMessage = "[소환 불가] ${result.failureReason}")
+            }
+            s.copy(
+                ownedCards = s.ownedCards.map { if (it.id == card.id) card else it },
+                gateEnergy = (s.gateEnergy - result.energySpent).coerceAtLeast(0),
+                summonBuffPercent = result.buffPercent,
+                summonBuffBattles = result.buffBattles,
+                summonCardId = card.id,
+                summonCount = s.summonCount + 1,
+                lastSummon = result,
+                summonMessage = result.message,
+                partnerBond = if (card.id == 3) card.bondLevel else s.partnerBond,
+                dateLookUnlocked = s.dateLookUnlocked || result.unlockedDateLook,
+                ultimateUnlocked = s.ultimateUnlocked || card.bondLevel >= 100,
+                realWorldLog = (s.realWorldLog + result.message).takeLast(6),
+                statusMessage = result.message
+            )
+        }
+        return resultOut
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -1342,10 +2199,17 @@ class TcgGameViewModel(
     // 현실 교감
     // ──────────────────────────────────────────────────────────────
 
+    /**
+     * 현실 교감 — 현재 소환 대상([summonCard])과의 교감.
+     * (2026-11-16 진행 루프 개편: 시작 카드가 무작위 3장이므로 특정 번호가 아니라
+     *  화면에서 고른 파트너를 대상으로 한다.)
+     */
     fun interactRealWorld(activity: RealWorldActivity) {
         _uiState.update { s ->
-            val partner = s.ownedCards.firstOrNull { it.id == 3 } ?: characterCard(3)
-            val working = partner.copy()
+            val partner = s.summonCard
+                ?: return@update s.copy(statusMessage = "[현실 교감] 교감할 파트너가 없습니다. 카드팩으로 동료를 계약하세요.")
+            val working = s.ownedCards.firstOrNull { it.id == partner.id } ?: partner
+            val partnerName = CardCatalog.find(working.id)?.name ?: working.name
             val newBond = dualWorldEngine.interactInRealWorld(working, activity)
             val visual = working.currentVisual
             // 「기억의 잔향」: 기억이 지워진 동료는 교감으로 기억 파편을 되찾는다.
@@ -1361,14 +2225,15 @@ class TcgGameViewModel(
             }
             val unlockedDate = newBond >= 50
             val unlockedUltimate = newBond >= 100
-            val logLine = "[현실 교감] 아우렐리아 · $label → 호감도 $newBond/100" +
+            val logLine = "[현실 교감] $partnerName · $label → 호감도 $newBond/100" +
                     (if (unlockedDate) " · 데이트 룩 해금 연출" else "") +
                     (if (unlockedUltimate) " · 페어 얼티밋 오의 개방!" else "")
             val fragmentLine = if (fragmentGain != null && fragmentGain.isSuccess) fragmentGain.message else null
             s.copy(
-                ownedCards = s.ownedCards.map { if (it.id == 3) working else it },
-                partnerBond = newBond,
-                partnerVisual = visual,
+                ownedCards = s.ownedCards.map { if (it.id == working.id) working else it },
+                summonCardId = working.id,
+                partnerBond = if (working.id == 3) newBond else s.partnerBond,
+                partnerVisual = if (working.id == 3) visual else s.partnerVisual,
                 dateLookUnlocked = s.dateLookUnlocked || unlockedDate,
                 ultimateUnlocked = s.ultimateUnlocked || unlockedUltimate,
                 memoryRecallMessage = fragmentLine ?: s.memoryRecallMessage,
@@ -1509,7 +2374,10 @@ class TcgGameViewModel(
                     pairUltimateUsedThisBattle = true,
                     pairUltimateCount = s.pairUltimateCount + 1,
                     pairUltimateBanner = result.bannerTitle,
-                    pairUltimateBannerSubtitle = result.bannerSubtitle
+                    pairUltimateBannerSubtitle = result.bannerSubtitle,
+                    lastEnemyHitDamage = result.damage,
+                    lastEnemyHitTick = s.lastEnemyHitTick + 1,
+                    lastAttackerSlot = attacker.slotIndex
                 )
             } else {
                 s.copy(
@@ -1519,6 +2387,9 @@ class TcgGameViewModel(
                     pairUltimateBanner = result.bannerTitle,
                     pairUltimateBannerSubtitle = result.bannerSubtitle,
                     pairUltimateCount = s.pairUltimateCount + 1,
+                    lastEnemyHitDamage = result.damage,
+                    lastEnemyHitTick = s.lastEnemyHitTick + 1,
+                    lastAttackerSlot = attacker.slotIndex,
                     battleLog = s.battleLog + result.logLines + tail,
                     statusMessage = "[⚡ 페어 얼티밋 오의] ${attacker.card.name} · ${result.damage} 데미지 — 적 HP $newEnemyHp/${s.enemyMaxHp}"
                 )
@@ -1587,7 +2458,9 @@ class TcgGameViewModel(
     // ──────────────────────────────────────────────────────────────
 
     private fun toBattleState(s: TcgGameState): BattleState {
-        val slots = (0 until 5).map { idx -> BattleSlot(slotIndex = idx, isFrontRow = idx < 3) }.toMutableList()
+        val slots = (0 until DeckRules.MAX_DECK_SIZE)
+            .map { idx -> BattleSlot(slotIndex = idx, isFrontRow = DeckRules.isFrontSlot(idx)) }
+            .toMutableList()
         s.party.filter { it.isAlive }.forEach { m ->
             val slot = slots.getOrNull(m.slotIndex)
             if (slot != null) slot.placedCard = m.card
@@ -1613,14 +2486,26 @@ class TcgGameViewModel(
      */
     private fun freshParty(s: TcgGameState): List<PartyMember> =
         if (s.party.isEmpty()) {
-            initialParty()
+            initialParty(s.ownedCards.take(DeckRules.FRONT_SLOTS))
         } else {
-            s.party.map { it.copy(hp = it.maxHp, memoryAffinity = 0) }
+            s.party.map {
+                val maxHp = TcgGameViewModel.maxHpOf(it.card) + EquipmentEngine.hpBonus(it.card.id, s.equipment)
+                it.copy(hp = maxHp, maxHp = maxHp, memoryAffinity = 0)
+            }
         }
 
     companion object {
-        /** 메인 로비 기본 대표 캐릭터 (성기사 아우렐리아) */
+        /** 메인 로비 기본 대표 캐릭터 (성기사 아우렐리아 — 시작 카드에 없을 때의 대체값) */
         const val DEFAULT_LOBBY_HERO_ID: Int = 3
+
+        /** 시작 골드 — 일반 카드팩 2번 정도 */
+        const val START_GOLD: Int = 500
+
+        /** 시작 보석 */
+        const val START_GEMS: Int = 10
+
+        /** 시작 카드팩 티켓 — 첫 개봉을 바로 체험 */
+        const val START_PACK_TICKETS: Int = 1
 
         /** 차원 균열 에너지 시작값 */
         const val GATE_ENERGY_START: Int = 10
@@ -1628,34 +2513,51 @@ class TcgGameViewModel(
         /** 차원 균열 에너지 최대치 */
         const val GATE_ENERGY_MAX: Int = 12
 
+        /** 덱 슬롯 총수 — 기본 9장 · 최대 12장 */
+        const val DECK_SLOTS: Int = DeckRules.MAX_DECK_SIZE
+
         /** 이계 전투 승리 시 회복되는 차원 균열 에너지 */
         const val GATE_ENERGY_RECOVERY: Int = 2
 
         /** 메인 로비 데이트 룩 해금 호감도 */
         const val DATE_LOOK_UNLOCK_BOND: Int = 50
 
-        /** 메인 로비 좌우 전환 순서 — 스타팅 3인방 → 나머지 167인(도감 번호 오름차순, 170명 전원) */
+        /**
+         * 메인 로비 좌우 전환 순서 — 스타팅 3인방 → 나머지 플레이 가능 167인 → 중간 보스 6인.
+         * (보유하지 않은 카드는 [TcgGameState.lobbyRoster]에서 걸러진다.)
+         */
         val LOBBY_HERO_ORDER: List<Int> =
-            listOf(3, 1, 2) + CardCatalog.ALL.map { it.id }.filter { it !in listOf(3, 1, 2) }
+            listOf(3, 1, 2) +
+                CardCatalog.ALL.map { it.id }.filter { it !in listOf(3, 1, 2) } +
+                com.game.tcg.core.model.MidBossCatalog.ALL.map { it.id }
 
         /** 도감 카탈로그에서 카드 1장을 만든다 (미등록 번호도 안전한 대체 카드로 복원) */
         fun characterCard(id: Int): TcgCard = CardCatalog.require(id).toCard()
 
-        /** 카드의 전장 최대 HP */
-        fun maxHpOf(card: TcgCard): Int = CardCatalog.find(card.id)?.maxHp ?: 4000
+        /**
+         * 카드의 전장 최대 HP.
+         * 기본 HP(카탈로그)에 **DEF 성장률**을 곱한다 — 강화·성급·장비로 DEF가 오르면 HP도 함께 오른다.
+         * 장비의 HP 보너스는 상태를 가진 쪽(ViewModel)이 더한다.
+         */
+        fun maxHpOf(card: TcgCard): Int {
+            val record = CardCatalog.find(card.id) ?: return 4000
+            val baseDef = record.def.coerceAtLeast(1)
+            val scaled = record.maxHp.toLong() * card.def / baseDef
+            return scaled.toInt().coerceAtLeast(1)
+        }
 
         fun gaindNameOf(id: Int): String = CardCatalog.require(id).fullName
 
-        /** 스타팅 파티 — 아우렐리아(전열) · 세라피엘(전열) · 엘리리아(후열) */
-        fun initialParty(): List<PartyMember> = listOf(
-            PartyMember(characterCard(3), slotIndex = 0, isFrontRow = true, hp = maxHpOf(characterCard(3)), maxHp = maxHpOf(characterCard(3))),
-            PartyMember(characterCard(1), slotIndex = 1, isFrontRow = true, hp = maxHpOf(characterCard(1)), maxHp = maxHpOf(characterCard(1))),
-            PartyMember(characterCard(2), slotIndex = 2, isFrontRow = true, hp = maxHpOf(characterCard(2)), maxHp = maxHpOf(characterCard(2)))
-        )
+        /** 스타팅 파티 — 지정 카드(기본: 저코스트 무작위 3장)를 전열 1~3칸에 배치 */
+        fun initialParty(cards: List<TcgCard> = StartingRoster.starterCards()): List<PartyMember> =
+            StartingRoster.deploySlots(cards).map { (card, slot) ->
+                val maxHp = maxHpOf(card)
+                PartyMember(card, slot, DeckRules.isFrontSlot(slot), maxHp, maxHp)
+            }
 
-        /** 게임 시작 시 보유 카드 — 170명 전원 (호감도 50에서 합류) */
-        fun initialOwnedCards(): List<TcgCard> =
-            CardCatalog.initialOwnedRecords().map { it.toCard() }
+        /** 게임 시작 시 보유 카드 — 저코스트 풀에서 무작위 3장 */
+        fun initialOwnedCards(random: Random = Random.Default): List<TcgCard> =
+            StartingRoster.starterCards(StartingRoster.draw(random))
 
         /**
          * 도감 프로필 — 등록된 170인 전체 (No.1~169 + No.184).
@@ -1675,6 +2577,21 @@ class TcgGameViewModel(
         private val PROFILE_BY_ID: Map<Int, CharacterProfile> = PROFILES.associateBy { it.cardId }
 
         fun profiles(): List<CharacterProfile> = PROFILES
+
+        /** 중간 보스 6명(No.170~175)의 프로필 — 도감 '보스 6' 필터용 */
+        private val MID_BOSS_PROFILES: List<CharacterProfile> =
+            com.game.tcg.core.model.MidBossCatalog.ALL.map { record ->
+                CharacterProfile(
+                    cardId = record.id,
+                    displayName = record.name,
+                    title = record.title,
+                    element = record.element,
+                    isDemonLord = false,
+                    disguiseName = null
+                )
+            }
+
+        fun midBossProfiles(): List<CharacterProfile> = MID_BOSS_PROFILES
 
         /** 카드 1명의 프로필 (170명 로스터 조회 O(1)) */
         fun profileOf(cardId: Int): CharacterProfile? = PROFILE_BY_ID[cardId]

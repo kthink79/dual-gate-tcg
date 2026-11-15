@@ -27,69 +27,73 @@ class LobbyAndExplorationTest {
     // ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `메인 로비는 대표 캐릭터와 좌우 측면 서브메뉴로 시작한다`() {
-        val state = TcgGameViewModel().uiState.value
+    fun `메인 로비는 시작 캐릭터 3명과 좌우 측면 서브메뉴로 시작한다`() {
+        val state = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2)).uiState.value
 
         assertEquals(LobbyDestination.LOBBY, state.currentScreen)
-        assertEquals(TcgGameViewModel.DEFAULT_LOBBY_HERO_ID, state.lobbyHeroId)
-        assertEquals("아우렐리아", state.lobbyHeroProfile?.displayName)
+        // 시작 3장 중 DEF가 가장 높은 카드가 전열 1번·대표로 선다
+        val expectedHero = listOf(3, 1, 2).maxBy { TcgGameViewModel.characterCard(it).def }
+        assertEquals("시작 카드 중 가장 튼튼한 카드가 대표로 선다", expectedHero, state.lobbyHeroId)
         assertEquals(VisualState.BATTLE, state.lobbyVisual)
 
         assertEquals(
-            listOf(LobbyDestination.SCENARIO, LobbyDestination.BATTLE, LobbyDestination.EXPLORATION),
+            listOf(LobbyDestination.SCENARIO, LobbyDestination.STAGE, LobbyDestination.BATTLE, LobbyDestination.EXPLORATION),
             LobbyDestination.LEFT_ITEMS
         )
         assertEquals(
-            listOf(LobbyDestination.REAL_WORLD, LobbyDestination.COLLECTION, LobbyDestination.DECK),
+            listOf(LobbyDestination.REAL_WORLD, LobbyDestination.SHOP, LobbyDestination.GROWTH,
+                LobbyDestination.COLLECTION, LobbyDestination.DECK),
             LobbyDestination.RIGHT_ITEMS
         )
         assertEquals(SideRail.LEFT, LobbyDestination.SCENARIO.rail)
+        assertEquals(SideRail.LEFT, LobbyDestination.STAGE.rail)
         assertEquals(SideRail.RIGHT, LobbyDestination.DECK.rail)
+        assertEquals(SideRail.RIGHT, LobbyDestination.GROWTH.rail)
         assertEquals("이세계 접속", LobbyDestination.SCENARIO.label)
+        assertEquals("스테이지", LobbyDestination.STAGE.label)
         assertEquals("탐색", LobbyDestination.EXPLORATION.label)
+        assertEquals("카드팩", LobbyDestination.SHOP.label)
+        assertEquals("성장", LobbyDestination.GROWTH.label)
         assertEquals("캐릭터 관리", LobbyDestination.COLLECTION.label)
         assertEquals("서약·덱", LobbyDestination.DECK.label)
     }
 
     @Test
     fun `좌우 전환은 보유 캐릭터를 순환한다`() {
-        val vm = TcgGameViewModel()
-        // 스타팅 3인방 + 나머지 167인(170명 전원) 순서
-        assertEquals(listOf(3, 1, 2), vm.uiState.value.lobbyRoster.take(3))
-        assertEquals(170, vm.uiState.value.lobbyRoster.size)
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
+
+        assertEquals("시작 3장만 보유한다", 3, vm.uiState.value.lobbyRoster.size)
+        val roster = vm.uiState.value.lobbyRoster
+        val startIndex = roster.indexOf(vm.uiState.value.lobbyHeroId)
 
         vm.cycleLobbyHero(1)
-        assertEquals(1, vm.uiState.value.lobbyHeroId)
-        assertEquals("세라피엘", vm.uiState.value.lobbyHeroProfile?.displayName)
+        assertEquals(roster[(startIndex + 1) % roster.size], vm.uiState.value.lobbyHeroId)
 
         vm.cycleLobbyHero(1)
-        assertEquals(2, vm.uiState.value.lobbyHeroId)
+        assertEquals(roster[(startIndex + 2) % roster.size], vm.uiState.value.lobbyHeroId)
 
         vm.cycleLobbyHero(1)
-        assertEquals("세 번째 다음은 도감 4번", 4, vm.uiState.value.lobbyHeroId)
-
-        // 로스터 끝까지 돌면 처음으로 돌아온다
-        repeat(166) { vm.cycleLobbyHero(1) }
-        assertEquals(184, vm.uiState.value.lobbyHeroId)
-        vm.cycleLobbyHero(1)
-        assertEquals("마지막 다음은 처음으로 돌아온다", 3, vm.uiState.value.lobbyHeroId)
+        assertEquals("마지막 다음은 처음으로 돌아온다", roster[startIndex], vm.uiState.value.lobbyHeroId)
 
         vm.cycleLobbyHero(-1)
-        assertEquals("역방향도 순환한다", 184, vm.uiState.value.lobbyHeroId)
+        assertEquals("역방향도 순환한다", roster[(startIndex + 2) % roster.size], vm.uiState.value.lobbyHeroId)
     }
 
     @Test
     fun `대표 캐릭터를 직접 선택할 수 있고 미보유 캐릭터는 거부된다`() {
-        val vm = TcgGameViewModel()
+        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
 
         vm.selectLobbyHero(1)
         assertEquals(1, vm.uiState.value.lobbyHeroId)
         assertEquals("태양의 대천사", vm.uiState.value.lobbyHeroProfile?.title)
 
-        // 170명 전원 보유이므로 등록되지 않은 번호만 거부된다
-        vm.selectLobbyHero(999)
-        assertEquals("미등록 번호는 대표로 세울 수 없다", 1, vm.uiState.value.lobbyHeroId)
+        // 시작 3장만 보유이므로 미보유 카드(도감 184번)와 미등록 번호 모두 거부된다
+        vm.selectLobbyHero(184)
+        assertEquals("미보유 카드는 대표로 세울 수 없다", 1, vm.uiState.value.lobbyHeroId)
         assertTrue(vm.uiState.value.statusMessage.contains("계약하지 않은"))
+
+        vm.selectLobbyHero(999)
+        assertEquals("미등록 번호도 대표로 세울 수 없다", 1, vm.uiState.value.lobbyHeroId)
     }
 
     @Test
@@ -164,7 +168,8 @@ class LobbyAndExplorationTest {
     @Test
     fun `홀림 스택이 쌓이면 로비 경보가 시나리오 화면으로 안내한다`() {
         val vm = TcgGameViewModel()
-        assertTrue("초기에는 경보가 없다", vm.uiState.value.lobbyAlerts.isEmpty())
+        assertEquals("처음에는 다음 스테이지 안내만 있다", 1, vm.uiState.value.lobbyAlerts.size)
+        assertEquals(LobbyDestination.STAGE, vm.uiState.value.lobbyAlerts.single().destination)
 
         vm.gazeAtDemonLord()
 

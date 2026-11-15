@@ -12,18 +12,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.game.tcg.core.engine.DeckEngine
-import com.game.tcg.core.model.DeckValidationResult
+import com.game.tcg.core.model.DeckRules
 
 /**
- * 우측 서브메뉴 「서약·덱」 — 20+10 · 1인 1장 덱 확인 + 마왕 응시·성수 정화 + 대표 캐릭터 설정
+ * 우측 서브메뉴 「서약·덱」의 서약 탭 — 출전 덱 현황(9~12장 · 1인 1장) + 마왕 응시·성수 정화 + 대표 캐릭터 설정
  */
 @Composable
 fun DeckScreen(
@@ -33,43 +31,51 @@ fun DeckScreen(
     onSetLobbyHero: (Int) -> Unit,
     onOpenCollection: () -> Unit
 ) {
-    val validation: DeckValidationResult = remember(state.ownedCards.size, state.ownedCards.map { it.id }) {
-        DeckEngine().validateDeck(state.ownedCards)
-    }
-    val characterCount = validation.characterCount
-    val equipmentCount = validation.equipmentSpellCount
+    val deckSize = state.unlockedDeckSize
 
     ScreenFrame {
         SectionCard(
-            title = "서약 덱 · 20+10 · 1인 1장",
-            badge = "캐릭터 ${characterCount}/20 · 장비 ${equipmentCount}/10",
+            title = "출전 덱 현황 · 1인 1장",
+            badge = "${state.party.size}/${deckSize}장 · 최대 ${DeckRules.MAX_DECK_SIZE}장",
             accent = TcgColors.Gold
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Pill("캐릭터 카드", TcgColors.Violet)
+                Pill("전열", TcgColors.Hp)
                 Spacer(Modifier.width(6.dp))
-                Text("$characterCount/20", color = TcgColors.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "${state.party.count { it.isFrontRow }}/3",
+                    color = TcgColors.Text,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
                 Spacer(Modifier.width(10.dp))
-                Pill("장비·스펠", TcgColors.Mana)
+                Pill("후열·대기", TcgColors.Mana)
                 Spacer(Modifier.width(6.dp))
-                Text("$equipmentCount/10", color = TcgColors.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "${state.party.count { !it.isFrontRow }}/${deckSize - 3}",
+                    color = TcgColors.Text,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.width(10.dp))
+                Pill("Lv.${state.playerLevel}", TcgColors.Violet)
             }
-            StatBar(ratio = characterCount / 20f, color = TcgColors.Violet, height = 8)
-            StatBar(ratio = equipmentCount / 10f, color = TcgColors.Mana, height = 6)
+            StatBar(ratio = state.party.size / deckSize.toFloat(), color = TcgColors.Violet, height = 8)
             Text(
-                "1캐릭터 = 1장 유일 원칙. 동일 캐릭터를 두 장 편성할 수 없으며, " +
-                        "장비·스펠은 같은 카드 최대 3장까지 허용됩니다.",
+                "기본 9장 편성 · Lv.5에서 10장 · Lv.10에서 11장 · Lv.15에서 12장까지 열립니다. " +
+                        "같은 캐릭터는 단 1장만 편성할 수 있습니다(1캐릭터 1장 원칙).",
                 color = TcgColors.Muted,
                 fontSize = 9.sp,
                 lineHeight = 14.sp
             )
 
-            state.ownedCards.forEach { card ->
+            state.equippedCards.forEachIndexed { index, card ->
+                val member = state.party.sortedBy { it.slotIndex }.getOrNull(index)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Pill("#${card.id}", elementColor(card.element))
+                    Pill(DeckRules.slotLabel(member?.slotIndex ?: index), elementColor(card.element))
                     Spacer(Modifier.width(6.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(card.name, color = TcgColors.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -82,26 +88,12 @@ fun DeckScreen(
                     Pill("1인 1장 ✓", TcgColors.Heal)
                 }
             }
-
-            if (validation.errors.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(TcgColors.SurfaceAlt)
-                        .padding(10.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        validation.errors.take(3).forEach { error ->
-                            Text("· $error", color = TcgColors.Muted, fontSize = 9.sp, lineHeight = 14.sp)
-                        }
-                        Text(
-                            "· 덱 30장 완성은 캐릭터 연성과 장비 카드 해금으로 채워집니다.",
-                            color = TcgColors.Muted,
-                            fontSize = 9.sp
-                        )
-                    }
-                }
+            if (state.party.isEmpty()) {
+                Text(
+                    "아직 편성된 카드가 없습니다 — 「덱 편성」 탭에서 자동 편성 또는 카드 탭으로 채우세요.",
+                    color = TcgColors.Muted,
+                    fontSize = 9.sp
+                )
             }
             ActionTile(
                 label = "🃏 캐릭터 관리에서 도감·합성 열기",
