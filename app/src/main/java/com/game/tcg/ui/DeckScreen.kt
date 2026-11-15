@@ -154,7 +154,7 @@ fun DeckScreen(
             )
             state.lobbyRoster.forEach { id ->
                 val card = TcgGameViewModel.characterCard(id)
-                val profile = TcgGameViewModel.profiles().firstOrNull { it.cardId == id }
+                val profile = TcgGameViewModel.profileOf(id)
                 ActionTile(
                     label = "${if (id == state.lobbyHeroId) "★ " else "☆ "}${profile?.displayName ?: card.name}",
                     hint = "${profile?.title ?: card.skillText} · 호감도 " +

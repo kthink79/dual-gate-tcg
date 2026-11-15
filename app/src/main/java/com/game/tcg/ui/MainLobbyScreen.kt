@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.game.tcg.core.model.TcgCard
+import com.game.tcg.core.model.Element
 import com.game.tcg.core.model.VisualState
 
 /**
@@ -238,12 +239,11 @@ fun MainLobbyScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     roster.forEach { id ->
-                        val name = TcgGameViewModel.profiles().firstOrNull { it.cardId == id }?.displayName
-                            ?: TcgGameViewModel.characterCard(id).name
+                        val chipProfile = TcgGameViewModel.profileOf(id)
                         ChipButton(
-                            label = name,
+                            label = chipProfile?.displayName ?: "#$id",
                             selected = id == state.lobbyHeroId,
-                            accent = elementColor(TcgGameViewModel.characterCard(id).element)
+                            accent = elementColor(chipProfile?.element ?: Element.LIGHT)
                         ) {
                             onSelectHero(id)
                         }

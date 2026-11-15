@@ -391,7 +391,7 @@ data class TcgGameState(
 
     /** 대표 캐릭터의 표시용 프로필 (이름 · 칭호) */
     val lobbyHeroProfile: CharacterProfile?
-        get() = TcgGameViewModel.profiles().firstOrNull { it.cardId == lobbyHeroId }
+        get() = TcgGameViewModel.profileOf(lobbyHeroId)
 
     /** 메인 화면에서 ◀ ▶ 로 넘길 수 있는 보유 캐릭터 순서 */
     val lobbyRoster: List<Int>
@@ -560,7 +560,7 @@ class TcgGameViewModel(
     }
 
     private fun heroDisplayName(cardId: Int): String =
-        TcgGameViewModel.profiles().firstOrNull { it.cardId == cardId }?.displayName
+        TcgGameViewModel.profileOf(cardId)?.displayName
             ?: TcgGameViewModel.characterCard(cardId).name
 
     private fun bondOf(s: TcgGameState, cardId: Int): Int =
@@ -1657,8 +1657,11 @@ class TcgGameViewModel(
         fun initialOwnedCards(): List<TcgCard> =
             CardCatalog.initialOwnedRecords().map { it.toCard() }
 
-        /** 도감 프로필 — 등록된 170인 전체 (No.1~169 + No.184) */
-        fun profiles(): List<CharacterProfile> = CardCatalog.ALL.map { record ->
+        /**
+         * 도감 프로필 — 등록된 170인 전체 (No.1~169 + No.184).
+         * 170명 로비·도감에서 매 프레임 새 리스트를 만들지 않도록 한 번만 생성해 재사용한다.
+         */
+        private val PROFILES: List<CharacterProfile> = CardCatalog.ALL.map { record ->
             CharacterProfile(
                 cardId = record.id,
                 displayName = record.name,
@@ -1668,5 +1671,12 @@ class TcgGameViewModel(
                 disguiseName = record.disguiseName
             )
         }
+
+        private val PROFILE_BY_ID: Map<Int, CharacterProfile> = PROFILES.associateBy { it.cardId }
+
+        fun profiles(): List<CharacterProfile> = PROFILES
+
+        /** 카드 1명의 프로필 (170명 로스터 조회 O(1)) */
+        fun profileOf(cardId: Int): CharacterProfile? = PROFILE_BY_ID[cardId]
     }
 }

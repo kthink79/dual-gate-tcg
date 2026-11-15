@@ -54,7 +54,7 @@ fun CollectionScreen(
     val selected: TcgCard = state.ownedCards.firstOrNull { it.id == state.selectedCardId }
         ?: TcgGameViewModel.characterCard(state.selectedCardId)
     val isOwned = state.ownedCards.any { it.id == state.selectedCardId }
-    val profile = TcgGameViewModel.profiles().firstOrNull { it.cardId == state.selectedCardId }
+    val profile = TcgGameViewModel.profileOf(state.selectedCardId)
     val isDemonLordCard = state.selectedCardId == 112
 
     ScreenFrame {

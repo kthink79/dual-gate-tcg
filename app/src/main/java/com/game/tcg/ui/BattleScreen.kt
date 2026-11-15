@@ -332,7 +332,7 @@ fun BattleScreen(
                 hint = "현재: " + (0..4).joinToString(" · ") { slot ->
                     val card = state.party.firstOrNull { it.slotIndex == slot }?.card
                     val name = card?.let { c ->
-                        TcgGameViewModel.profiles().firstOrNull { it.cardId == c.id }?.displayName ?: c.name
+                        TcgGameViewModel.profileOf(c.id)?.displayName ?: c.name
                     } ?: "빈칸"
                     (if (slot < 3) "전${slot + 1} " else "후${slot - 2} ") + name
                 },
