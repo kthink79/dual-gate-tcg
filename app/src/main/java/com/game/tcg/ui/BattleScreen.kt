@@ -43,7 +43,8 @@ fun BattleScreen(
     onRedeploy: (Int) -> Unit,
     onStartDemonLordBattle: () -> Unit,
     onStartFieldBattle: () -> Unit,
-    onPairUltimate: () -> Unit
+    onPairUltimate: () -> Unit,
+    onOpenPartyEdit: () -> Unit
 ) {
     ScreenFrame {
         // ── 적 정보 ──
@@ -326,6 +327,15 @@ fun BattleScreen(
                     )
                 }
             }
+            ActionTile(
+                label = "🃏 탐색대 편성 — 캐릭터 관리에서 교체",
+                hint = "현재: " + (0..4).joinToString(" · ") { slot ->
+                    val name = state.party.firstOrNull { it.slotIndex == slot }?.card?.name?.split(" ")?.last() ?: "빈칸"
+                    (if (slot < 3) "전${slot + 1} " else "후${slot - 2} ") + name
+                },
+                accent = TcgColors.Violet,
+                onClick = onOpenPartyEdit
+            )
             if (state.lastRetreatMessage != null) {
                 Text(state.lastRetreatMessage, color = TcgColors.Muted, fontSize = 10.sp, lineHeight = 15.sp)
             }

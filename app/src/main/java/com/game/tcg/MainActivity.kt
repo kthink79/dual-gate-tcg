@@ -124,7 +124,8 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                         onRedeploy = { id -> viewModel.redeploy(id) },
                         onStartDemonLordBattle = { viewModel.startDemonLordBattle() },
                         onStartFieldBattle = { viewModel.startFieldBattle() },
-                        onPairUltimate = { viewModel.activatePairUltimate() }
+                        onPairUltimate = { viewModel.activatePairUltimate() },
+                        onOpenPartyEdit = { viewModel.openScreen(LobbyDestination.COLLECTION) }
                     )
                     LobbyDestination.EXPLORATION -> ExplorationScreen(
                         state = state,
