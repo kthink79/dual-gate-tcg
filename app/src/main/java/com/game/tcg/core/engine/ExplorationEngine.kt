@@ -53,7 +53,7 @@ enum class ExplorationRewardType {
     MEMORY_FRAGMENT,
     TEMPTATION,
 
-    /** 개성파 동료와의 조우 — 해당 캐릭터의 호감도가 오른다 */
+    /** 동료와의 조우 — 해당 캐릭터의 호감도가 오른다 */
     COMPANION_BOND
 }
 
@@ -82,7 +82,7 @@ data class ExplorationResult(
     val fragmentTargetCardId: Int? = null,
     val bondGained: Int = 0,
     val temptationGained: Int = 0,
-    /** 조우한 캐릭터의 도감 번호 (개성파 30인 조우 시) */
+    /** 조우한 캐릭터의 도감 번호 (동료 조우 시) */
     val companionCardId: Int? = null,
     val companionDisplayName: String? = null
 ) {
@@ -352,20 +352,20 @@ class ExplorationEngine(
             )
         }
     }
-    // ── 🎭 개성파 30인 조우 ──
+    // ── 🎭 동료 조우 (170명 전원) ──
     /**
-     * 도감 No.155~184의 개성파 30인 중 한 명과 길에서 마주친다.
+     * 도감 No.1~169 · No.184의 170명 중 한 명과 길에서 마주친다.
      * 해당 캐릭터의 호감도가 오르고, 현실 교감·데이트 룩 해금으로 이어진다.
      */
     private fun companionEncounter(context: ExplorationContext): ExplorationResult {
-        val roster = CardCatalog.newWave()
+        val roster = CardCatalog.ALL
         // 탐색 횟수까지 반영해 같은 판정값이라도 매번 다른 인연이 걸리도록 한다
         val index = (context.explorationCount + roll()) % roster.size
         val record = roster[index]
         val bond = 10 + (index % 3) * 5   // 10 / 15 / 20
         return ExplorationResult(
             mode = ExplorationMode.ENCOUNTER,
-            title = "개성파 조우 · ${record.fullName}",
+            title = "인연 조우 · ${record.fullName}",
             narrative = encounterNarrative(record.name, record.title, record.id),
             rewards = listOf(
                 ExplorationReward(

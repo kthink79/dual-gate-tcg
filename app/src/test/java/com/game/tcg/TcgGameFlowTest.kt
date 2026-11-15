@@ -1,6 +1,7 @@
 package com.game.tcg
 
 import com.game.tcg.core.engine.RealWorldActivity
+import com.game.tcg.core.model.CardCatalog
 import com.game.tcg.core.model.VisualState
 import com.game.tcg.ui.TcgGameViewModel
 import org.junit.Assert.assertEquals
@@ -133,8 +134,9 @@ class TcgGameFlowTest {
         vm.interactRealWorld(RealWorldActivity.ROMANTIC_EVENING_DATE)
 
         val after = vm.uiState.value
-        assertEquals(50, after.partnerBond)
-        assertTrue("호감도 50에서 데이트 룩이 해금된다", after.dateLookUnlocked)
+        // 아우렐리아는 호감도 50으로 합류하므로 카페 데이트(+30)로 80이 된다
+        assertEquals(80, after.partnerBond)
+        assertTrue("호감도 50 이상에서 데이트 룩이 해금된다", after.dateLookUnlocked)
         assertEquals(VisualState.ROMANTIC_DATE, after.partnerVisual)
     }
 
@@ -153,16 +155,18 @@ class TcgGameFlowTest {
     }
 
     @Test
-    fun `신규 연성은 잡카드와 자금을 소모하고 새 캐릭터를 획득한다`() {
+    fun `신규 연성은 170명 전원 보유 상태에서는 보유 캐릭터 조각으로 귀결된다`() {
         val vm = TcgGameViewModel()
         val before = vm.uiState.value
+        assertEquals("미계약 카드가 남아 있지 않다", 0, CardCatalog.unownedCandidates(before.ownedCards.map { it.id }).size)
 
         vm.craftNewCharacter()
 
         val after = vm.uiState.value
         assertEquals(before.junkCards - 3, after.junkCards)
         assertEquals(before.gold - 300, after.gold)
-        assertEquals(before.ownedCards.size + 1, after.ownedCards.size)
+        assertEquals("새 캐릭터는 늘지 않는다", before.ownedCards.size, after.ownedCards.size)
+        assertTrue(after.synthesisMessage!!.contains("보유한 캐릭터의 조각"))
     }
 
     @Test

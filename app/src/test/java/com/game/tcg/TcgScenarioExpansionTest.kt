@@ -371,8 +371,10 @@ class TcgScenarioExpansionTest {
 
     @Test
     fun `전투 화면 페어 오의 버튼은 마나 3에서 발동하고 전투당 1회로 제한된다`() {
+        // 제2장 보스(HP 32000)를 상대로 검증한다 — 오의 한 방에 전투가 끝나지 않아 '전투당 1회' 제한을 확인할 수 있다
         val vm = TcgGameViewModel()
-        vm.startDemonLordBattle()
+        repeat(8) { vm.advanceStory() }
+        vm.startChapter2BossBattle()
         // 마나 1 → 3까지 턴 진행
         val early = vm.activatePairUltimate()
         assertNotNull(early)

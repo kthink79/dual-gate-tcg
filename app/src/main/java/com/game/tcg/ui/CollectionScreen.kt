@@ -58,7 +58,7 @@ fun CollectionScreen(
     val isDemonLordCard = state.selectedCardId == 112
 
     ScreenFrame {
-        // ── 카드 선택 (34인 전체 스크롤 목록) ──
+        // ── 카드 선택 (170인 전체 스크롤 목록) ──
         val allProfiles = TcgGameViewModel.profiles()
         var catalogFilter by remember { mutableStateOf(CatalogFilter.ALL) }
         val shownProfiles = when (catalogFilter) {
@@ -75,18 +75,20 @@ fun CollectionScreen(
                 ChipButton("전체 ${allProfiles.size}인", catalogFilter == CatalogFilter.ALL) {
                     catalogFilter = CatalogFilter.ALL
                 }
-                ChipButton("개성파 30인", catalogFilter == CatalogFilter.NEW_WAVE, TcgColors.Gold) {
+                ChipButton("신규 15인", catalogFilter == CatalogFilter.NEW_WAVE, TcgColors.Gold) {
                     catalogFilter = CatalogFilter.NEW_WAVE
                 }
-                ChipButton("기존 4인", catalogFilter == CatalogFilter.ORIGINAL, TcgColors.Mana) {
+                ChipButton("기존 155인", catalogFilter == CatalogFilter.ORIGINAL, TcgColors.Mana) {
                     catalogFilter = CatalogFilter.ORIGINAL
                 }
             }
             Text(
                 if (catalogFilter == CatalogFilter.NEW_WAVE) {
-                    "No.155~184 개성파 30인 — 얼굴 골격·피부·나이까지 저마다 다른 30명입니다."
+                    "No.155~169 신규 15인 — 매력 유지 + 얼굴형·포즈 다양화로 다시 그린 세트입니다."
+                } else if (catalogFilter == CatalogFilter.ORIGINAL) {
+                    "No.1~154 · No.184 아메넷 — 기존 155인. 전원 3단 비주얼(전투·일상·데이트)이 들어 있습니다."
                 } else {
-                    "도감 번호를 누르면 카드 상세와 3단 비주얼이 열립니다. (1캐릭터 = 1장 유일성)"
+                    "도감 번호를 누르면 카드 상세와 3단 비주얼이 열립니다. (170명 × 3 = JPG 510장, 1캐릭터 = 1장 유일성)"
                 },
                 color = TcgColors.Muted,
                 fontSize = 9.sp,

@@ -1506,6 +1506,7 @@ class TcgGameViewModel(
 
             if (newEnemyHp <= 0) {
                 applyVictory(s, newMana, result.logLines + tail).copy(
+                    pairUltimateUsedThisBattle = true,
                     pairUltimateCount = s.pairUltimateCount + 1,
                     pairUltimateBanner = result.bannerTitle,
                     pairUltimateBannerSubtitle = result.bannerSubtitle
@@ -1633,9 +1634,9 @@ class TcgGameViewModel(
         /** 메인 로비 데이트 룩 해금 호감도 */
         const val DATE_LOOK_UNLOCK_BOND: Int = 50
 
-        /** 메인 로비 좌우 전환 순서 — 스타팅 3인방 → 마왕 릴리스 → 개성파 30인(155~184) */
+        /** 메인 로비 좌우 전환 순서 — 스타팅 3인방 → 나머지 167인(도감 번호 오름차순, 170명 전원) */
         val LOBBY_HERO_ORDER: List<Int> =
-            listOf(3, 1, 2, 112) + CardCatalog.NEW_WAVE_IDS
+            listOf(3, 1, 2) + CardCatalog.ALL.map { it.id }.filter { it !in listOf(3, 1, 2) }
 
         /** 도감 카탈로그에서 카드 1장을 만든다 (미등록 번호도 안전한 대체 카드로 복원) */
         fun characterCard(id: Int): TcgCard = CardCatalog.require(id).toCard()
@@ -1652,11 +1653,11 @@ class TcgGameViewModel(
             PartyMember(characterCard(2), slotIndex = 2, isFrontRow = true, hp = maxHpOf(characterCard(2)), maxHp = maxHpOf(characterCard(2)))
         )
 
-        /** 게임 시작 시 보유 카드 — 스타팅 3인방 + 개성파 30인(No.155~184) */
+        /** 게임 시작 시 보유 카드 — 170명 전원 (호감도 50에서 합류) */
         fun initialOwnedCards(): List<TcgCard> =
             CardCatalog.initialOwnedRecords().map { it.toCard() }
 
-        /** 도감 프로필 — 등록된 34인 전체 (스타팅 · 마왕 · 개성파 30인) */
+        /** 도감 프로필 — 등록된 170인 전체 (No.1~169 + No.184) */
         fun profiles(): List<CharacterProfile> = CardCatalog.ALL.map { record ->
             CharacterProfile(
                 cardId = record.id,

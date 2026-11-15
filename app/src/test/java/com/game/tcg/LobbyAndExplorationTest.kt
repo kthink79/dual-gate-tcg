@@ -54,9 +54,9 @@ class LobbyAndExplorationTest {
     @Test
     fun `좌우 전환은 보유 캐릭터를 순환한다`() {
         val vm = TcgGameViewModel()
-        // 스타팅 3인방 + 개성파 30인(155~184) 순서
+        // 스타팅 3인방 + 나머지 167인(170명 전원) 순서
         assertEquals(listOf(3, 1, 2), vm.uiState.value.lobbyRoster.take(3))
-        assertEquals(33, vm.uiState.value.lobbyRoster.size)
+        assertEquals(170, vm.uiState.value.lobbyRoster.size)
 
         vm.cycleLobbyHero(1)
         assertEquals(1, vm.uiState.value.lobbyHeroId)
@@ -66,10 +66,10 @@ class LobbyAndExplorationTest {
         assertEquals(2, vm.uiState.value.lobbyHeroId)
 
         vm.cycleLobbyHero(1)
-        assertEquals("세 번째 다음은 첫 개성파", 155, vm.uiState.value.lobbyHeroId)
+        assertEquals("세 번째 다음은 도감 4번", 4, vm.uiState.value.lobbyHeroId)
 
         // 로스터 끝까지 돌면 처음으로 돌아온다
-        repeat(29) { vm.cycleLobbyHero(1) }
+        repeat(166) { vm.cycleLobbyHero(1) }
         assertEquals(184, vm.uiState.value.lobbyHeroId)
         vm.cycleLobbyHero(1)
         assertEquals("마지막 다음은 처음으로 돌아온다", 3, vm.uiState.value.lobbyHeroId)
@@ -86,33 +86,33 @@ class LobbyAndExplorationTest {
         assertEquals(1, vm.uiState.value.lobbyHeroId)
         assertEquals("태양의 대천사", vm.uiState.value.lobbyHeroProfile?.title)
 
-        // 릴리스(112)는 아직 계약하지 않은 마왕 — 로비 로스터에 없다
-        vm.selectLobbyHero(112)
-        assertEquals("미보유 캐릭터는 대표로 세울 수 없다", 1, vm.uiState.value.lobbyHeroId)
+        // 170명 전원 보유이므로 등록되지 않은 번호만 거부된다
+        vm.selectLobbyHero(999)
+        assertEquals("미등록 번호는 대표로 세울 수 없다", 1, vm.uiState.value.lobbyHeroId)
         assertTrue(vm.uiState.value.statusMessage.contains("계약하지 않은"))
     }
 
     @Test
-    fun `3단 비주얼은 전투 일상은 바로 데이트는 호감도 50부터 열린다`() {
+    fun `3단 비주얼은 전투 일상 데이트 모두 바로 전환된다`() {
         val vm = TcgGameViewModel()
+
+        // 170명 전원이 호감도 50으로 합류하므로 데이트 룩이 처음부터 열려 있다
+        assertEquals(TcgGameViewModel.DATE_LOOK_UNLOCK_BOND, vm.uiState.value.lobbyHeroBond)
+        assertTrue(vm.uiState.value.isLobbyDateLookUnlocked)
 
         vm.selectLobbyVisual(VisualState.CASUAL_CUTE)
         assertEquals(VisualState.CASUAL_CUTE, vm.uiState.value.lobbyVisual)
-
         vm.selectLobbyVisual(VisualState.ROMANTIC_DATE)
-        assertEquals("호감도 50 전에는 데이트 룩이 잠긴다", VisualState.CASUAL_CUTE, vm.uiState.value.lobbyVisual)
-        assertTrue(vm.uiState.value.statusMessage.contains("잠금"))
+        assertEquals("데이트 룩이 잠기지 않는다", VisualState.ROMANTIC_DATE, vm.uiState.value.lobbyVisual)
 
-        // 현실 교감으로 호감도 50 달성 → 데이트 룩 해금
-        vm.interactRealWorld(RealWorldActivity.ROMANTIC_EVENING_DATE)
-        assertTrue(vm.uiState.value.isLobbyDateLookUnlocked)
-
-        vm.selectLobbyVisual(VisualState.ROMANTIC_DATE)
+        // 다른 캐릭터로 바꿔도 데이트 룩이 유지된다
+        vm.selectLobbyHero(2)
         assertEquals(VisualState.ROMANTIC_DATE, vm.uiState.value.lobbyVisual)
 
-        // 호감도가 낮은 캐릭터로 바꾸면 데이트 룩은 전투 룩으로 되돌아간다
-        vm.selectLobbyHero(2)
-        assertEquals(VisualState.BATTLE, vm.uiState.value.lobbyVisual)
+        // 현실 교감으로 호감도가 더 올라간다
+        val before = vm.uiState.value.lobbyHeroBond
+        vm.interactRealWorld(RealWorldActivity.ROMANTIC_EVENING_DATE)
+        assertTrue(vm.uiState.value.lobbyHeroBond >= before)
     }
 
     @Test
@@ -121,7 +121,7 @@ class LobbyAndExplorationTest {
         val state = vm.uiState.value
 
         assertNotNull(state.lobbyHero)
-        assertEquals(20, state.lobbyHeroBond)
+        assertEquals(50, state.lobbyHeroBond)
         assertFalse(state.lobbyHero.isMemoryReset)
     }
 
