@@ -517,6 +517,7 @@ data class AcquisitionResult(
 enum class MemoryFragmentSource(val displayName: String) {
     REAL_WORLD_BOND("현실 교감"),
     BATTLE("이계 전투 승리"),
+    EXPLORATION("차원 탐색"),
     RECALL_GIFT("회상의 잔향")
 }
 

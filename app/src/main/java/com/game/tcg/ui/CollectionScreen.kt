@@ -41,7 +41,8 @@ fun CollectionScreen(
     onPurify: () -> Unit,
     onLimitBreak: () -> Unit,
     onCraftNew: () -> Unit,
-    onMemoryRecall: (Int) -> Unit
+    onMemoryRecall: (Int) -> Unit,
+    onSetLobbyHero: (Int) -> Unit
 ) {
     val selected: TcgCard = state.ownedCards.firstOrNull { it.id == state.selectedCardId }
         ?: TcgGameViewModel.characterCard(state.selectedCardId)
@@ -140,6 +141,18 @@ fun CollectionScreen(
                     onSelectVisual(VisualState.ROMANTIC_DATE)
                 }
             }
+
+            ActionTile(
+                label = if (state.lobbyHeroId == selected.id) "★ 메인 로비 대표 캐릭터" else "★ 메인 로비 대표 캐릭터로 설정",
+                hint = if (state.lobbyHeroId == selected.id) {
+                    "지금 메인 화면 중앙에 서 있는 캐릭터입니다"
+                } else {
+                    "메인 로비 중앙에 크게 소환합니다"
+                },
+                accent = TcgColors.Gold,
+                enabled = isOwned && state.lobbyHeroId != selected.id,
+                onClick = { onSetLobbyHero(selected.id) }
+            )
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatColumn("ATK", "${selected.atk}", TcgColors.Hp)

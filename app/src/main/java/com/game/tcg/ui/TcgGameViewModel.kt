@@ -4,7 +4,13 @@ import androidx.lifecycle.ViewModel
 import com.game.tcg.core.engine.BattleEngine
 import com.game.tcg.core.engine.ChapterTwoScript
 import com.game.tcg.core.engine.DualWorldEngine
+import com.game.tcg.core.engine.ExplorationContext
+import com.game.tcg.core.engine.ExplorationEngine
+import com.game.tcg.core.engine.ExplorationMode
+import com.game.tcg.core.engine.ExplorationResult
+import com.game.tcg.core.engine.ExplorationRewardType
 import com.game.tcg.core.engine.IBattleEngine
+import com.game.tcg.core.engine.IExplorationEngine
 import com.game.tcg.core.engine.IDualWorldEngine
 import com.game.tcg.core.engine.IManaEngine
 import com.game.tcg.core.engine.IMemoryRecallEngine
@@ -216,6 +222,58 @@ data class CharacterProfile(
 )
 
 // ============================================================================
+// 메인 로비 내비게이션 — 캐릭터 중심 로비 + 좌·우측 측면 서브메뉴
+// ============================================================================
+
+/**
+ * 메인 화면의 좌·우측 측면 레일 구분
+ */
+enum class SideRail {
+    NONE,   // 로비 본체
+    LEFT,   // 이세계 · 모험
+    RIGHT   // 현실 · 관리
+}
+
+/**
+ * 메인 화면에서 열리는 기능 화면 — 좌·우측 측면 서브메뉴 항목과 1:1 대응
+ */
+enum class LobbyDestination(
+    val label: String,
+    val icon: String,
+    val tagline: String,
+    val rail: SideRail
+) {
+    LOBBY("메인 로비", "🏛", "대표 캐릭터가 당신을 맞이합니다.", SideRail.NONE),
+
+    // ── 좌측 · 이세계 · 모험 ──
+    SCENARIO("이세계 접속", "📖", "차원의 문이 열리고 이야기가 이어집니다.", SideRail.LEFT),
+    BATTLE("이계 전투", "⚔", "전열 3 · 후열 2 전술 결전.", SideRail.LEFT),
+    EXPLORATION("탐색", "🧭", "차원 틈새 탐색 · 기억 파편 수색 · 랜덤 조우.", SideRail.LEFT),
+
+    // ── 우측 · 현실 · 관리 ──
+    REAL_WORLD("현실 소환", "🏙", "현실에서 파트너를 부르고 교감합니다.", SideRail.RIGHT),
+    COLLECTION("캐릭터 관리", "🃏", "도감 · 합성 · 환생 재획득 · 대표 캐릭터 설정.", SideRail.RIGHT),
+    DECK("서약·덱", "📜", "20+10 · 1인 1장 서약 덱과 마왕 정화.", SideRail.RIGHT);
+
+    companion object {
+        /** 좌측 레일에 도킹되는 서브메뉴 (이세계·모험) */
+        val LEFT_ITEMS: List<LobbyDestination> = listOf(SCENARIO, BATTLE, EXPLORATION)
+
+        /** 우측 레일에 도킹되는 서브메뉴 (현실·관리) */
+        val RIGHT_ITEMS: List<LobbyDestination> = listOf(REAL_WORLD, COLLECTION, DECK)
+    }
+}
+
+/**
+ * 메인 로비 상태 스트립의 경보 — 누르면 해당 화면으로 바로 이동
+ */
+data class LobbyAlert(
+    val label: String,
+    val destination: LobbyDestination,
+    val isUrgent: Boolean = false
+)
+
+// ============================================================================
 // UI 상태
 // ============================================================================
 
@@ -295,7 +353,15 @@ data class TcgGameState(
     // ── 제2장 프롤로그: 제1군단장 「그림자 기사」 전초전 ──
     val chapter2PreludeOpened: Boolean = false,
     val chapter2Message: String? = null,
-    val isChapter2BossBattle: Boolean = false
+    val isChapter2BossBattle: Boolean = false,
+    // ── 메인 로비 (캐릭터 중심) · 탐색 ──
+    val currentScreen: LobbyDestination = LobbyDestination.LOBBY,
+    val lobbyHeroId: Int = TcgGameViewModel.DEFAULT_LOBBY_HERO_ID,
+    val lobbyVisual: VisualState = VisualState.BATTLE,
+    val gateEnergy: Int = TcgGameViewModel.GATE_ENERGY_START,
+    val explorationCount: Int = 0,
+    val lastExploration: ExplorationResult? = null,
+    val explorationLog: List<String> = listOf("[탐색] 차원 균열 지도가 펼쳐졌습니다. 세 갈래 길이 빛납니다.")
 ) {
     /** 생존 아군 수 (오의 조건 판정용) */
     val aliveSurvivorCount: Int get() = party.count { it.isAlive }
@@ -316,6 +382,47 @@ data class TcgGameState(
     val isChapter2Unlocked: Boolean
         get() = ChapterTwoScript.SHADOW_KNIGHT_PRELUDE.isUnlocked(storyStepIndex)
 
+    // ── 메인 로비 파생 상태 ──
+
+    /** 메인 화면 중앙에 크게 세워진 대표 캐릭터 카드 */
+    val lobbyHero: TcgCard
+        get() = ownedCards.firstOrNull { it.id == lobbyHeroId } ?: TcgGameViewModel.characterCard(lobbyHeroId)
+
+    /** 대표 캐릭터의 표시용 프로필 (이름 · 칭호) */
+    val lobbyHeroProfile: CharacterProfile?
+        get() = TcgGameViewModel.profiles().firstOrNull { it.cardId == lobbyHeroId }
+
+    /** 메인 화면에서 ◀ ▶ 로 넘길 수 있는 보유 캐릭터 순서 */
+    val lobbyRoster: List<Int>
+        get() = TcgGameViewModel.LOBBY_HERO_ORDER
+            .filter { id -> ownedCards.any { it.id == id } }
+            .ifEmpty { listOf(lobbyHeroId) }
+
+    /** 대표 캐릭터의 현재 호감도 */
+    val lobbyHeroBond: Int
+        get() = if (lobbyHeroId == 3) maxOf(partnerBond, lobbyHero.bondLevel) else lobbyHero.bondLevel
+
+    /** 데이트 룩(③) 해금 여부 — 호감도 50 이상 */
+    val isLobbyDateLookUnlocked: Boolean
+        get() = lobbyHeroBond >= TcgGameViewModel.DATE_LOOK_UNLOCK_BOND
+
+    /** 차원 균열 에너지 최대치 */
+    val gateEnergyMax: Int get() = TcgGameViewModel.GATE_ENERGY_MAX
+
+    /** 상단 상태 스트립의 진행도 라벨 */
+    val storyProgressLabel: String get() = "제1장 ${storyStepIndex + 1}/${StoryScript.STEPS.size}"
+
+    /** 메인 로비 경보 — 누르면 해당 화면으로 이동 */
+    val lobbyAlerts: List<LobbyAlert>
+        get() = buildList {
+            if (isTrustRiftAvailable) add(LobbyAlert("신뢰의 균열", LobbyDestination.SCENARIO, true))
+            if (memoryResetCards.isNotEmpty()) add(LobbyAlert("기억의 잔향", LobbyDestination.REAL_WORLD))
+            if (combatPenalty.totalStacks > 0) {
+                add(LobbyAlert("[홀림] ${combatPenalty.totalStacks}", LobbyDestination.COLLECTION, true))
+            }
+            if (isChapter2Unlocked) add(LobbyAlert("제2장 프롤로그", LobbyDestination.SCENARIO))
+        }
+
     companion object {
         /** 페어 얼티밋 오의 최소 생존 인원 */
         const val PAIR_ULTIMATE_SURVIVORS: Int = 2
@@ -326,7 +433,7 @@ data class TcgGameState(
 }
 
 // ============================================================================
-// ViewModel — 화면 4탭(시나리오 · 이계 전투 · 도감 · 현실 교감)의 상태와 조작
+// ViewModel — 메인 로비(캐릭터 중심) · 기능 화면(시나리오 · 전투 · 탐색 · 현실 · 도감 · 덱)
 // ============================================================================
 
 class TcgGameViewModel(
@@ -339,7 +446,8 @@ class TcgGameViewModel(
     private val retreatEngine: ITacticalRetreatEngine = TacticalRetreatEngine(),
     private val memoryRecallEngine: IMemoryRecallEngine = MemoryRecallEngine(),
     private val trustRiftEngine: ITrustRiftEngine = TrustRiftEngine(),
-    private val pairUltimateEngine: IPairUltimateEngine = PairUltimateEngine()
+    private val pairUltimateEngine: IPairUltimateEngine = PairUltimateEngine(),
+    private val explorationEngine: IExplorationEngine = ExplorationEngine()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -352,6 +460,239 @@ class TcgGameViewModel(
 
     init {
         initialOwnedCards().forEach { lifecycleEngine.registerOwnedCard(it) }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 메인 로비 — 대표 캐릭터 · 좌·우측 서브메뉴 · 화면 전환
+    // ──────────────────────────────────────────────────────────────
+
+    /** 좌·우측 측면 서브메뉴에서 기능 화면 열기 */
+    fun openScreen(destination: LobbyDestination) {
+        _uiState.update { s ->
+            s.copy(
+                currentScreen = destination,
+                statusMessage = if (destination == LobbyDestination.LOBBY) {
+                    "[메인 로비] ${s.lobbyHeroProfile?.displayName ?: s.lobbyHero.name}이(가) 당신을 맞이합니다."
+                } else {
+                    "[${destination.label}] ${destination.tagline}"
+                }
+            )
+        }
+    }
+
+    /** ← 메인 로비 — 어떤 기능 화면에서든 로비로 복귀 (Android BackHandler 연동) */
+    fun backToLobby() {
+        _uiState.update { s ->
+            s.copy(
+                currentScreen = LobbyDestination.LOBBY,
+                statusMessage = "[메인 로비] ${s.lobbyHeroProfile?.displayName ?: s.lobbyHero.name}이(가) 기다리고 있었습니다."
+            )
+        }
+    }
+
+    /** 메인 화면 대표 캐릭터 지정 (캐릭터 관리의 '대표 캐릭터 설정'과 동일) */
+    fun selectLobbyHero(cardId: Int) {
+        _uiState.update { s ->
+            if (s.lobbyRoster.none { it == cardId }) {
+                return@update s.copy(
+                    statusMessage = "[대표 캐릭터] 아직 계약하지 않은 캐릭터입니다. 캐릭터 관리의 신규 연성으로 획득할 수 있습니다."
+                )
+            }
+            val heroName = heroDisplayName(cardId)
+            val bond = bondOf(s, cardId)
+            s.copy(
+                lobbyHeroId = cardId,
+                lobbyVisual = if (s.lobbyVisual == VisualState.ROMANTIC_DATE &&
+                    bond < TcgGameViewModel.DATE_LOOK_UNLOCK_BOND
+                ) {
+                    VisualState.BATTLE
+                } else {
+                    s.lobbyVisual
+                },
+                statusMessage = "[대표 캐릭터] $heroName — 메인 화면에 소환되었습니다."
+            )
+        }
+    }
+
+    /** ◀ ▶ 로 메인 화면 대표 캐릭터 전환 */
+    fun cycleLobbyHero(direction: Int) {
+        _uiState.update { s ->
+            val roster = s.lobbyRoster
+            if (roster.size <= 1) {
+                return@update s.copy(statusMessage = "[대표 캐릭터] 전환할 캐릭터가 없습니다. (보유 ${roster.size}명)")
+            }
+            val currentIndex = roster.indexOf(s.lobbyHeroId).coerceAtLeast(0)
+            val nextIndex = ((currentIndex + direction) % roster.size + roster.size) % roster.size
+            val nextId = roster[nextIndex]
+            val heroName = heroDisplayName(nextId)
+            val bond = bondOf(s, nextId)
+            s.copy(
+                lobbyHeroId = nextId,
+                lobbyVisual = if (s.lobbyVisual == VisualState.ROMANTIC_DATE &&
+                    bond < TcgGameViewModel.DATE_LOOK_UNLOCK_BOND
+                ) {
+                    VisualState.BATTLE
+                } else {
+                    s.lobbyVisual
+                },
+                statusMessage = "[대표 캐릭터] $heroName (${nextIndex + 1}/${roster.size})"
+            )
+        }
+    }
+
+    /** 메인 화면 3단 비주얼(전투 · 일상 · 데이트) 전환 — 데이트는 호감도 50 이상 해금 */
+    fun selectLobbyVisual(visual: VisualState) {
+        _uiState.update { s ->
+            val heroName = s.lobbyHeroProfile?.displayName ?: s.lobbyHero.name
+            val unlocked = visual != VisualState.ROMANTIC_DATE || s.isLobbyDateLookUnlocked
+            if (!unlocked) {
+                return@update s.copy(
+                    statusMessage = "[잠금] 데이트 룩은 $heroName 호감도 ${TcgGameViewModel.DATE_LOOK_UNLOCK_BOND} 이상에서 열립니다. " +
+                            "(현재 ${s.lobbyHeroBond}/100 — 현실 소환에서 교감하세요)"
+                )
+            }
+            s.copy(
+                lobbyVisual = visual,
+                statusMessage = "[연출] $heroName — ${visual.displayName}"
+            )
+        }
+    }
+
+    private fun heroDisplayName(cardId: Int): String =
+        TcgGameViewModel.profiles().firstOrNull { it.cardId == cardId }?.displayName
+            ?: TcgGameViewModel.characterCard(cardId).name
+
+    private fun bondOf(s: TcgGameState, cardId: Int): Int =
+        if (cardId == 3) {
+            maxOf(s.partnerBond, s.ownedCards.firstOrNull { it.id == 3 }?.bondLevel ?: 0)
+        } else {
+            s.ownedCards.firstOrNull { it.id == cardId }?.bondLevel ?: 0
+        }
+
+    // ──────────────────────────────────────────────────────────────
+    // 탐색 — 차원 틈새 탐색 · 기억 파편 수색 · 랜덤 조우
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 탐색 1회 수행 — 차원 균열 에너지를 소모하고 보상을 적용한다.
+     * 전투 조우가 나오면 이계 전투 무대를 해당 적으로 세팅한다.
+     */
+    fun explore(mode: ExplorationMode): ExplorationResult? {
+        var resultOut: ExplorationResult? = null
+        _uiState.update { s ->
+            if (s.gateEnergy < mode.energyCost) {
+                return@update s.copy(
+                    statusMessage = "[탐색 불가] 차원 균열 에너지가 부족합니다. (보유 ${s.gateEnergy}/${s.gateEnergyMax}) " +
+                            "— 이계 전투 승리로 +${GATE_ENERGY_RECOVERY} 회복됩니다."
+                )
+            }
+
+            val result = explorationEngine.explore(
+                mode = mode,
+                context = ExplorationContext(
+                    gateEnergy = s.gateEnergy,
+                    temptationStacks = s.combatPenalty.totalStacks,
+                    memoryResetCardIds = s.memoryResetCards.map { it.id },
+                    explorationCount = s.explorationCount,
+                    partnerBond = s.partnerBond,
+                    gold = s.gold
+                )
+            )
+            resultOut = result
+
+            var gold = s.gold
+            var gems = s.gems
+            var holyWater = s.holyWater
+            var junkCards = s.junkCards
+            var bond = s.partnerBond
+            var energy = (s.gateEnergy - mode.energyCost).coerceAtLeast(0)
+            var temptation = s.temptationState
+            var cards = s.ownedCards
+            var fragmentMessage: String? = null
+
+            result.rewards.forEach { reward ->
+                when (reward.type) {
+                    ExplorationRewardType.GOLD -> gold += reward.amount
+                    ExplorationRewardType.GEMS -> gems += reward.amount
+                    ExplorationRewardType.HOLY_WATER -> holyWater += reward.amount
+                    ExplorationRewardType.JUNK_CARD -> junkCards += reward.amount
+                    ExplorationRewardType.GATE_ENERGY -> energy = (energy + reward.amount).coerceAtMost(s.gateEnergyMax)
+                    ExplorationRewardType.BOND -> bond = (bond + reward.amount).coerceAtMost(100)
+                    ExplorationRewardType.TEMPTATION -> {
+                        temptation = temptationEngine.processUndercoverChoice(
+                            UndercoverDialogueOption(
+                                optionId = "EXPLORE_${result.mode.name}",
+                                text = result.title,
+                                isTemptedChoice = true,
+                                goldStolen = 0,
+                                curseAdded = reward.amount
+                            ),
+                            temptation
+                        )
+                    }
+                    ExplorationRewardType.MEMORY_FRAGMENT -> {
+                        val targetId = result.fragmentTargetCardId
+                        val card = cards.firstOrNull { it.id == targetId }
+                        if (card != null && card.isMemoryReset) {
+                            val gain = memoryRecallEngine.grantFragment(
+                                card,
+                                reward.amount,
+                                MemoryFragmentSource.EXPLORATION
+                            )
+                            fragmentMessage = gain.message
+                            cards = cards.map { if (it.id == card.id) card else it }
+                        }
+                    }
+                }
+            }
+
+            val penalty = temptationEngine.calculateCombatPenalty(temptation)
+            val logLine = "[탐색 · ${mode.displayName}] ${result.title} — ${result.rewardSummary}"
+            var next = s.copy(
+                gold = gold,
+                gems = gems,
+                holyWater = holyWater,
+                junkCards = junkCards,
+                partnerBond = bond,
+                gateEnergy = energy,
+                temptationState = temptation,
+                combatPenalty = penalty,
+                ownedCards = cards.map { card ->
+                    if (card.id == 3) {
+                        card.bondLevel = bond
+                    }
+                    card
+                },
+                explorationCount = s.explorationCount + 1,
+                lastExploration = result,
+                explorationLog = (s.explorationLog + logLine + listOfNotNull(fragmentMessage)).takeLast(8),
+                statusMessage = "[탐색 · ${mode.displayName}] ${result.title} — ${result.rewardSummary}"
+            )
+
+            if (result.startsBattle) {
+                next = next.copy(
+                    enemyName = result.enemyName ?: s.enemyName,
+                    enemyElement = result.enemyElement,
+                    enemyHp = result.enemyHp,
+                    enemyMaxHp = result.enemyMaxHp,
+                    enemyAtk = result.enemyAtk,
+                    isDemonLordBattle = false,
+                    isChapter2BossBattle = false,
+                    turn = 1,
+                    mana = ManaState(1, 1),
+                    party = initialParty(),
+                    retreatInfo = BattleRetreatInfo(turn = 1),
+                    pairUltimateUsedThisBattle = false,
+                    pairUltimateBanner = null,
+                    pairUltimateBannerSubtitle = null,
+                    pendingLootGold = 400,
+                    pendingLootGems = 8,
+                    statusMessage = "[조우] ${result.enemyName} 출현 — 이계 전투에서 교전하세요."
+                )
+            }
+            next
+        }
+        return resultOut
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -613,6 +954,7 @@ class TcgGameViewModel(
                     fragmentLogs,
             gold = s.gold + rewardGold,
             gems = s.gems + rewardGems,
+            gateEnergy = (s.gateEnergy + GATE_ENERGY_RECOVERY).coerceAtMost(s.gateEnergyMax),
             battleVictories = s.battleVictories + 1,
             pairUltimateUsedThisBattle = false,
             frontRowDefensePenaltyPercent = 0,
@@ -1214,6 +1556,24 @@ class TcgGameViewModel(
     }
 
     companion object {
+        /** 메인 로비 기본 대표 캐릭터 (성기사 아우렐리아) */
+        const val DEFAULT_LOBBY_HERO_ID: Int = 3
+
+        /** 차원 균열 에너지 시작값 */
+        const val GATE_ENERGY_START: Int = 10
+
+        /** 차원 균열 에너지 최대치 */
+        const val GATE_ENERGY_MAX: Int = 12
+
+        /** 이계 전투 승리 시 회복되는 차원 균열 에너지 */
+        const val GATE_ENERGY_RECOVERY: Int = 2
+
+        /** 메인 로비 데이트 룩 해금 호감도 */
+        const val DATE_LOOK_UNLOCK_BOND: Int = 50
+
+        /** 메인 로비 좌우 전환 순서 (아우렐리아 → 세라피엘 → 엘리리아 → 릴리스) */
+        val LOBBY_HERO_ORDER: List<Int> = listOf(3, 1, 2, 112)
+
         fun characterCard(id: Int): TcgCard = when (id) {
             1 -> TcgCard(
                 id = 1,
