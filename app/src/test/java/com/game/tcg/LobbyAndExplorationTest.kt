@@ -54,7 +54,9 @@ class LobbyAndExplorationTest {
     @Test
     fun `좌우 전환은 보유 캐릭터를 순환한다`() {
         val vm = TcgGameViewModel()
-        assertEquals(listOf(3, 1, 2), vm.uiState.value.lobbyRoster)
+        // 스타팅 3인방 + 개성파 30인(155~184) 순서
+        assertEquals(listOf(3, 1, 2), vm.uiState.value.lobbyRoster.take(3))
+        assertEquals(33, vm.uiState.value.lobbyRoster.size)
 
         vm.cycleLobbyHero(1)
         assertEquals(1, vm.uiState.value.lobbyHeroId)
@@ -64,10 +66,16 @@ class LobbyAndExplorationTest {
         assertEquals(2, vm.uiState.value.lobbyHeroId)
 
         vm.cycleLobbyHero(1)
+        assertEquals("세 번째 다음은 첫 개성파", 155, vm.uiState.value.lobbyHeroId)
+
+        // 로스터 끝까지 돌면 처음으로 돌아온다
+        repeat(29) { vm.cycleLobbyHero(1) }
+        assertEquals(184, vm.uiState.value.lobbyHeroId)
+        vm.cycleLobbyHero(1)
         assertEquals("마지막 다음은 처음으로 돌아온다", 3, vm.uiState.value.lobbyHeroId)
 
         vm.cycleLobbyHero(-1)
-        assertEquals("역방향도 순환한다", 2, vm.uiState.value.lobbyHeroId)
+        assertEquals("역방향도 순환한다", 184, vm.uiState.value.lobbyHeroId)
     }
 
     @Test
@@ -174,7 +182,8 @@ class LobbyAndExplorationTest {
 
     @Test
     fun `탐색은 차원 균열 에너지를 소모하고 결과와 기록을 남긴다`() {
-        val vm = TcgGameViewModel()
+        // 판정을 고정해 조우 분기(상태 메시지가 [조우]로 바뀌는 경우)를 배제한다
+        val vm = TcgGameViewModel(explorationEngine = ExplorationEngine { 5 })
         val before = vm.uiState.value
         val logSize = before.explorationLog.size
 

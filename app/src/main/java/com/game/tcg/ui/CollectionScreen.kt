@@ -1,7 +1,8 @@
 package com.game.tcg.ui
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,16 +17,20 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.game.tcg.core.model.CardCatalog
 import com.game.tcg.core.model.TcgCard
 import com.game.tcg.core.model.VisualState
 
@@ -42,7 +47,9 @@ fun CollectionScreen(
     onLimitBreak: () -> Unit,
     onCraftNew: () -> Unit,
     onMemoryRecall: (Int) -> Unit,
-    onSetLobbyHero: (Int) -> Unit
+    onSetLobbyHero: (Int) -> Unit,
+    onDeployToParty: (Int, Int) -> Unit,
+    onUndeployFromParty: (Int) -> Unit
 ) {
     val selected: TcgCard = state.ownedCards.firstOrNull { it.id == state.selectedCardId }
         ?: TcgGameViewModel.characterCard(state.selectedCardId)
@@ -51,28 +58,71 @@ fun CollectionScreen(
     val isDemonLordCard = state.selectedCardId == 112
 
     ScreenFrame {
-        // ── 카드 선택 ──
-        SectionCard(title = "도감 카드", badge = "보유 ${state.ownedCards.size}/4", accent = TcgColors.Violet) {
-            TcgGameViewModel.profiles().chunked(2).forEach { rowItems ->
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    rowItems.forEach { profileItem ->
-                        Box(modifier = Modifier.weight(1f)) {
-                            ChipButton(
-                                label = "#${profileItem.cardId} ${profileItem.displayName}",
-                                selected = profileItem.cardId == state.selectedCardId,
-                                accent = elementColor(profileItem.element),
-                                onClick = { onSelectCard(profileItem.cardId) }
-                            )
+        // ── 카드 선택 (34인 전체 스크롤 목록) ──
+        val allProfiles = TcgGameViewModel.profiles()
+        var catalogFilter by remember { mutableStateOf(CatalogFilter.ALL) }
+        val shownProfiles = when (catalogFilter) {
+            CatalogFilter.ALL -> allProfiles
+            CatalogFilter.NEW_WAVE -> allProfiles.filter { CardCatalog.isNewWave(it.cardId) }
+            CatalogFilter.ORIGINAL -> allProfiles.filter { !CardCatalog.isNewWave(it.cardId) }
+        }
+        SectionCard(
+            title = "도감 카드",
+            badge = "보유 ${state.ownedCards.size}/${allProfiles.size}",
+            accent = TcgColors.Violet
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ChipButton("전체 ${allProfiles.size}인", catalogFilter == CatalogFilter.ALL) {
+                    catalogFilter = CatalogFilter.ALL
+                }
+                ChipButton("개성파 30인", catalogFilter == CatalogFilter.NEW_WAVE, TcgColors.Gold) {
+                    catalogFilter = CatalogFilter.NEW_WAVE
+                }
+                ChipButton("기존 4인", catalogFilter == CatalogFilter.ORIGINAL, TcgColors.Mana) {
+                    catalogFilter = CatalogFilter.ORIGINAL
+                }
+            }
+            Text(
+                if (catalogFilter == CatalogFilter.NEW_WAVE) {
+                    "No.155~184 개성파 30인 — 얼굴 골격·피부·나이까지 저마다 다른 30명입니다."
+                } else {
+                    "도감 번호를 누르면 카드 상세와 3단 비주얼이 열립니다. (1캐릭터 = 1장 유일성)"
+                },
+                color = TcgColors.Muted,
+                fontSize = 9.sp,
+                lineHeight = 14.sp
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(228.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(TcgColors.Background)
+                    .verticalScroll(rememberScrollState())
+                    .padding(6.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    shownProfiles.chunked(2).forEach { rowItems ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            rowItems.forEach { profileItem ->
+                                Box(modifier = Modifier.weight(1f)) {
+                                    ChipButton(
+                                        label = "#${profileItem.cardId} ${profileItem.displayName}",
+                                        selected = profileItem.cardId == state.selectedCardId,
+                                        accent = elementColor(profileItem.element),
+                                        onClick = { onSelectCard(profileItem.cardId) }
+                                    )
+                                }
+                            }
+                            if (rowItems.size == 1) {
+                                Spacer(Modifier.weight(1f))
+                            }
                         }
-                    }
-                    if (rowItems.size == 1) {
-                        Spacer(Modifier.weight(1f))
                     }
                 }
             }
             Text(
-                "도감 번호를 누르면 카드 상세와 3단 비주얼이 열립니다. (1캐릭터 = 1장 유일성)" +
-                        " 자물쇠 표시는 아직 계약하지 않은 카드입니다.",
+                "목록 ${shownProfiles.size}명 전원 스크롤 가능 · 자물쇠 표시는 아직 계약하지 않은 카드입니다.",
                 color = TcgColors.Muted,
                 fontSize = 9.sp
             )
@@ -90,11 +140,13 @@ fun CollectionScreen(
                     .height(320.dp)
                     .clip(RoundedCornerShape(14.dp))
             ) {
-                Image(
-                    painter = painterResource(characterImage(selected.id, state.selectedVisual)),
+                CardArtImage(
+                    cardId = selected.id,
+                    visual = state.selectedVisual,
                     contentDescription = selected.name,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    targetWidthPx = 720
                 )
                 Box(
                     modifier = Modifier
@@ -140,6 +192,39 @@ fun CollectionScreen(
                 ChipButton("③ 데이트", state.selectedVisual == VisualState.ROMANTIC_DATE, TcgColors.Gold) {
                     onSelectVisual(VisualState.ROMANTIC_DATE)
                 }
+            }
+
+            // 전투 편성 — 이 캐릭터를 전열/후열 슬롯에 직접 소환
+            val currentSlot = state.party.firstOrNull { it.card.id == selected.id }
+            Text(
+                if (currentSlot != null) {
+                    "전투 편성: ${if (currentSlot.isFrontRow) "전열" else "후열"} ${currentSlot.slotIndex}번 슬롯 (HP ${currentSlot.hp}/${currentSlot.maxHp})"
+                } else {
+                    "전투 편성: 현재 미배치 — 슬롯을 눌러 소환하세요."
+                },
+                color = if (currentSlot != null) TcgColors.Heal else TcgColors.Muted,
+                fontSize = 10.sp
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                (0..4).forEach { slot ->
+                    Box(modifier = Modifier.weight(1f)) {
+                        ChipButton(
+                            label = if (slot < 3) "전${slot + 1}" else "후${slot - 2}",
+                            selected = currentSlot?.slotIndex == slot,
+                            accent = if (slot < 3) TcgColors.Hp else TcgColors.Mana
+                        ) {
+                            if (isOwned) onDeployToParty(selected.id, slot)
+                        }
+                    }
+                }
+            }
+            if (currentSlot != null) {
+                ActionTile(
+                    label = "↩ 전투 편성에서 빼기 (대기열로)",
+                    hint = "HP는 전투 시작 시 최대치로 재설정됩니다",
+                    accent = TcgColors.Muted,
+                    onClick = { onUndeployFromParty(selected.id) }
+                )
             }
 
             ActionTile(
@@ -415,3 +500,6 @@ private fun StatColumn(label: String, value: String, color: Color) {
         Text(value, color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }
+
+/** 도감 목록 필터 */
+private enum class CatalogFilter { ALL, NEW_WAVE, ORIGINAL }

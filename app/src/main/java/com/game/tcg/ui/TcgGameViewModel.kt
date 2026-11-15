@@ -35,6 +35,7 @@ import com.game.tcg.core.model.BattleCardHp
 import com.game.tcg.core.model.BattleRetreatInfo
 import com.game.tcg.core.model.BattleSlot
 import com.game.tcg.core.model.BattleState
+import com.game.tcg.core.model.CardCatalog
 import com.game.tcg.core.model.CombatPenalty
 import com.game.tcg.core.model.DemonLordRegistry
 import com.game.tcg.core.model.Element
@@ -630,6 +631,17 @@ class TcgGameViewModel(
                             temptation
                         )
                     }
+                    ExplorationRewardType.COMPANION_BOND -> {
+                        val companionId = result.companionCardId
+                        if (companionId != null) {
+                            cards = cards.map { card ->
+                                if (card.id == companionId) {
+                                    card.bondLevel = (card.bondLevel + reward.amount).coerceAtMost(100)
+                                }
+                                card
+                            }
+                        }
+                    }
                     ExplorationRewardType.MEMORY_FRAGMENT -> {
                         val targetId = result.fragmentTargetCardId
                         val card = cards.firstOrNull { it.id == targetId }
@@ -680,7 +692,7 @@ class TcgGameViewModel(
                     isChapter2BossBattle = false,
                     turn = 1,
                     mana = ManaState(1, 1),
-                    party = initialParty(),
+                    party = freshParty(s),
                     retreatInfo = BattleRetreatInfo(turn = 1),
                     pairUltimateUsedThisBattle = false,
                     pairUltimateBanner = null,
@@ -823,7 +835,7 @@ class TcgGameViewModel(
                 isDemonLordBattle = true,
                 turn = 1,
                 mana = ManaState(1, 1),
-                party = initialParty(),
+                party = freshParty(s),
                 retreatInfo = BattleRetreatInfo(turn = 1),
                 pairUltimateUsedThisBattle = false,
                 pairUltimateBanner = null,
@@ -852,7 +864,7 @@ class TcgGameViewModel(
                 isDemonLordBattle = false,
                 turn = 1,
                 mana = ManaState(1, 1),
-                party = initialParty(),
+                party = freshParty(s),
                 retreatInfo = BattleRetreatInfo(turn = 1),
                 pairUltimateUsedThisBattle = false,
                 pairUltimateBanner = null,
@@ -1168,6 +1180,48 @@ class TcgGameViewModel(
     }
 
     // ──────────────────────────────────────────────────────────────
+    // 전투 편성 — 보유 캐릭터를 전열 3 · 후열 2 슬롯에 직접 소환
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 보유 캐릭터를 전장 슬롯(0~4)에 배치한다. 같은 캐릭터가 다른 슬롯에 있으면 그 자리에서 빠진다.
+     * 0~2 = 전열, 3~4 = 후열.
+     */
+    fun deployToParty(cardId: Int, slotIndex: Int) {
+        _uiState.update { s ->
+            if (slotIndex !in 0..4) {
+                return@update s.copy(statusMessage = "[편성 실패] 슬롯 번호는 0~4만 가능합니다.")
+            }
+            val card = s.ownedCards.firstOrNull { it.id == cardId }
+                ?: return@update s.copy(statusMessage = "[편성 실패] 아직 계약하지 않은 캐릭터입니다. (도감 #$cardId)")
+            val maxHp = maxHpOf(card)
+            val others = s.party.filterNot { it.slotIndex == slotIndex || it.card.id == cardId }
+            val member = PartyMember(card, slotIndex, slotIndex < 3, maxHp, maxHp)
+            val newParty = (others + member).sortedBy { it.slotIndex }
+            val rowName = if (slotIndex < 3) "전열" else "후열"
+            s.copy(
+                party = newParty,
+                battleLog = s.battleLog + "[편성] ${card.name} → $rowName ${slotIndex}번 슬롯 (HP $maxHp)",
+                statusMessage = "[편성] ${card.name}을(를) $rowName ${slotIndex}번 슬롯에 소환했습니다."
+            )
+        }
+    }
+
+    /** 현재 전투 편성에서 카드를 빼고 대기열로 보낸다 (슬롯 비우기) */
+    fun undeployFromParty(cardId: Int) {
+        _uiState.update { s ->
+            val member = s.party.firstOrNull { it.card.id == cardId } ?: return@update s
+            val rowName = if (member.isFrontRow) "전열" else "후열"
+            s.copy(
+                party = s.party.filterNot { it.card.id == cardId },
+                battleReserve = (s.battleReserve + member.card).distinctBy { it.id },
+                battleLog = s.battleLog + "[편성] ${member.card.name} → $rowName ${member.slotIndex}번 슬롯에서 대기열로",
+                statusMessage = "[편성] ${member.card.name}을(를) 대기열로 보냈습니다."
+            )
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // 도감·서약
     // ──────────────────────────────────────────────────────────────
 
@@ -1259,13 +1313,10 @@ class TcgGameViewModel(
             if (s.gold < 300) {
                 return@update s.copy(synthesisMessage = "[신규 연성 불가] 수수료 300G가 부족합니다. (보유 ${s.gold}G)")
             }
-            val nextId = listOf(1, 2, 112).firstOrNull { id -> s.ownedCards.none { it.id == id } }
-            val gainedName = when (nextId) {
-                1 -> "태양의 대천사 세라피엘"
-                2 -> "바람의 정령궁 엘리리아"
-                112 -> "황혼과 욕망의 마왕 릴리스"
-                else -> null
-            }
+            // 아직 계약하지 않은 카드(마왕 등) 중 가장 앞 번호와 계약한다
+            val candidate = CardCatalog.unownedCandidates(s.ownedCards.map { it.id }).firstOrNull()
+            val nextId = candidate?.id
+            val gainedName = candidate?.fullName
             if (nextId == null || gainedName == null) {
                 return@update s.copy(
                     junkCards = s.junkCards - 3,
@@ -1513,7 +1564,7 @@ class TcgGameViewModel(
                 isChapter2BossBattle = true,
                 turn = 1,
                 mana = ManaState(1, 1),
-                party = initialParty(),
+                party = freshParty(s),
                 retreatInfo = BattleRetreatInfo(turn = 1),
                 pairUltimateUsedThisBattle = false,
                 pairUltimateBanner = null,
@@ -1555,6 +1606,17 @@ class TcgGameViewModel(
         )
     }
 
+    /**
+     * 전투 개시 시 파티를 준비한다 — 편성(누가 어느 슬롯에 있는지)은 그대로 두고 HP만 최대치로 회복.
+     * 편성이 비어 있으면 스타팅 3인방으로 채운다.
+     */
+    private fun freshParty(s: TcgGameState): List<PartyMember> =
+        if (s.party.isEmpty()) {
+            initialParty()
+        } else {
+            s.party.map { it.copy(hp = it.maxHp, memoryAffinity = 0) }
+        }
+
     companion object {
         /** 메인 로비 기본 대표 캐릭터 (성기사 아우렐리아) */
         const val DEFAULT_LOBBY_HERO_ID: Int = 3
@@ -1571,83 +1633,39 @@ class TcgGameViewModel(
         /** 메인 로비 데이트 룩 해금 호감도 */
         const val DATE_LOOK_UNLOCK_BOND: Int = 50
 
-        /** 메인 로비 좌우 전환 순서 (아우렐리아 → 세라피엘 → 엘리리아 → 릴리스) */
-        val LOBBY_HERO_ORDER: List<Int> = listOf(3, 1, 2, 112)
+        /** 메인 로비 좌우 전환 순서 — 스타팅 3인방 → 마왕 릴리스 → 개성파 30인(155~184) */
+        val LOBBY_HERO_ORDER: List<Int> =
+            listOf(3, 1, 2, 112) + CardCatalog.NEW_WAVE_IDS
 
-        fun characterCard(id: Int): TcgCard = when (id) {
-            1 -> TcgCard(
-                id = 1,
-                name = "태양의 대천사 세라피엘",
-                element = Element.LIGHT,
-                baseCost = 8,
-                atk = 8500,
-                def = 7500,
-                skillText = "필드 전개 시 아군 전체에 성광 실드를 부여"
-            )
-            2 -> TcgCard(
-                id = 2,
-                name = "바람의 정령궁 엘리리아",
-                element = Element.WIND,
-                baseCost = 6,
-                atk = 6400,
-                def = 4800,
-                skillText = "후열 연사 지원 · 명중 시 적 회피 감소"
-            )
-            3 -> TcgCard(
-                id = 3,
-                name = "성기사 아우렐리아",
-                element = Element.FIRE,
-                baseCost = 5,
-                atk = 5600,
-                def = 6200,
-                bondLevel = 20,
-                skillText = "전열 방벽 형성 · 아군 피해 15% 분산"
-            )
-            112 -> TcgCard(
-                id = 112,
-                name = "황혼과 욕망의 마왕 릴리스",
-                element = Element.DARK,
-                baseCost = 10,
-                atk = 9800,
-                def = 8800,
-                skillText = "심연의 매혹 · 매 턴 아군 1명에게 [홀림] 부여"
-            )
-            else -> TcgCard(
-                id = id,
-                name = "미등록 카드 #$id",
-                element = Element.LIGHT,
-                baseCost = 1,
-                atk = 1000,
-                def = 1000,
-                skillText = "샘플 카드"
-            )
-        }
+        /** 도감 카탈로그에서 카드 1장을 만든다 (미등록 번호도 안전한 대체 카드로 복원) */
+        fun characterCard(id: Int): TcgCard = CardCatalog.require(id).toCard()
 
-        fun maxHpOf(card: TcgCard): Int = when (card.id) {
-            1 -> 6000
-            2 -> 4200
-            3 -> 5200
-            112 -> 7000
-            else -> 4000
-        }
+        /** 카드의 전장 최대 HP */
+        fun maxHpOf(card: TcgCard): Int = CardCatalog.find(card.id)?.maxHp ?: 4000
 
-        fun gaindNameOf(id: Int): String = characterCard(id).name
+        fun gaindNameOf(id: Int): String = CardCatalog.require(id).fullName
 
+        /** 스타팅 파티 — 아우렐리아(전열) · 세라피엘(전열) · 엘리리아(후열) */
         fun initialParty(): List<PartyMember> = listOf(
-            PartyMember(characterCard(3), slotIndex = 0, isFrontRow = true, hp = 5200, maxHp = 5200),
-            PartyMember(characterCard(1), slotIndex = 1, isFrontRow = true, hp = 6000, maxHp = 6000),
-            PartyMember(characterCard(2), slotIndex = 2, isFrontRow = true, hp = 4200, maxHp = 4200)
+            PartyMember(characterCard(3), slotIndex = 0, isFrontRow = true, hp = maxHpOf(characterCard(3)), maxHp = maxHpOf(characterCard(3))),
+            PartyMember(characterCard(1), slotIndex = 1, isFrontRow = true, hp = maxHpOf(characterCard(1)), maxHp = maxHpOf(characterCard(1))),
+            PartyMember(characterCard(2), slotIndex = 2, isFrontRow = true, hp = maxHpOf(characterCard(2)), maxHp = maxHpOf(characterCard(2)))
         )
 
-        fun initialOwnedCards(): List<TcgCard> = listOf(
-            characterCard(3), characterCard(1), characterCard(2)
-        )
+        /** 게임 시작 시 보유 카드 — 스타팅 3인방 + 개성파 30인(No.155~184) */
+        fun initialOwnedCards(): List<TcgCard> =
+            CardCatalog.initialOwnedRecords().map { it.toCard() }
 
-        fun profiles(): List<CharacterProfile> = listOf(
-            CharacterProfile(3, "아우렐리아", "새벽의 성기사", Element.FIRE),
-            CharacterProfile(1, "세라피엘", "태양의 대천사", Element.LIGHT),
-            CharacterProfile(2, "엘리리아", "바람의 정령궁", Element.WIND),
-            CharacterProfile(112, "릴리스", "황혼과 욕망의 마왕", Element.DARK, isDemonLord = true, disguiseName = "릴리")
-        )
+        /** 도감 프로필 — 등록된 34인 전체 (스타팅 · 마왕 · 개성파 30인) */
+        fun profiles(): List<CharacterProfile> = CardCatalog.ALL.map { record ->
+            CharacterProfile(
+                cardId = record.id,
+                displayName = record.name,
+                title = record.title,
+                element = record.element,
+                isDemonLord = record.isDemonLord,
+                disguiseName = record.disguiseName
+            )
+        }
     }
 }

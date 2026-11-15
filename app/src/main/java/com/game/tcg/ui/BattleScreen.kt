@@ -1,6 +1,5 @@
 package com.game.tcg.ui
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,7 +22,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,14 +65,16 @@ fun BattleScreen(
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (state.isDemonLordBattle) {
-                        Image(
-                            painter = painterResource(characterImage(112, VisualState.BATTLE)),
+                        CardArtImage(
+                            cardId = 112,
+                            visual = VisualState.BATTLE,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .width(48.dp)
                                 .height(64.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(8.dp)),
+                            targetWidthPx = 180
                         )
                         Spacer(Modifier.width(10.dp))
                     }
@@ -421,13 +421,15 @@ private fun FieldSlotCard(
             }
         } else {
             Box {
-                Image(
-                    painter = painterResource(characterImage(member.card.id, member.card.currentVisual)),
+                CardArtImage(
+                    cardId = member.card.id,
+                    visual = member.card.currentVisual,
                     contentDescription = member.card.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(96.dp)
+                        .height(96.dp),
+                    targetWidthPx = 270
                 )
                 Box(
                     modifier = Modifier

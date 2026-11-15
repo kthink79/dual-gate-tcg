@@ -1,6 +1,5 @@
 package com.game.tcg.ui
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,11 +51,13 @@ fun RealWorldScreen(
                     .height(300.dp)
                     .clip(RoundedCornerShape(14.dp))
             ) {
-                Image(
-                    painter = painterResource(characterImage(3, state.partnerVisual)),
+                CardArtImage(
+                    cardId = 3,
+                    visual = state.partnerVisual,
                     contentDescription = "아우렐리아",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    targetWidthPx = 720
                 )
                 Box(
                     modifier = Modifier
@@ -203,13 +203,13 @@ fun RealWorldScreen(
                     .height(180.dp)
                     .clip(RoundedCornerShape(14.dp))
             ) {
-                Image(
-                    painter = painterResource(
-                        characterImage(3, if (state.dateLookUnlocked) VisualState.ROMANTIC_DATE else VisualState.CASUAL_CUTE)
-                    ),
+                CardArtImage(
+                    cardId = 3,
+                    visual = if (state.dateLookUnlocked) VisualState.ROMANTIC_DATE else VisualState.CASUAL_CUTE,
                     contentDescription = "데이트 룩",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    targetWidthPx = 540
                 )
                 if (!state.dateLookUnlocked) {
                     Box(

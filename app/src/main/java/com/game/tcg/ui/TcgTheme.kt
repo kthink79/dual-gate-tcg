@@ -30,7 +30,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.game.tcg.R
 import com.game.tcg.core.model.Element
 import com.game.tcg.core.model.VisualState
 
@@ -62,30 +61,12 @@ fun elementColor(element: Element): Color = when (element) {
 }
 
 /**
- * 카드 도감 번호 + 3단 비주얼 상태 → 실제 드로어블 리소스
+ * 카드 도감 번호 + 3단 비주얼 상태 → 실제 드로어블 리소스.
+ * 매핑은 [CharacterArtRegistry]가 단일 관리하며, 미등록 번호는 null을 돌려준다.
+ * 화면에서는 [CardArtImage]를 사용해 화면 크기에 맞춰 축소 디코딩한다.
  */
-fun characterImage(cardId: Int, visual: VisualState): Int = when (cardId) {
-    3 -> when (visual) {
-        VisualState.BATTLE -> R.drawable.char_aurelia_battle
-        VisualState.CASUAL_CUTE -> R.drawable.char_aurelia_casual
-        VisualState.ROMANTIC_DATE -> R.drawable.char_aurelia_date
-    }
-    1 -> when (visual) {
-        VisualState.BATTLE -> R.drawable.char_seraphiel_battle
-        VisualState.CASUAL_CUTE -> R.drawable.char_seraphiel_casual
-        VisualState.ROMANTIC_DATE -> R.drawable.char_seraphiel_date
-    }
-    2 -> when (visual) {
-        VisualState.BATTLE -> R.drawable.char_elyria_battle
-        VisualState.CASUAL_CUTE -> R.drawable.char_elyria_casual
-        VisualState.ROMANTIC_DATE -> R.drawable.char_elyria_date
-    }
-    else -> when (visual) {
-        VisualState.BATTLE -> R.drawable.char_lilith_battle
-        VisualState.CASUAL_CUTE -> R.drawable.char_lilith_casual
-        VisualState.ROMANTIC_DATE -> R.drawable.char_lilith_date
-    }
-}
+fun characterImage(cardId: Int, visual: VisualState): Int? =
+    CharacterArtRegistry.resId(cardId, visual)
 
 /** 스크롤 가능한 화면 본문 */
 @Composable

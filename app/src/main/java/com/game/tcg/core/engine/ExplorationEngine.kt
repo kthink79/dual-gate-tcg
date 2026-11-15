@@ -1,5 +1,6 @@
 package com.game.tcg.core.engine
 
+import com.game.tcg.core.model.CardCatalog
 import com.game.tcg.core.model.Element
 import kotlin.random.Random
 
@@ -50,7 +51,10 @@ enum class ExplorationRewardType {
     GATE_ENERGY,
     BOND,
     MEMORY_FRAGMENT,
-    TEMPTATION
+    TEMPTATION,
+
+    /** 개성파 동료와의 조우 — 해당 캐릭터의 호감도가 오른다 */
+    COMPANION_BOND
 }
 
 /**
@@ -77,7 +81,10 @@ data class ExplorationResult(
     val enemyAtk: Int = 0,
     val fragmentTargetCardId: Int? = null,
     val bondGained: Int = 0,
-    val temptationGained: Int = 0
+    val temptationGained: Int = 0,
+    /** 조우한 캐릭터의 도감 번호 (개성파 30인 조우 시) */
+    val companionCardId: Int? = null,
+    val companionDisplayName: String? = null
 ) {
     /** 이번 탐색이 전투 조우로 이어지는지 */
     val startsBattle: Boolean get() = enemyName != null && enemyHp > 0
@@ -319,6 +326,7 @@ class ExplorationEngine(
                     bondGained = 10
                 )
             }
+            r < 70 -> companionEncounter(context)
             r < 80 -> {
                 ExplorationResult(
                     mode = ExplorationMode.ENCOUNTER,
@@ -343,5 +351,46 @@ class ExplorationEngine(
                 enemyAtk = 950
             )
         }
+    }
+    // ── 🎭 개성파 30인 조우 ──
+    /**
+     * 도감 No.155~184의 개성파 30인 중 한 명과 길에서 마주친다.
+     * 해당 캐릭터의 호감도가 오르고, 현실 교감·데이트 룩 해금으로 이어진다.
+     */
+    private fun companionEncounter(context: ExplorationContext): ExplorationResult {
+        val roster = CardCatalog.newWave()
+        // 탐색 횟수까지 반영해 같은 판정값이라도 매번 다른 인연이 걸리도록 한다
+        val index = (context.explorationCount + roll()) % roster.size
+        val record = roster[index]
+        val bond = 10 + (index % 3) * 5   // 10 / 15 / 20
+        return ExplorationResult(
+            mode = ExplorationMode.ENCOUNTER,
+            title = "개성파 조우 · ${record.fullName}",
+            narrative = encounterNarrative(record.name, record.title, record.id),
+            rewards = listOf(
+                ExplorationReward(
+                    ExplorationRewardType.COMPANION_BOND,
+                    bond,
+                    "${record.name} 호감도 +${bond}"
+                )
+            ),
+            bondGained = bond,
+            companionCardId = record.id,
+            companionDisplayName = record.fullName
+        )
+    }
+
+    /** 조우 연출 문구 — 캐릭터마다 다른 장면을 보여 준다 */
+    private fun encounterNarrative(name: String, title: String, id: Int): String = when (id % 5) {
+        0 -> "골목 끝, 「$title」 $name" + "(이)가 낡은 상자에 걸터앉아 손을 흔들었다. " +
+                "\"계약자지? 마침 네 얼굴을 한 번 보고 싶었어.\""
+        1 -> "비를 피한 처마 밑에서 「$title」 $name" + "(을)를 만났다. " +
+                "그녀는 아무 말 없이 자리를 반쯤 비켜 주고, 옆에 서 있는 게 허락이라는 듯 고개를 끄덕였다."
+        2 -> "차원 균열의 잔광이 비치는 광장에서 「$title」 $name" + "(이)가 다가왔다. " +
+                "\"이 근처는 위험해. …딱 오늘만, 내가 데려다줄게.\""
+        3 -> "포장마차 불빛 아래 「$title」 $name" + "(이)가 컵을 하나 더 꺼내 놓았다. " +
+                "\"말 안 해도 알아. 이런 밤엔 누군가 옆에 있어야 하잖아.\""
+        else -> "계약자의 그림자를 밟고 「$title」 $name" + "(이)가 조용히 따라붙었다. " +
+                "\"방해할 생각은 없어. 그냥… 네가 어디까지 가는지 보고 싶어서.\""
     }
 }

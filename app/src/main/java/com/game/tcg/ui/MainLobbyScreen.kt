@@ -1,6 +1,5 @@
 package com.game.tcg.ui
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,7 +25,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -59,11 +57,13 @@ fun MainLobbyScreen(
             .background(TcgColors.Background)
     ) {
         // ── 중앙 대형 캐릭터 아트 ──
-        Image(
-            painter = painterResource(characterImage(hero.id, state.lobbyVisual)),
+        CardArtImage(
+            cardId = hero.id,
+            visual = state.lobbyVisual,
             contentDescription = "${hero.name} 대표 캐릭터",
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            targetWidthPx = 1080
         )
         Box(
             modifier = Modifier

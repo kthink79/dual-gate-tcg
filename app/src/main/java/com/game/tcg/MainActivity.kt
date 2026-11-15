@@ -150,7 +150,9 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                         onSetLobbyHero = { id ->
                             viewModel.selectLobbyHero(id)
                             viewModel.openScreen(LobbyDestination.LOBBY)
-                        }
+                        },
+                        onDeployToParty = { id, slot -> viewModel.deployToParty(id, slot) },
+                        onUndeployFromParty = { id -> viewModel.undeployFromParty(id) }
                     )
                     LobbyDestination.DECK -> DeckScreen(
                         state = state,
