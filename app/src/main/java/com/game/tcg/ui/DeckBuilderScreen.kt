@@ -217,6 +217,19 @@ fun DeckBuilderScreen(
                 }
             }
 
+            // ── 스크롤 본문: 덱 그리드 · 액션 바 · 컬렉션 헤더 · 컬렉션 카드 ──
+            //   (작은 화면·가로 모드에서 고정 영역이 화면을 넘겨 덱·버튼이 잘리는 문제 방지)
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 90.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
             // ── 덱 그리드 (4열 × 3행 = 12칸) ──
             Column(
                 modifier = Modifier
@@ -363,18 +376,16 @@ fun DeckBuilderScreen(
             }
 
             // ── 컬렉션 3열 그리드 ──
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
+                    }
+                }
+
                 items(items = collection, key = { it.id }) { card ->
                     val equipped = card.id in state.equippedCardIds
-                    Box(modifier = Modifier.height(148.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .height(148.dp)
+                            .padding(horizontal = 3.dp)
+                    ) {
                         DuelCardTile(
                             cardId = card.id,
                             visual = card.currentVisual,
@@ -392,7 +403,7 @@ fun DeckBuilderScreen(
                     }
                 }
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                    Spacer(Modifier.height(76.dp))
+                    Spacer(Modifier.height(8.dp))
                 }
             }
         }

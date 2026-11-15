@@ -35,6 +35,8 @@ import com.game.tcg.core.engine.TemptationEngine
 import com.game.tcg.core.engine.TrustRiftEngine
 import com.game.tcg.core.engine.DeckAutoBuilder
 import com.game.tcg.core.engine.AdvancedSynthesisEngine
+import com.game.tcg.core.engine.EmergencySupplyEngine
+import com.game.tcg.core.engine.SupplyOffer
 import com.game.tcg.core.engine.CardUpgradeEngine
 import com.game.tcg.core.engine.CraftKind
 import com.game.tcg.core.engine.CraftResult
@@ -412,6 +414,9 @@ data class TcgGameState(
     val activeStage: Int? = null,
     val lastStageOutcome: StageClearOutcome? = null,
     val stageMessage: String? = null,
+    // ── 소프트락 안전장치: 무료 긴급 보급 (2026-11-16 QA) ──
+    val supplyClaims: Int = 0,
+    val supplyMessage: String? = null,
     // ── 재화: 조각 · 카드팩 티켓 · 장비 소지품 ──
     val shards: ShardWallet = ShardWallet(),
     val packTickets: Int = 0,
@@ -480,6 +485,28 @@ data class TcgGameState(
 
     /** 보유 카드 번호 집합 */
     val ownedCardIds: Set<Int> get() = ownedCards.map { it.id }.toSet()
+
+    /** 영구 상실 후 환생 풀에 대기 중인 카드 번호 (무료 재계약 대상) */
+    val lostCardIds: Set<Int> get() = reincarnationPool.map { it.templateId }.toSet()
+
+    /**
+     * 무료 긴급 보급 판정 — 보유 3장 미만 + 환생 풀 0장 + 팩/티켓/연성 불가일 때만 지급 대상.
+     * (자세한 조건은 [EmergencySupplyEngine])
+     */
+    val supplyOffer: SupplyOffer
+        get() = EmergencySupplyEngine.evaluate(
+            ownedCardIds = ownedCardIds,
+            lostCardIds = lostCardIds,
+            gold = gold,
+            packTickets = packTickets,
+            shardTotal = shardTotal,
+            claimsUsed = supplyClaims
+        )
+
+    /** 로비·스테이지 화면에서 구제 패널을 띄울지 (잃은 카드가 있거나 무료 보급이 필요) */
+    val needsRescue: Boolean
+        get() = ownedCards.size < EmergencySupplyEngine.MIN_OWNED_CARDS &&
+            (reincarnationPool.isNotEmpty() || supplyOffer.isOffered)
 
     /** 덱 총 전투력 (ATK + DEF 합계) — 스테이지 권장 전투력과 비교하는 값 */
     val deckTotalPower: Int get() = equippedCards.sumOf { it.atk + it.def }
@@ -584,6 +611,11 @@ data class TcgGameState(
                     LobbyDestination.STAGE
                 )
             )
+            if (supplyOffer.isOffered) {
+                add(LobbyAlert("긴급 보급 · 동료 ${supplyOffer.cardIds.size}명 무료", LobbyDestination.STAGE, true))
+            } else if (needsRescue) {
+                add(LobbyAlert("재계약 대기 ${reincarnationPool.size}장 (무료)", LobbyDestination.STAGE, true))
+            }
             if (isTrustRiftAvailable) add(LobbyAlert("신뢰의 균열", LobbyDestination.SCENARIO, true))
             if (memoryResetCards.isNotEmpty()) add(LobbyAlert("기억의 잔향", LobbyDestination.REAL_WORLD))
             if (combatPenalty.totalStacks > 0) {
@@ -895,6 +927,11 @@ class TcgGameViewModel(
     fun explore(mode: ExplorationMode): ExplorationResult? {
         var resultOut: ExplorationResult? = null
         _uiState.update { s ->
+            if (s.ownedCards.isEmpty()) {
+                return@update s.copy(
+                    statusMessage = "[탐색 불가] 보유 동료가 0장입니다. 재계약(무료)이나 긴급 보급으로 덱을 먼저 채우세요."
+                )
+            }
             if (s.gateEnergy < mode.energyCost) {
                 return@update s.copy(
                     statusMessage = "[탐색 불가] 차원 균열 에너지가 부족합니다. (보유 ${s.gateEnergy}/${s.gateEnergyMax}) " +
@@ -1141,6 +1178,12 @@ class TcgGameViewModel(
     /** 마왕 릴리스와의 결전 준비 */
     fun startDemonLordBattle() {
         _uiState.update { s ->
+            if (s.ownedCards.isEmpty()) {
+                return@update s.copy(
+                    battleLog = s.battleLog + "[출전 불가] 보유 동료가 0장입니다. 재계약·보급으로 덱을 먼저 채우세요.",
+                    statusMessage = "[출전 불가] 보유 동료 0장 — 재계약(무료)이나 긴급 보급이 필요합니다."
+                )
+            }
             val penalty = temptationEngine.calculateCombatPenalty(s.temptationState)
             s.copy(
                 enemyName = "마왕 릴리스",
@@ -1172,6 +1215,12 @@ class TcgGameViewModel(
     /** 일반 마수 원정 준비 */
     fun startFieldBattle() {
         _uiState.update { s ->
+            if (s.ownedCards.isEmpty()) {
+                return@update s.copy(
+                    battleLog = s.battleLog + "[출전 불가] 보유 동료가 0장입니다. 재계약·보급으로 덱을 먼저 채우세요.",
+                    statusMessage = "[출전 불가] 보유 동료 0장 — 재계약(무료)이나 긴급 보급이 필요합니다."
+                )
+            }
             s.copy(
                 enemyName = "차원 틈새의 마수",
                 enemyElement = Element.DARK,
@@ -1327,6 +1376,8 @@ class TcgGameViewModel(
                 ) {
                     val lordCard = characterCard(lordId)
                     owned = owned + lordCard
+                    // 상실 엔진에도 등록해야 이후 전투에서 쓰러졌을 때 정상적으로 상실 처리된다
+                    lifecycleEngine.registerOwnedCard(lordCard)
                     extraLogs += "[서약] ${lordCard.name}이(가) 가면을 벗고 파트너로 합류했습니다. (조각·강화 상태 초기)"
                 }
                 // 심연 연성 해금 안내
@@ -1447,6 +1498,10 @@ class TcgGameViewModel(
             s.copy(
                 reincarnationPool = lifecycleEngine.collection.reincarnationQueue(),
                 ownedCards = s.ownedCards.filterNot { it.id == victim.card.id },
+                // 영구 상실 — 편성·대기열에서도 즉시 빠진다.
+                // (남겨 두면 다음 전투 개시 시 HP 가 되살아나 상실 규칙이 무력화된다)
+                party = s.party.filterNot { it.card.id == victim.card.id },
+                battleReserve = s.battleReserve.filterNot { it.id == victim.card.id },
                 equipment = s.equipment.toList(),
                 battleLog = s.battleLog + result.message.split("\n"),
                 statusMessage = "[영구 상실] ${victim.card.name}이(가) 쓰러졌습니다. 기억·강화 초기화 — 재획득 필요."
@@ -1484,6 +1539,63 @@ class TcgGameViewModel(
                 statusMessage = "[재획득] ${card.name} 재계약 완료 — ${slot}번 슬롯 복귀"
             )
         }
+    }
+
+    /**
+     * 환생 풀에 대기 중인 카드를 **전부 무료 재계약**한다.
+     * (기본 편성 순서대로 전열 → 후열 빈 슬롯에 들어간다. 비용 없음)
+     */
+    fun reclaimAllLostCards(): Int {
+        val pending = _uiState.value.reincarnationPool.map { it.templateId }
+        pending.forEach { reacquire(it) }
+        if (pending.isNotEmpty()) {
+            _uiState.update { s ->
+                s.copy(
+                    statusMessage = "[무료 재계약] 잃었던 동료 ${pending.size}명을 되찾았습니다. (보유 ${s.ownedCards.size}장)"
+                )
+            }
+        }
+        return pending.size
+    }
+
+    /**
+     * 무료 긴급 보급 — 보유 카드가 3장 미만이고 환생 풀·카드팩·조각 연성 어느 것도 불가능할 때만
+     * 지원 카드를 지급한다([EmergencySupplyEngine]). 지급 카드는 미보유 카드 중에서만 고른다.
+     */
+    fun claimEmergencySupply(): SupplyOffer? {
+        var offered: SupplyOffer? = null
+        _uiState.update { s ->
+            val offer = s.supplyOffer
+            offered = offer
+            if (!offer.isOffered || offer.cardIds.isEmpty()) {
+                return@update s.copy(
+                    supplyMessage = offer.message.ifBlank { "[긴급 보급] ${offer.reason}" },
+                    statusMessage = "[긴급 보급] ${offer.reason}"
+                )
+            }
+            var party = s.party
+            val newCards = offer.cardIds.map { id ->
+                val card = characterCard(id)
+                lifecycleEngine.registerOwnedCard(card)
+                val slot = DeckAutoBuilder.firstEmptySlot(party.map { it.slotIndex }, s.unlockedDeckSize)
+                if (slot != null) {
+                    val maxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
+                    party = (party + PartyMember(card, slot, DeckRules.isFrontSlot(slot), maxHp, maxHp))
+                        .sortedBy { it.slotIndex }
+                }
+                card
+            }
+            val names = newCards.joinToString(", ") { it.name }
+            s.copy(
+                ownedCards = s.ownedCards + newCards,
+                party = party,
+                supplyClaims = s.supplyClaims + 1,
+                supplyMessage = "[긴급 보급] ${names} — ${newCards.size}명이 합류했습니다. (보유 ${s.ownedCards.size} → ${s.ownedCards.size + newCards.size}장)",
+                battleLog = s.battleLog + "[긴급 보급] ${names} 무료 지급 (${newCards.size}명)",
+                statusMessage = "[긴급 보급] ${names} 합류 — 이제 다시 출전할 수 있습니다."
+            )
+        }
+        return offered
     }
 
     /** 전술 후퇴 — 턴당 1회, 마나 1 (마왕전 2), 홀림 3스택 이상이면 명령 불복 */
@@ -1775,8 +1887,12 @@ class TcgGameViewModel(
             }
             if (s.party.isEmpty()) {
                 return@update s.copy(
-                    stageMessage = "[출전 불가] 출전 덱이 비어 있습니다.",
-                    statusMessage = "[스테이지] 덱 편성에서 카드를 먼저 배치하세요."
+                    stageMessage = "[출전 불가] 출전 덱이 비어 있습니다. 잃은 카드는 무료 재계약, 없으면 긴급 보급으로 채울 수 있습니다.",
+                    statusMessage = if (s.ownedCards.isEmpty()) {
+                        "[스테이지] 보유 동료 0장 — 무료 재계약이나 긴급 보급으로 덱을 채우세요."
+                    } else {
+                        "[스테이지] 덱 편성에서 카드를 먼저 배치하세요."
+                    }
                 )
             }
             started = true
@@ -2236,6 +2352,7 @@ class TcgGameViewModel(
                 )
             }
             val card = characterCard(nextId)
+            lifecycleEngine.registerOwnedCard(card)
             s.copy(
                 junkCards = s.junkCards - 3,
                 gold = s.gold - 300,
@@ -2538,15 +2655,20 @@ class TcgGameViewModel(
      * 전투 개시 시 파티를 준비한다 — 편성(누가 어느 슬롯에 있는지)은 그대로 두고 HP만 최대치로 회복.
      * 편성이 비어 있으면 스타팅 3인방으로 채운다.
      */
-    private fun freshParty(s: TcgGameState): List<PartyMember> =
-        if (s.party.isEmpty()) {
-            initialParty(s.ownedCards.take(DeckRules.FRONT_SLOTS))
-        } else {
-            s.party.map {
-                val maxHp = TcgGameViewModel.maxHpOf(it.card) + EquipmentEngine.hpBonus(it.card.id, s.equipment)
-                it.copy(hp = maxHp, maxHp = maxHp, memoryAffinity = 0)
+    private fun freshParty(s: TcgGameState): List<PartyMember> {
+        // 보유하지 않은(영구 상실된) 카드는 편성에 남아 있어도 다시 세우지 않는다.
+        val owned = s.ownedCards.associateBy { it.id }
+        val kept = s.party
+            .filter { owned.containsKey(it.card.id) }
+            .map { member ->
+                val card = owned.getValue(member.card.id)
+                val maxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
+                member.copy(card = card, hp = maxHp, maxHp = maxHp, memoryAffinity = 0)
             }
-        }
+        if (kept.isNotEmpty()) return kept
+        // 편성이 비어 있으면 보유 카드로 전열을 채운다 (보유 0장이면 빈 목록 = 출전 불가)
+        return initialParty(s.ownedCards.take(DeckRules.FRONT_SLOTS))
+    }
 
     companion object {
         /** 메인 로비 기본 대표 캐릭터 (성기사 아우렐리아 — 시작 카드에 없을 때의 대체값) */

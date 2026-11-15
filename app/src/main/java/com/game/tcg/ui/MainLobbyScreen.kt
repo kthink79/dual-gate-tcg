@@ -3,8 +3,8 @@ package com.game.tcg.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -260,14 +260,13 @@ fun MainLobbyScreen(
             ) {
                 HeroCycleButton("◀") { onCycleHero(-1) }
                 Spacer(Modifier.width(8.dp))
-                Row(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .horizontalScroll(rememberScrollState()),
+                // 170명 이름 칩은 화면에 보이는 만큼만 구성한다(작은 기기 프레임 드롭 방지)
+                androidx.compose.foundation.lazy.LazyRow(
+                    modifier = Modifier.weight(1f, fill = false),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    roster.forEach { id ->
+                    items(roster, key = { it }) { id ->
                         val chipProfile = TcgGameViewModel.profileOf(id)
                         ChipButton(
                             label = chipProfile?.displayName ?: "#$id",

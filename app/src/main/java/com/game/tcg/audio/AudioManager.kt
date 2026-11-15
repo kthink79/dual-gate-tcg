@@ -84,9 +84,14 @@ class AudioManager(
         updateSettings(settings.copy(sfxVolume = volume.coerceIn(0f, 1f)))
 
     private fun updateSettings(next: AudioSettings): AudioSettings {
+        val wasBgmEnabled = settings.bgmEnabled
         settings = next.sanitized()
         prefs.save(settings)
         applySettingsToPlayer()
+        // 음소거 → 해제 시 마지막 장면을 즉시 되살린다 (그러지 않으면 화면이 바뀔 때까지 무음)
+        if (!wasBgmEnabled && settings.bgmEnabled) {
+            refresh()
+        }
         return settings
     }
 
@@ -110,7 +115,12 @@ class AudioManager(
     /** ON_RESUME — 멈췄던 BGM 을 이어 재생한다 */
     fun onAppResume() {
         bgmPausedByLifecycle = false
-        if (settings.bgmEnabled) player.resumeBgm()
+        if (!settings.bgmEnabled) return
+        player.resumeBgm()
+        // 복귀해도 재생기가 확보되지 않았으면(이전 오류·해제) 장면을 다시 요청한다
+        if (player.currentTrack() == null && lastScene != AudioScene.NONE) {
+            player.playScene(lastScene)
+        }
     }
 
     /** Activity 종료 — 리소스 해제 */

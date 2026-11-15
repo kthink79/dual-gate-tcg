@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -196,7 +197,9 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                             onStartStage = { number -> viewModel.startStageBattle(number) },
                             onOpenDeck = { viewModel.openScreen(LobbyDestination.DECK) },
                             onOpenGrowth = { viewModel.openScreen(LobbyDestination.GROWTH) },
-                            onOpenShop = { viewModel.openScreen(LobbyDestination.SHOP) }
+                            onOpenShop = { viewModel.openScreen(LobbyDestination.SHOP) },
+                            onReclaimLost = { audio.click(); viewModel.reclaimAllLostCards() },
+                            onClaimSupply = { audio.click(); viewModel.claimEmergencySupply() }
                         )
                         LobbyDestination.SHOP -> PackShopScreen(
                             state = state,
@@ -331,6 +334,8 @@ private fun TcgStatusBar(message: String) {
         modifier = Modifier
             .fillMaxWidth()
             .background(TcgColors.Surface)
+            // targetSdk 35 엣지-투-엣지: 제스처 내비게이션 바에 글자가 가리지 않도록
+            .navigationBarsPadding()
             .padding(horizontal = 12.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

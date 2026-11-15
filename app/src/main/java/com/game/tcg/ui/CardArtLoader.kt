@@ -44,18 +44,43 @@ object CardArtLoader {
     /** 디코딩 없이 캐시에 있는 비트맵만 조회 (리컴포지션 시 깜빡임 방지) */
     fun peek(resId: Int, reqWidthPx: Int): ImageBitmap? = cache.get(key(resId, reqWidthPx))
 
-    /** 리소스를 목표 폭에 맞춰 축소 디코딩한다. 실패하면 null. */
+    /** 리소스를 목표 폭에 맞춰 축소 디코딩한다. 실패·OOM이면 null. */
     fun load(resources: Resources, resId: Int, reqWidthPx: Int): ImageBitmap? {
         if (resId == 0) return null
-        val cacheKey = key(resId, reqWidthPx)
+        // 0 이하 요청은 축소 배율 루프가 끝나지 않는다 — 최소 1px로 보정
+        val reqW = reqWidthPx.coerceAtLeast(1)
+        val cacheKey = key(resId, reqW)
         cache.get(cacheKey)?.let { return it }
 
+        return try {
+            decode(resources, resId, reqW, cacheKey)
+        } catch (oom: OutOfMemoryError) {
+            // 메모리 압박: 캐시를 전부 비우고 한 번만 더 시도한다
+            cache.evictAll()
+            try {
+                decode(resources, resId, reqW / 2, cacheKey)
+            } catch (second: OutOfMemoryError) {
+                null
+            }
+        } catch (e: Exception) {
+            // 잘못된 이미지 · 리소스 문제 등 — 플레이스홀더로 대체하고 게임은 계속된다
+            null
+        }
+    }
+
+    private fun decode(
+        resources: Resources,
+        resId: Int,
+        reqW: Int,
+        cacheKey: String
+    ): ImageBitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeResource(resources, resId, bounds)
-        if (bounds.outWidth <= 0) return null
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
         var sampleSize = 1
-        while (bounds.outWidth / (sampleSize * 2) >= reqWidthPx) {
+        val target = reqW.coerceAtLeast(1)
+        while (bounds.outWidth / (sampleSize * 2) >= target) {
             sampleSize *= 2
         }
         val options = BitmapFactory.Options().apply {
@@ -92,13 +117,15 @@ fun CardArtImage(
         ArtPlaceholder(modifier)
         return
     }
+    // 요청 폭이 0/음수여도 캐시 키·축소 배율이 일관되도록 보정
+    val targetPx = targetWidthPx.coerceAtLeast(1)
     val bitmap by produceState<ImageBitmap?>(
-        initialValue = CardArtLoader.peek(resId, targetWidthPx),
+        initialValue = CardArtLoader.peek(resId, targetPx),
         resId,
-        targetWidthPx
+        targetPx
     ) {
         value = withContext(Dispatchers.IO) {
-            CardArtLoader.load(context.resources, resId, targetWidthPx)
+            CardArtLoader.load(context.resources, resId, targetPx)
         }
     }
     val loaded = bitmap

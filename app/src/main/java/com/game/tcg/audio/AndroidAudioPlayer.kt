@@ -24,6 +24,8 @@ class AndroidAudioPlayer(private val context: Context) : AudioPlayer {
     private var sfxEnabled: Boolean = true
     private var bgmVolume: Float = 0.65f
     private var sfxVolume: Float = 0.90f
+    /** release() 이후에는 다시 재생하지 않는다 (해제된 SoundPool 접근 방지) */
+    private var released: Boolean = false
 
     private val soundPool: SoundPool = SoundPool.Builder()
         .setMaxStreams(6)
@@ -42,12 +44,21 @@ class AndroidAudioPlayer(private val context: Context) : AudioPlayer {
     // ── BGM (MediaPlayer) ─────────────────────────────────────────
 
     override fun playBgm(track: BgmTrack) {
-        if (!bgmEnabled || current == track) return
+        if (released || !bgmEnabled || current == track) return
         releaseBgmPlayer()
         val player = runCatching {
             MediaPlayer.create(context, track.resId)?.apply {
                 isLooping = true
                 setVolume(bgmVolume, bgmVolume)
+                // 재생 중 오류는 삼킨다 — 오디오는 부가 기능이므로 게임을 멈추지 않는다
+                setOnErrorListener { mp, _, _ ->
+                    runCatching { mp.reset() }
+                    if (bgmPlayer === mp) {
+                        bgmPlayer = null
+                        current = null
+                    }
+                    true
+                }
                 start()
             }
         }.getOrNull()
@@ -74,11 +85,19 @@ class AndroidAudioPlayer(private val context: Context) : AudioPlayer {
     }
 
     override fun resumeBgm() {
+        if (released) return
         val track = pausedTrack ?: current ?: return
         val player = bgmPlayer
         if (player != null && current == track) {
-            runCatching {
+            val resumed = runCatching {
                 if (!player.isPlaying) player.start()
+                true
+            }.getOrDefault(false)
+            // 재생기 상태가 깨졌으면 새로 만든다
+            if (!resumed) {
+                bgmPlayer = null
+                current = null
+                playBgm(track)
             }
         } else {
             // 정지 상태에서 resume 요청 — 같은 트랙을 다시 튼다
@@ -121,7 +140,7 @@ class AndroidAudioPlayer(private val context: Context) : AudioPlayer {
     // ── SFX (SoundPool) ───────────────────────────────────────────
 
     override fun playSfx(effect: SfxEffect) {
-        if (!sfxEnabled) return
+        if (released || !sfxEnabled) return
         val id = sfxIds[effect] ?: return
         if (id == 0) return  // 아직 로드 전 또는 로드 실패
         runCatching {
@@ -138,6 +157,8 @@ class AndroidAudioPlayer(private val context: Context) : AudioPlayer {
     }
 
     override fun release() {
+        if (released) return
+        released = true
         releaseBgmPlayer()
         runCatching { soundPool.release() }
         current = null

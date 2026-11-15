@@ -54,7 +54,9 @@ fun StageScreen(
     onStartStage: (Int) -> Unit,
     onOpenDeck: () -> Unit,
     onOpenGrowth: () -> Unit,
-    onOpenShop: () -> Unit
+    onOpenShop: () -> Unit,
+    onReclaimLost: () -> Unit = {},
+    onClaimSupply: () -> Unit = {}
 ) {
     val selected = state.selectedStageDefinition
     var chapter by remember(selected.chapter) { mutableStateOf(selected.chapter) }
@@ -64,6 +66,14 @@ fun StageScreen(
     val unlocked = state.isStageUnlocked(selected.number)
 
     ScreenFrame {
+        // ── 구제 패널: 카드가 바닥났을 때의 소프트락 방지 (2026-11-16 QA) ──
+        RescuePanel(
+            state = state,
+            onReclaimLost = onReclaimLost,
+            onClaimSupply = onClaimSupply,
+            onOpenDeck = onOpenDeck
+        )
+
         SectionCard(
             title = "스테이지 캠페인",
             badge = "${state.stageCleared.size}/${StageCatalog.TOTAL_STAGES} 클리어",
@@ -233,6 +243,95 @@ fun StageScreen(
             if (state.stageMessage != null) {
                 Text(state.stageMessage, color = TcgColors.Text.copy(alpha = 0.85f), fontSize = 9.sp, lineHeight = 14.sp)
             }
+        }
+    }
+}
+
+/**
+ * 구제 패널 — 로그라이크 상실로 보유 카드가 줄었을 때 진행이 막히지 않도록 둔 안전장치.
+ *
+ * ① 환생 풀에 잃은 카드가 있으면 **무료 재계약** (비용 없음)
+ * ② 보유 3장 미만 + 환생 풀 0장 + 팩·티켓·연성 불가면 **무료 긴급 보급**
+ * ③ 둘 다 아니면 표시하지 않는다(정상 진행 중).
+ */
+@Composable
+private fun RescuePanel(
+    state: TcgGameState,
+    onReclaimLost: () -> Unit,
+    onClaimSupply: () -> Unit,
+    onOpenDeck: () -> Unit
+) {
+    val offer = state.supplyOffer
+    val lostCount = state.reincarnationPool.size
+    if (lostCount == 0 && !offer.isOffered) {
+        if (state.ownedCards.size >= com.game.tcg.core.engine.EmergencySupplyEngine.MIN_OWNED_CARDS) return
+        // 카드가 적지만 아직 정상 획득 경로가 있는 경우 — 안내만
+        SectionCard(title = "동료가 부족합니다", badge = "보유 ${state.ownedCards.size}장", accent = TcgColors.Gold) {
+            Text(
+                offer.reason.ifBlank { "보유 카드가 3장 미만입니다. 카드팩·연성으로 덱을 채우세요." },
+                color = TcgColors.Muted,
+                fontSize = 9.sp,
+                lineHeight = 14.sp
+            )
+        }
+        return
+    }
+
+    SectionCard(
+        title = "구제 · 잃은 동료 되찾기",
+        badge = if (offer.isOffered) "긴급 보급 가능" else "무료 재계약",
+        accent = TcgColors.Danger
+    ) {
+        Text(
+            "쓰러진 동료는 영구 상실되지만, 환생 풀에서 **비용 없이** 되찾을 수 있습니다. " +
+                "보유 카드가 3장 미만이고 팩·티켓·조각 연성까지 모두 불가능해지면 무료 지원 카드를 지급합니다.",
+            color = TcgColors.Muted,
+            fontSize = 9.sp,
+            lineHeight = 14.sp
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Pill("보유 ${state.ownedCards.size}장", TcgColors.Violet)
+            Pill("환생 풀 ${lostCount}장", TcgColors.Abyss)
+            Pill("골드 ${state.gold}G · 🎟 ${state.packTickets} · 조각 ${state.shardTotal}", TcgColors.Gold)
+        }
+        if (lostCount > 0) {
+            state.reincarnationPool.take(4).forEach { lost ->
+                Text(
+                    "· ${lost.name} (${lost.reincarnationCount}회차 · 잃은 강화 Lv.${lost.lostUpgradeLevel})",
+                    color = TcgColors.Text.copy(alpha = 0.85f),
+                    fontSize = 9.sp
+                )
+            }
+            ActionTile(
+                label = "✨ 무료 재계약 · 잃은 ${lostCount}장 전부 되찾기",
+                hint = "비용 없음 · 초기 상태로 복귀 (기억·강화 초기화)",
+                accent = TcgColors.Heal,
+                onClick = onReclaimLost
+            )
+        }
+        if (offer.isOffered) {
+            ActionTile(
+                label = "🎁 긴급 보급 · 동료 ${offer.cardIds.size}명 무료 지급",
+                hint = "${offer.ownedBefore}장 → ${offer.ownedAfter}장 · 남은 보급 ${offer.claimsLeft}회",
+                accent = TcgColors.Danger,
+                onClick = onClaimSupply
+            )
+        }
+        if (state.ownedCards.isNotEmpty()) {
+            ActionTile(
+                label = "📜 덱 편성으로 이동",
+                hint = "되찾은 동료를 전열에 배치하세요",
+                accent = TcgColors.Mana,
+                onClick = onOpenDeck
+            )
+        }
+        if (state.supplyMessage != null) {
+            Text(
+                state.supplyMessage!!,
+                color = TcgColors.Text.copy(alpha = 0.85f),
+                fontSize = 9.sp,
+                lineHeight = 14.sp
+            )
         }
     }
 }
