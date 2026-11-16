@@ -139,8 +139,12 @@ fun BattleScreen(
     }
 
     // ── ⚔️ 공격 1회 타임라인: 컷인 확대 → 타격(플래시·참격·데미지) → 잔상 ──
+    // 화면을 다시 열었을 때(덱 편성 → 전투 복귀 등) 지난 공격의 컷인이 재생되지 않도록
+    // 진입 시점의 틱은 건너뛴다.
+    val entryTick = remember { state.lastCutIn?.tick ?: 0 }
     LaunchedEffect(state.lastCutIn?.tick) {
         val cut = state.lastCutIn ?: return@LaunchedEffect
+        if (cut.tick == entryTick) return@LaunchedEffect
         val speed = state.battleSpeed
         activeCutIn = cut
         delay(BattleAutoDecor.impactMillis(speed))
