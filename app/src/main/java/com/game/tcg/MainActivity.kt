@@ -58,6 +58,9 @@ import com.game.tcg.ui.ScenarioScreen
 import com.game.tcg.ui.StageScreen
 import com.game.tcg.ui.TcgColors
 import com.game.tcg.ui.TcgGameViewModel
+import com.game.tcg.persistence.FileSaveStore
+import com.game.tcg.persistence.SaveStore
+import java.io.File
 
 /**
  * 듀얼 게이트 — 이계의 문
@@ -76,7 +79,12 @@ class MainActivity : ComponentActivity() {
         // 인트로를 한 번 본 뒤에는 앱을 다시 켜도 로비에서 바로 시작한다.
         val introSeen = getSharedPreferences(IntroStoryEngine.PREFS_NAME, Context.MODE_PRIVATE)
             .getBoolean(IntroStoryEngine.PREF_INTRO_SEEN, false)
-        viewModel = TcgGameViewModel(introAlreadySeen = introSeen)
+        // 진행 상태 자동 저장 — 앱 내부 저장소(filesDir)의 세이브 파일에서 복원하고,
+        // 상태가 바뀔 때마다 그 파일에 다시 쓴다.
+        viewModel = TcgGameViewModel(
+            introAlreadySeen = introSeen,
+            saveStore = FileSaveStore(File(filesDir, SaveStore.SAVE_FILE_NAME))
+        )
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -90,6 +98,12 @@ class MainActivity : ComponentActivity() {
                 TcgApp(viewModel = viewModel)
             }
         }
+    }
+
+    /** 화면을 떠날 때 마지막 진행 상태를 확정 저장한다 (평소엔 상태가 바뀔 때마다 자동 저장) */
+    override fun onStop() {
+        viewModel.saveNow()
+        super.onStop()
     }
 }
 
@@ -157,7 +171,8 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                             onSelectHero = { id -> audio.click(); viewModel.selectLobbyHero(id) },
                             onCycleHero = { direction -> audio.click(); viewModel.cycleLobbyHero(direction) },
                             onSelectVisual = { visual -> audio.click(); viewModel.selectLobbyVisual(visual) },
-                            onReplayIntro = { audio.click(); viewModel.replayIntro() }
+                            onReplayIntro = { audio.click(); viewModel.replayIntro() },
+                            onResetGame = { audio.click(); viewModel.resetGame() }
                         )
                         LobbyDestination.SCENARIO -> ScenarioScreen(
                             state = state,

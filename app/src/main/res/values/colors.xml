@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 《듀얼 게이트》 앱 아이콘 배경 — 어댑티브 아이콘의 바탕색 (짙은 밤하늘) -->
+    <color name="ic_launcher_background">#0B0A12</color>
+</resources>

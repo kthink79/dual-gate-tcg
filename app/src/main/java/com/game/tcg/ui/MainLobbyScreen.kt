@@ -17,8 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,12 +54,16 @@ fun MainLobbyScreen(
     onSelectHero: (Int) -> Unit,
     onCycleHero: (Int) -> Unit,
     onSelectVisual: (VisualState) -> Unit,
-    onReplayIntro: () -> Unit = {}
+    onReplayIntro: () -> Unit = {},
+    /** 「새 게임」 — 확인 다이얼로그에서 승인했을 때만 불린다 */
+    onResetGame: () -> Unit = {}
 ) {
     val hero = state.lobbyHero
     val profile = state.lobbyHeroProfile
     val roster = state.lobbyRoster
     val rosterIndex = roster.indexOf(state.lobbyHeroId).coerceAtLeast(0)
+    // 진행 초기화 확인 다이얼로그
+    var showResetDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -140,11 +150,14 @@ fun MainLobbyScreen(
                     }
                 }
             }
-            // 「🎬 인트로 다시보기」 — 도입부 4장면 컷신을 언제든 다시 감상
+            // 「🎬 인트로 다시보기」 + 「🆕 새 게임」 — 진행은 상태 변화마다 자동 저장된다
             Row(
                 modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.End
             ) {
+                Pill("💾 진행 자동 저장", TcgColors.Muted)
+                Spacer(Modifier.width(5.dp))
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
@@ -152,6 +165,40 @@ fun MainLobbyScreen(
                 ) {
                     Pill("🎬 인트로 다시보기", TcgColors.Violet)
                 }
+                Spacer(Modifier.width(5.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .clickable { showResetDialog = true }
+                ) {
+                    Pill("🆕 새 게임", TcgColors.Danger)
+                }
+            }
+
+            if (showResetDialog) {
+                AlertDialog(
+                    onDismissRequest = { showResetDialog = false },
+                    title = { Text("새 게임으로 시작할까요?", color = TcgColors.Text) },
+                    text = {
+                        Text(
+                            "보유 카드 ${state.ownedCards.size}명 · 스테이지 ${state.stageCleared.size}/30 · " +
+                                "${state.gold}G 가 모두 사라지고 처음 상태로 돌아갑니다.\n" +
+                                "이 작업은 되돌릴 수 없습니다.",
+                            color = TcgColors.Muted
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showResetDialog = false
+                            onResetGame()
+                        }) { Text("진행 초기화", color = TcgColors.Danger) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showResetDialog = false }) {
+                            Text("취소", color = TcgColors.Violet)
+                        }
+                    }
+                )
             }
         }
 

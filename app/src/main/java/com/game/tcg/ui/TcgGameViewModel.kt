@@ -92,6 +92,8 @@ import com.game.tcg.core.model.TemptationState
 import com.game.tcg.core.model.TrustRiftResolution
 import com.game.tcg.core.model.UndercoverDialogueOption
 import com.game.tcg.core.model.VisualState
+import com.game.tcg.persistence.SaveCodec
+import com.game.tcg.persistence.SaveStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -669,7 +671,12 @@ class TcgGameViewModel(
     initialEquipmentIds: List<String> = emptyList(),
     initialClearedStages: Set<Int> = emptySet(),
     /** 앱을 다시 켰을 때 인트로를 이미 본 상태라면 true (MainActivity가 저장값을 넘긴다) */
-    introAlreadySeen: Boolean = false
+    introAlreadySeen: Boolean = false,
+    /**
+     * 진행 상태 자동 저장소 — 넘기면 상태가 바뀔 때마다 저장하고, 생성 시 저장본을 복원한다.
+     * null 이면 저장하지 않는다(단위 테스트·데모 기본값).
+     */
+    private val saveStore: SaveStore? = null
 ) : ViewModel() {
 
     /** 시작 보유 카드 — 저코스트 풀에서 무작위 3장 (또는 테스트 지정 목록) */
@@ -708,8 +715,103 @@ class TcgGameViewModel(
     )
     val uiState: StateFlow<TcgGameState> = _uiState.asStateFlow()
 
+    /** 마지막으로 저장소에 쓴 내용 (같은 내용을 다시 쓰지 않기 위한 비교용) */
+    private var lastPersisted: String? = null
+
     init {
         starterCards.forEach { lifecycleEngine.registerOwnedCard(it) }
+        restoreSavedProgress()
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 진행 상태 자동 저장 (앱을 꺼도 이어서)
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 저장본을 시작 상태 위에 덮어쓴다.
+     * 저장 파일이 없거나 손상·구버전이면 아무것도 하지 않고 신규 시작 상태를 그대로 쓴다(크래시 없음).
+     */
+    private fun restoreSavedProgress() {
+        val store = saveStore ?: return
+        val text = runCatching { store.read() }.getOrNull() ?: return
+        val saved = SaveCodec.decode(text) ?: return
+        val restored = runCatching { saved.restoreInto(_uiState.value) }.getOrNull() ?: return
+        // 보유 카드·환생 풀을 상실 판정 엔진에도 그대로 등록해 이후 전투가 정상 동작하게 한다.
+        // (시작 카드는 같은 번호가 복원 카드로 바뀌므로 먼저 비운다)
+        lifecycleEngine.collection.cards.clear()
+        lifecycleEngine.collection.reincarnationPool.clear()
+        restored.ownedCards.forEach { lifecycleEngine.registerOwnedCard(it) }
+        restored.reincarnationPool.forEach {
+            lifecycleEngine.collection.reincarnationPool[it.templateId] = it
+        }
+        lastPersisted = text
+        _uiState.value = restored
+    }
+
+    /**
+     * 상태 변경 + 자동 저장. (기존 `updateState { }` 자리를 그대로 대신한다)
+     * 진행에 의미 있는 변화가 있을 때만 파일을 쓴다.
+     */
+    private inline fun updateState(transform: (TcgGameState) -> TcgGameState) {
+        _uiState.update(transform)
+        persist()
+    }
+
+    /** 지금 상태를 저장한다 (변경이 없으면 쓰지 않는다) */
+    private fun persist() {
+        val store = saveStore ?: return
+        val payload = runCatching { SaveCodec.encode(_uiState.value.toGameSave()) }.getOrNull() ?: return
+        if (payload == lastPersisted) return
+        store.write(payload)
+        lastPersisted = payload
+    }
+
+    /**
+     * 즉시 저장 — 화면이 백그라운드로 갈 때 MainActivity 가 호출한다.
+     * (평소에는 상태가 바뀔 때마다 자동 저장되므로 마지막 상태를 확정하는 용도)
+     */
+    fun saveNow() {
+        lastPersisted = null
+        persist()
+    }
+
+    /**
+     * 「새 게임」 — 진행을 모두 지우고 시작 상태로 되돌린다.
+     * 저장 파일도 새 게임 상태로 덮어써서, 앱을 다시 켜도 되살아나지 않는다.
+     */
+    fun resetGame() {
+        saveStore?.clear()
+        lastPersisted = null
+
+        // 무작위로 새 스타팅 3인방을 다시 뽑아 진짜 처음부터 시작한다.
+        val freshCards = TcgGameViewModel.initialOwnedCards(random)
+        val freshParty = TcgGameViewModel.initialParty(freshCards)
+
+        // 상실 판정 엔진의 보유/환생 목록도 초기화
+        lifecycleEngine.collection.cards.clear()
+        lifecycleEngine.collection.reincarnationPool.clear()
+        freshCards.forEach { lifecycleEngine.registerOwnedCard(it) }
+
+        // 마왕 토벌 기록 초기화
+        DemonLordRegistry.ALL.forEach {
+            it.isDefeated = false
+            it.isVowedCompanion = false
+        }
+
+        _uiState.value = TcgGameState(
+            gold = START_GOLD,
+            gems = START_GEMS,
+            junkCards = 0,
+            packTickets = START_PACK_TICKETS,
+            party = freshParty,
+            ownedCards = freshCards,
+            lobbyHeroId = freshParty.firstOrNull()?.card?.id ?: DEFAULT_LOBBY_HERO_ID,
+            growthCardId = freshParty.firstOrNull()?.card?.id ?: 0,
+            summonCardId = freshParty.firstOrNull()?.card?.id ?: 0,
+            statusMessage = "[새 게임] 진행을 초기화했습니다. 봉인 카드팩에서 동료 ${freshCards.size}명과 새로 계약했습니다.",
+            introStory = introEngine.initialState(alreadySeen = true)
+        )
+        persist()
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -718,7 +820,7 @@ class TcgGameViewModel(
 
     /** BGM·SFX 토글/볼륨 변경 (화면 상단 오디오 패널에서 호출) */
     fun updateAudioSettings(transform: (AudioSettings) -> AudioSettings) {
-        _uiState.update { s ->
+        updateState { s ->
             s.copy(audioSettings = transform(s.audioSettings).sanitized())
         }
     }
@@ -754,17 +856,17 @@ class TcgGameViewModel(
 
     /** 인트로 한 장면 넘기기 (화면 탭 · 자동 진행). 마지막 장면이면 로비로 진입한다. */
     fun advanceIntro() {
-        _uiState.update { s -> applyIntroTransition(s, introEngine.advance(s.introStory)) }
+        updateState { s -> applyIntroTransition(s, introEngine.advance(s.introStory)) }
     }
 
     /** SKIP — 인트로를 즉시 닫고 로비로 진입한다. */
     fun skipIntro() {
-        _uiState.update { s -> applyIntroTransition(s, introEngine.skip(s.introStory)) }
+        updateState { s -> applyIntroTransition(s, introEngine.skip(s.introStory)) }
     }
 
     /** 로비의 「🎬 인트로 다시보기」 — 1장면부터 다시 재생한다. */
     fun replayIntro() {
-        _uiState.update { s ->
+        updateState { s ->
             s.copy(
                 currentScreen = LobbyDestination.LOBBY,
                 introStory = introEngine.replay(s.introStory),
@@ -799,7 +901,7 @@ class TcgGameViewModel(
 
     /** 좌·우측 측면 서브메뉴에서 기능 화면 열기 */
     fun openScreen(destination: LobbyDestination) {
-        _uiState.update { s ->
+        updateState { s ->
             s.copy(
                 currentScreen = destination,
                 audioScene = audioSceneOf(s.copy(currentScreen = destination)),
@@ -814,7 +916,7 @@ class TcgGameViewModel(
 
     /** ← 메인 로비 — 어떤 기능 화면에서든 로비로 복귀 (Android BackHandler 연동) */
     fun backToLobby() {
-        _uiState.update { s ->
+        updateState { s ->
             s.copy(
                 currentScreen = LobbyDestination.LOBBY,
                 audioScene = AudioScene.LOBBY,
@@ -825,9 +927,9 @@ class TcgGameViewModel(
 
     /** 메인 화면 대표 캐릭터 지정 (캐릭터 관리의 '대표 캐릭터 설정'과 동일) */
     fun selectLobbyHero(cardId: Int) {
-        _uiState.update { s ->
+        updateState { s ->
             if (s.lobbyRoster.none { it == cardId }) {
-                return@update s.copy(
+                return@updateState s.copy(
                     statusMessage = "[대표 캐릭터] 아직 계약하지 않은 캐릭터입니다. 캐릭터 관리의 신규 연성으로 획득할 수 있습니다."
                 )
             }
@@ -849,10 +951,10 @@ class TcgGameViewModel(
 
     /** ◀ ▶ 로 메인 화면 대표 캐릭터 전환 */
     fun cycleLobbyHero(direction: Int) {
-        _uiState.update { s ->
+        updateState { s ->
             val roster = s.lobbyRoster
             if (roster.size <= 1) {
-                return@update s.copy(statusMessage = "[대표 캐릭터] 전환할 캐릭터가 없습니다. (보유 ${roster.size}명)")
+                return@updateState s.copy(statusMessage = "[대표 캐릭터] 전환할 캐릭터가 없습니다. (보유 ${roster.size}명)")
             }
             val currentIndex = roster.indexOf(s.lobbyHeroId).coerceAtLeast(0)
             val nextIndex = ((currentIndex + direction) % roster.size + roster.size) % roster.size
@@ -875,11 +977,11 @@ class TcgGameViewModel(
 
     /** 메인 화면 3단 비주얼(전투 · 일상 · 데이트) 전환 — 데이트는 호감도 50 이상 해금 */
     fun selectLobbyVisual(visual: VisualState) {
-        _uiState.update { s ->
+        updateState { s ->
             val heroName = s.lobbyHeroProfile?.displayName ?: s.lobbyHero.name
             val unlocked = visual != VisualState.ROMANTIC_DATE || s.isLobbyDateLookUnlocked
             if (!unlocked) {
-                return@update s.copy(
+                return@updateState s.copy(
                     statusMessage = "[잠금] 데이트 룩은 $heroName 호감도 ${TcgGameViewModel.DATE_LOOK_UNLOCK_BOND} 이상에서 열립니다. " +
                             "(현재 ${s.lobbyHeroBond}/100 — 현실 소환에서 교감하세요)"
                 )
@@ -926,14 +1028,14 @@ class TcgGameViewModel(
      */
     fun explore(mode: ExplorationMode): ExplorationResult? {
         var resultOut: ExplorationResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             if (s.ownedCards.isEmpty()) {
-                return@update s.copy(
+                return@updateState s.copy(
                     statusMessage = "[탐색 불가] 보유 동료가 0장입니다. 재계약(무료)이나 긴급 보급으로 덱을 먼저 채우세요."
                 )
             }
             if (s.gateEnergy < mode.energyCost) {
-                return@update s.copy(
+                return@updateState s.copy(
                     statusMessage = "[탐색 불가] 차원 균열 에너지가 부족합니다. (보유 ${s.gateEnergy}/${s.gateEnergyMax}) " +
                             "— 이계 전투 승리로 +${GATE_ENERGY_RECOVERY} 회복됩니다."
                 )
@@ -1066,7 +1168,7 @@ class TcgGameViewModel(
 
     /** 다음 스토리 카드로 진행 */
     fun advanceStory() {
-        _uiState.update { s ->
+        updateState { s ->
             val next = (s.storyStepIndex + 1).coerceAtMost(StoryScript.STEPS.size - 1)
             if (next == s.storyStepIndex) {
                 s.copy(statusMessage = "[제1장 완료] 다음 챕터는 업데이트 예정입니다. 마왕전과 도감을 먼저 즐겨 보세요.")
@@ -1083,20 +1185,20 @@ class TcgGameViewModel(
 
     /** 이전 스토리 카드로 이동 */
     fun previousStory() {
-        _uiState.update { s ->
+        updateState { s ->
             s.copy(storyStepIndex = (s.storyStepIndex - 1).coerceAtLeast(0))
         }
     }
 
     /** 샘플 이벤트 A — 비 오는 밤 카페의 '릴리' */
     fun chooseEventA(talkWithLily: Boolean) {
-        _uiState.update { s ->
+        updateState { s ->
             if (s.eventAChoice != null) {
-                return@update s.copy(statusMessage = "[이벤트 A] 이미 선택을 마친 이벤트입니다.")
+                return@updateState s.copy(statusMessage = "[이벤트 A] 이미 선택을 마친 이벤트입니다.")
             }
             if (!talkWithLily) {
                 if (s.holyWater <= 0) {
-                    return@update s.copy(statusMessage = "[이벤트 A] 성수가 없습니다. 대화를 피할 수 없어 유혹 스택이 1 쌓였습니다. (도감에서 성수 정화 가능)")
+                    return@updateState s.copy(statusMessage = "[이벤트 A] 성수가 없습니다. 대화를 피할 수 없어 유혹 스택이 1 쌓였습니다. (도감에서 성수 정화 가능)")
                 }
                 val purified = temptationEngine.purifyTemptationWithHolyWater(s.temptationState, 1)
                 val penalty = temptationEngine.calculateCombatPenalty(purified)
@@ -1138,9 +1240,9 @@ class TcgGameViewModel(
 
     /** 샘플 이벤트 B — 차원 틈새의 마수 */
     fun chooseEventB(engageBattle: Boolean) {
-        _uiState.update { s ->
+        updateState { s ->
             if (s.eventBChoice != null) {
-                return@update s.copy(statusMessage = "[이벤트 B] 이미 선택을 마친 이벤트입니다.")
+                return@updateState s.copy(statusMessage = "[이벤트 B] 이미 선택을 마친 이벤트입니다.")
             }
             if (engageBattle) {
                 s.copy(
@@ -1177,9 +1279,9 @@ class TcgGameViewModel(
 
     /** 마왕 릴리스와의 결전 준비 */
     fun startDemonLordBattle() {
-        _uiState.update { s ->
+        updateState { s ->
             if (s.ownedCards.isEmpty()) {
-                return@update s.copy(
+                return@updateState s.copy(
                     battleLog = s.battleLog + "[출전 불가] 보유 동료가 0장입니다. 재계약·보급으로 덱을 먼저 채우세요.",
                     statusMessage = "[출전 불가] 보유 동료 0장 — 재계약(무료)이나 긴급 보급이 필요합니다."
                 )
@@ -1214,9 +1316,9 @@ class TcgGameViewModel(
 
     /** 일반 마수 원정 준비 */
     fun startFieldBattle() {
-        _uiState.update { s ->
+        updateState { s ->
             if (s.ownedCards.isEmpty()) {
-                return@update s.copy(
+                return@updateState s.copy(
                     battleLog = s.battleLog + "[출전 불가] 보유 동료가 0장입니다. 재계약·보급으로 덱을 먼저 채우세요.",
                     statusMessage = "[출전 불가] 보유 동료 0장 — 재계약(무료)이나 긴급 보급이 필요합니다."
                 )
@@ -1263,17 +1365,17 @@ class TcgGameViewModel(
     fun attackBack() = performAttack(front = false)
 
     private fun performAttack(front: Boolean) {
-        _uiState.update { s ->
-            if (s.enemyHp <= 0) return@update s.copy(statusMessage = "[전투 종료] 이미 적을 쓰러뜨렸습니다.")
+        updateState { s ->
+            if (s.enemyHp <= 0) return@updateState s.copy(statusMessage = "[전투 종료] 이미 적을 쓰러뜨렸습니다.")
             val attackers = s.party.filter { it.isAlive && it.isFrontRow == front }
             if (attackers.isEmpty()) {
-                return@update s.copy(
+                return@updateState s.copy(
                     battleLog = s.battleLog + "[공격 불가] ${if (front) "전열" else "후열"}에 생존한 카드가 없습니다. 도감에서 재획득하거나 턴을 넘기세요.",
                     statusMessage = "[공격 불가] ${if (front) "전열" else "후열"} 생존 카드 없음"
                 )
             }
             if (s.mana.currentMana < 1) {
-                return@update s.copy(
+                return@updateState s.copy(
                     battleLog = s.battleLog + "[공격 실패] 마나가 부족합니다. (보유 ${s.mana.currentMana}) — '턴 진행'으로 마나를 회복하세요.",
                     statusMessage = "[공격 실패] 마나 부족 (턴 진행 필요)"
                 )
@@ -1441,13 +1543,13 @@ class TcgGameViewModel(
 
     /** 턴 진행 — 마나 회복, 후퇴 제한 해제, 적 반격 */
     fun nextTurn() {
-        _uiState.update { s ->
-            if (s.enemyHp <= 0) return@update s.copy(statusMessage = "[전투 종료] 적이 없습니다. 새 원정을 시작하세요.")
+        updateState { s ->
+            if (s.enemyHp <= 0) return@updateState s.copy(statusMessage = "[전투 종료] 적이 없습니다. 새 원정을 시작하세요.")
             val nextTurnNo = s.turn + 1
             val mana = manaEngine.replenishTurnMana(manaEngine.calculateMaxManaForTurn(nextTurnNo))
             val targets = s.party.filter { it.isAlive && it.isFrontRow }.ifEmpty { s.party.filter { it.isAlive } }
             if (targets.isEmpty()) {
-                return@update s.copy(
+                return@updateState s.copy(
                     turn = nextTurnNo,
                     mana = mana,
                     statusMessage = "[전투 불능] 생존 카드가 없습니다. 도감에서 재획득이 필요합니다."
@@ -1516,10 +1618,10 @@ class TcgGameViewModel(
 
     /** 환생 풀의 카드 재획득 → 빈 슬롯에 복귀 */
     fun reacquire(cardId: Int) {
-        _uiState.update { s ->
+        updateState { s ->
             val result: AcquisitionResult = lifecycleEngine.acquireCard(cardId)
             if (!result.isSuccess || result.card == null) {
-                return@update s.copy(
+                return@updateState s.copy(
                     lastAcquisition = result.message,
                     statusMessage = result.message
                 )
@@ -1549,7 +1651,7 @@ class TcgGameViewModel(
         val pending = _uiState.value.reincarnationPool.map { it.templateId }
         pending.forEach { reacquire(it) }
         if (pending.isNotEmpty()) {
-            _uiState.update { s ->
+            updateState { s ->
                 s.copy(
                     statusMessage = "[무료 재계약] 잃었던 동료 ${pending.size}명을 되찾았습니다. (보유 ${s.ownedCards.size}장)"
                 )
@@ -1564,11 +1666,11 @@ class TcgGameViewModel(
      */
     fun claimEmergencySupply(): SupplyOffer? {
         var offered: SupplyOffer? = null
-        _uiState.update { s ->
+        updateState { s ->
             val offer = s.supplyOffer
             offered = offer
             if (!offer.isOffered || offer.cardIds.isEmpty()) {
-                return@update s.copy(
+                return@updateState s.copy(
                     supplyMessage = offer.message.ifBlank { "[긴급 보급] ${offer.reason}" },
                     statusMessage = "[긴급 보급] ${offer.reason}"
                 )
@@ -1601,7 +1703,7 @@ class TcgGameViewModel(
     /** 전술 후퇴 — 턴당 1회, 마나 1 (마왕전 2), 홀림 3스택 이상이면 명령 불복 */
     fun retreat(slotIndex: Int): RetreatResult? {
         var resultOut: RetreatResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             val battleState = toBattleState(s)
             val result = retreatEngine.retreatCard(
                 battleState = battleState,
@@ -1611,7 +1713,7 @@ class TcgGameViewModel(
             )
             resultOut = result
             if (!result.isSuccess) {
-                return@update s.copy(
+                return@updateState s.copy(
                     lastRetreatMessage = result.message,
                     battleLog = s.battleLog + result.message,
                     statusMessage = result.message
@@ -1634,12 +1736,12 @@ class TcgGameViewModel(
     /** 파티 긴급 철수 — 전리품 포기, 생존 카드 전원 귀환 */
     fun emergencyRetreat(): EmergencyRetreatResult? {
         var resultOut: EmergencyRetreatResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             val battleState = toBattleState(s)
             val result = retreatEngine.emergencyPartyRetreat(battleState)
             resultOut = result
             if (!result.isSuccess) {
-                return@update s.copy(
+                return@updateState s.copy(
                     lastRetreatMessage = result.message,
                     statusMessage = result.message
                 )
@@ -1661,10 +1763,10 @@ class TcgGameViewModel(
 
     /** 후퇴 대기열 카드를 슬롯에 재투입 */
     fun redeploy(cardId: Int) {
-        _uiState.update { s ->
-            val card = s.battleReserve.firstOrNull { it.id == cardId } ?: return@update s
+        updateState { s ->
+            val card = s.battleReserve.firstOrNull { it.id == cardId } ?: return@updateState s
             val occupied = s.party.map { it.slotIndex }.toSet()
-            val slot = DeckAutoBuilder.firstEmptySlot(occupied, s.unlockedDeckSize) ?: return@update s.copy(
+            val slot = DeckAutoBuilder.firstEmptySlot(occupied, s.unlockedDeckSize) ?: return@updateState s.copy(
                 statusMessage = "[재투입 불가] 빈 슬롯이 없습니다. (${s.unlockedDeckSize}장 편성)"
             )
             val maxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
@@ -1686,9 +1788,9 @@ class TcgGameViewModel(
      * DEF가 높은 3장은 전열, 나머지는 후열·대기 슬롯으로 들어간다.
      */
     fun autoEquipParty() {
-        _uiState.update { s ->
+        updateState { s ->
             if (s.ownedCards.isEmpty()) {
-                return@update s.copy(statusMessage = "[자동 편성] 보유 캐릭터가 없습니다. 신규 연성으로 계약하세요.")
+                return@updateState s.copy(statusMessage = "[자동 편성] 보유 캐릭터가 없습니다. 신규 연성으로 계약하세요.")
             }
             val slots = DeckAutoBuilder.autoEquip(s.ownedCards, s.unlockedDeckSize)
             val newParty = slots.mapIndexedNotNull { slotIndex, cardId ->
@@ -1711,9 +1813,9 @@ class TcgGameViewModel(
 
     /** 전체 해제 — 출전 덱을 모두 비우고 장착 카드를 대기열로 돌린다. */
     fun unloadAllParty() {
-        _uiState.update { s ->
+        updateState { s ->
             if (s.party.isEmpty()) {
-                return@update s.copy(statusMessage = "[전체 해제] 이미 덱이 비어 있습니다.")
+                return@updateState s.copy(statusMessage = "[전체 해제] 이미 덱이 비어 있습니다.")
             }
             val removed = s.party.map { it.card }
             s.copy(
@@ -1730,14 +1832,14 @@ class TcgGameViewModel(
      * 이미 들어 있는 카드·가득 참·미보유·잠금 해제 전 슬롯은 상태 메시지로 돌려준다.
      */
     fun equipToFirstEmptySlot(cardId: Int) {
-        _uiState.update { s ->
+        updateState { s ->
             val card = s.ownedCards.firstOrNull { it.id == cardId }
-                ?: return@update s.copy(statusMessage = "[장착 실패] 아직 계약하지 않은 캐릭터입니다. (도감 #$cardId)")
+                ?: return@updateState s.copy(statusMessage = "[장착 실패] 아직 계약하지 않은 캐릭터입니다. (도감 #$cardId)")
             if (s.party.any { it.card.id == cardId }) {
-                return@update s.copy(statusMessage = "[장착] ${card.name}은(는) 이미 편성되어 있습니다.")
+                return@updateState s.copy(statusMessage = "[장착] ${card.name}은(는) 이미 편성되어 있습니다.")
             }
             val slot = DeckAutoBuilder.firstEmptySlot(s.party.map { it.slotIndex }, s.unlockedDeckSize)
-                ?: return@update s.copy(
+                ?: return@updateState s.copy(
                     statusMessage = "[장착 실패] ${s.unlockedDeckSize}칸이 모두 찼습니다. " +
                             "덱에서 카드를 눌러 해제하거나 Lv.${s.nextDeckUnlock?.level ?: s.playerLevel}에서 1칸 더 열립니다."
                 )
@@ -1777,7 +1879,7 @@ class TcgGameViewModel(
     /** 경험치 획득 — 레벨이 오르면 덱 슬롯 해금을 함께 알린다. */
     fun grantPlayerExp(amount: Int) {
         if (amount <= 0) return
-        _uiState.update { s ->
+        updateState { s ->
             val beforeLevel = s.playerLevel
             val beforeSize = s.unlockedDeckSize
             val gained = s.playerExp + amount
@@ -1806,9 +1908,9 @@ class TcgGameViewModel(
      * 0~2 = 전열, 3 이상 = 후열·대기.
      */
     fun deployToParty(cardId: Int, slotIndex: Int) {
-        _uiState.update { s ->
+        updateState { s ->
             if (slotIndex !in 0 until s.unlockedDeckSize) {
-                return@update s.copy(
+                return@updateState s.copy(
                     statusMessage = if (slotIndex in 0 until DeckRules.MAX_DECK_SIZE) {
                         "[편성 실패] ${DeckRules.slotLabel(slotIndex)} 슬롯은 Lv.${DeckRules.requiredLevelForSlot(slotIndex)}에 열립니다. (현재 Lv.${s.playerLevel} · ${s.unlockedDeckSize}장)"
                     } else {
@@ -1817,7 +1919,7 @@ class TcgGameViewModel(
                 )
             }
             val card = s.ownedCards.firstOrNull { it.id == cardId }
-                ?: return@update s.copy(statusMessage = "[편성 실패] 아직 계약하지 않은 캐릭터입니다. (도감 #$cardId)")
+                ?: return@updateState s.copy(statusMessage = "[편성 실패] 아직 계약하지 않은 캐릭터입니다. (도감 #$cardId)")
             val maxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
             val others = s.party.filterNot { it.slotIndex == slotIndex || it.card.id == cardId }
             val member = PartyMember(card, slotIndex, DeckRules.isFrontSlot(slotIndex), maxHp, maxHp)
@@ -1833,8 +1935,8 @@ class TcgGameViewModel(
 
     /** 현재 전투 편성에서 카드를 빼고 대기열로 보낸다 (슬롯 비우기) */
     fun undeployFromParty(cardId: Int) {
-        _uiState.update { s ->
-            val member = s.party.firstOrNull { it.card.id == cardId } ?: return@update s
+        updateState { s ->
+            val member = s.party.firstOrNull { it.card.id == cardId } ?: return@updateState s
             val rowName = if (member.isFrontRow) "전열" else "후열"
             s.copy(
                 party = s.party.filterNot { it.card.id == cardId },
@@ -1851,9 +1953,9 @@ class TcgGameViewModel(
 
     /** 스테이지 목록에서 스테이지 선택 (상세·보상 미리보기) */
     fun selectStage(stageNumber: Int) {
-        _uiState.update { s ->
+        updateState { s ->
             val stage = StageCatalog.find(stageNumber)
-                ?: return@update s.copy(stageMessage = "[스테이지] ${stageNumber}번은 없습니다.")
+                ?: return@updateState s.copy(stageMessage = "[스테이지] ${stageNumber}번은 없습니다.")
             s.copy(
                 selectedStage = stage.number,
                 stageMessage = "[스테이지 ${stage.number}] ${stage.name} · ${stage.enemyName} · ${stage.reward.preview}",
@@ -1875,18 +1977,18 @@ class TcgGameViewModel(
      */
     fun startStageBattle(stageNumber: Int = 0): Boolean {
         var started = false
-        _uiState.update { s ->
+        updateState { s ->
             val number = if (stageNumber <= 0) s.frontStageNumber else stageNumber
             val stage = StageCatalog.find(number)
-                ?: return@update s.copy(statusMessage = "[스테이지] ${number}번은 없습니다.")
+                ?: return@updateState s.copy(statusMessage = "[스테이지] ${number}번은 없습니다.")
             if (!isStageUnlockedFor(s, number)) {
-                return@update s.copy(
+                return@updateState s.copy(
                     stageMessage = "[잠김] ${number}번 스테이지는 ${number - 1}번 클리어 후 열립니다.",
                     statusMessage = "[스테이지] ${number}번은 아직 잠겨 있습니다."
                 )
             }
             if (s.party.isEmpty()) {
-                return@update s.copy(
+                return@updateState s.copy(
                     stageMessage = "[출전 불가] 출전 덱이 비어 있습니다. 잃은 카드는 무료 재계약, 없으면 긴급 보급으로 채울 수 있습니다.",
                     statusMessage = if (s.ownedCards.isEmpty()) {
                         "[스테이지] 보유 동료 0장 — 무료 재계약이나 긴급 보급으로 덱을 채우세요."
@@ -1956,13 +2058,13 @@ class TcgGameViewModel(
     /** 카드팩 구매 + 개봉 (티켓이 있으면 티켓을 먼저 쓴다) */
     fun openPack(packId: String): PackOpenResult? {
         var resultOut: PackOpenResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             val pack = PackCatalog.find(packId)
-                ?: return@update s.copy(shopMessage = "[상점] 없는 상품입니다. ($packId)")
+                ?: return@updateState s.copy(shopMessage = "[상점] 없는 상품입니다. ($packId)")
             val useTicket = pack.ticketCost > 0 && s.packTickets >= pack.ticketCost
             val goldCost = if (useTicket) 0 else pack.goldCost
             if (!useTicket && s.gold < pack.goldCost) {
-                return@update s.copy(
+                return@updateState s.copy(
                     shopMessage = "[구매 불가] ${pack.name} — ${goldCost}G가 필요합니다. (보유 ${s.gold}G · 🎟 ${s.packTickets})",
                     statusMessage = "[상점] 골드가 부족합니다."
                 )
@@ -1997,9 +2099,9 @@ class TcgGameViewModel(
     // ──────────────────────────────────────────────────────────────
 
     fun selectGrowthCard(cardId: Int) {
-        _uiState.update { s ->
+        updateState { s ->
             if (s.ownedCards.none { it.id == cardId }) {
-                return@update s.copy(growthMessage = "[강화] 보유하지 않은 카드입니다. (도감 #$cardId)")
+                return@updateState s.copy(growthMessage = "[강화] 보유하지 않은 카드입니다. (도감 #$cardId)")
             }
             s.copy(growthCardId = cardId, growthMessage = null)
         }
@@ -2008,14 +2110,14 @@ class TcgGameViewModel(
     /** 선택한(또는 지정한) 카드를 강화한다 */
     fun upgradeCard(cardId: Int = 0): UpgradeResult? {
         var resultOut: UpgradeResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             val targetId = if (cardId > 0) cardId else s.growthCard?.id ?: 0
             val card = s.ownedCards.firstOrNull { it.id == targetId }
-                ?: return@update s.copy(growthMessage = "[강화] 강화할 카드가 없습니다. 보유 카드를 먼저 선택하세요.")
+                ?: return@updateState s.copy(growthMessage = "[강화] 강화할 카드가 없습니다. 보유 카드를 먼저 선택하세요.")
             val result = upgradeEngine.upgrade(card, s.gold, s.shards)
             resultOut = result
             if (!result.isSuccess) {
-                return@update s.copy(growthMessage = "[강화 불가] ${result.failureReason}")
+                return@updateState s.copy(growthMessage = "[강화 불가] ${result.failureReason}")
             }
             val newMaxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
             s.copy(
@@ -2040,30 +2142,30 @@ class TcgGameViewModel(
     /** 미보유 캐릭터(또는 해금된 중간 보스)를 조각으로 확정 연성한다 */
     fun craftCharacter(cardId: Int): CraftResult? {
         var resultOut: CraftResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             val record = CardCatalog.find(cardId)
-                ?: return@update s.copy(growthMessage = "[연성] 등록되지 않은 카드입니다. (#$cardId)")
+                ?: return@updateState s.copy(growthMessage = "[연성] 등록되지 않은 카드입니다. (#$cardId)")
             if (s.ownedCards.any { it.id == cardId }) {
-                return@update s.copy(growthMessage = "[연성] 이미 보유한 카드입니다. (${record.fullName})")
+                return@updateState s.copy(growthMessage = "[연성] 이미 보유한 카드입니다. (${record.fullName})")
             }
             val isMidBoss = com.game.tcg.core.model.MidBossCatalog.isMidBoss(cardId)
             val kind = if (isMidBoss) CraftKind.MID_BOSS else CraftKind.STANDARD
             if (isMidBoss) {
                 val stage = AdvancedSynthesisEngine.midBossStageOf(cardId)
                 if (stage == null || stage !in s.stageCleared) {
-                    return@update s.copy(
+                    return@updateState s.copy(
                         growthMessage = "[심연 연성] ${record.name}은(는) 스테이지 $stage 보스 격파 후 연성할 수 있습니다."
                     )
                 }
             } else if (record.baseCost < AdvancedSynthesisEngine.CRAFT_MIN_COST) {
-                return@update s.copy(
+                return@updateState s.copy(
                     growthMessage = "[연성] 신규 연성은 ${AdvancedSynthesisEngine.CRAFT_MIN_COST}코스트 이상 캐릭터부터 가능합니다."
                 )
             }
             val result = AdvancedSynthesisEngine.craft(record, kind, s.shards, s.gold)
             resultOut = result
             if (!result.isSuccess || result.card == null) {
-                return@update s.copy(growthMessage = "[연성 불가] ${result.failureReason}")
+                return@updateState s.copy(growthMessage = "[연성 불가] ${result.failureReason}")
             }
             val card = result.card
             lifecycleEngine.registerOwnedCard(card)
@@ -2083,14 +2185,14 @@ class TcgGameViewModel(
     /** 보유 카드를 조각으로 초월(성급 +1)한다 */
     fun transcendCard(cardId: Int = 0): TranscendResult? {
         var resultOut: TranscendResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             val targetId = if (cardId > 0) cardId else s.growthCard?.id ?: 0
             val card = s.ownedCards.firstOrNull { it.id == targetId }
-                ?: return@update s.copy(growthMessage = "[초월] 초월할 카드를 먼저 선택하세요.")
+                ?: return@updateState s.copy(growthMessage = "[초월] 초월할 카드를 먼저 선택하세요.")
             val result = AdvancedSynthesisEngine.transcend(card, s.shards, s.gold)
             resultOut = result
             if (!result.isSuccess) {
-                return@update s.copy(growthMessage = "[초월 불가] ${result.failureReason}")
+                return@updateState s.copy(growthMessage = "[초월 불가] ${result.failureReason}")
             }
             val newMaxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
             s.copy(
@@ -2114,17 +2216,17 @@ class TcgGameViewModel(
     /** 장비 상점에서 골드로 구매 */
     fun buyEquipment(itemId: String): EquipResult? {
         var resultOut: EquipResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             val catalogItem = EquipmentCatalog.find(itemId)
-                ?: return@update s.copy(growthMessage = "[장비] 없는 장비입니다. ($itemId)")
+                ?: return@updateState s.copy(growthMessage = "[장비] 없는 장비입니다. ($itemId)")
             if (catalogItem.goldPrice <= 0) {
-                return@update s.copy(growthMessage = "[장비] ${catalogItem.name}은(는) 스테이지 드롭 전용입니다.")
+                return@updateState s.copy(growthMessage = "[장비] ${catalogItem.name}은(는) 스테이지 드롭 전용입니다.")
             }
             if (s.gold < catalogItem.goldPrice) {
-                return@update s.copy(growthMessage = "[장비] 골드가 부족합니다. (${catalogItem.name} ${catalogItem.goldPrice}G · 보유 ${s.gold}G)")
+                return@updateState s.copy(growthMessage = "[장비] 골드가 부족합니다. (${catalogItem.name} ${catalogItem.goldPrice}G · 보유 ${s.gold}G)")
             }
             val item = EquipmentCatalog.instantiate(itemId)
-                ?: return@update s.copy(growthMessage = "[장비] 장비를 만들 수 없습니다.")
+                ?: return@updateState s.copy(growthMessage = "[장비] 장비를 만들 수 없습니다.")
             val result = EquipResult(
                 isSuccess = true,
                 item = item,
@@ -2144,17 +2246,17 @@ class TcgGameViewModel(
     /** 장비 장착 — 지정(또는 성장 화면) 카드에 착용 */
     fun equipItem(itemUid: String, cardId: Int = 0): EquipResult? {
         var resultOut: EquipResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             val item = s.equipment.firstOrNull { it.uid == itemUid && it.equippedTo == null }
                 ?: s.equipment.firstOrNull { it.id == itemUid && it.equippedTo == null }
-                ?: return@update s.copy(growthMessage = "[장비] 소지품에 없는 장비입니다.")
+                ?: return@updateState s.copy(growthMessage = "[장비] 소지품에 없는 장비입니다.")
             val targetId = if (cardId > 0) cardId else s.growthCard?.id ?: 0
             val card = s.ownedCards.firstOrNull { it.id == targetId }
-                ?: return@update s.copy(growthMessage = "[장비] 장착할 카드를 먼저 선택하세요.")
+                ?: return@updateState s.copy(growthMessage = "[장비] 장착할 카드를 먼저 선택하세요.")
             val result = EquipmentEngine.equip(card, item, s.equipment)
             resultOut = result
             if (!result.isSuccess) {
-                return@update s.copy(growthMessage = "[장착 불가] ${result.failureReason}")
+                return@updateState s.copy(growthMessage = "[장착 불가] ${result.failureReason}")
             }
             val newMaxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
             s.copy(
@@ -2174,15 +2276,15 @@ class TcgGameViewModel(
     /** 장비 해제 — 수치를 정확히 되돌리고 소지품으로 돌린다 */
     fun unequipItem(itemUid: String): EquipResult? {
         var resultOut: EquipResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             val item = s.equipment.firstOrNull { (it.uid == itemUid || it.id == itemUid) && it.equippedTo != null }
-                ?: return@update s.copy(growthMessage = "[장비] 장착 중인 장비가 아닙니다.")
+                ?: return@updateState s.copy(growthMessage = "[장비] 장착 중인 장비가 아닙니다.")
             val card = s.ownedCards.firstOrNull { it.id == item.equippedTo }
-                ?: return@update s.copy(growthMessage = "[장비] 장착 대상 카드를 찾을 수 없습니다.")
+                ?: return@updateState s.copy(growthMessage = "[장비] 장착 대상 카드를 찾을 수 없습니다.")
             val result = EquipmentEngine.unequip(card, item)
             resultOut = result
             if (!result.isSuccess) {
-                return@update s.copy(growthMessage = "[해제 불가] ${result.failureReason}")
+                return@updateState s.copy(growthMessage = "[해제 불가] ${result.failureReason}")
             }
             val newMaxHp = TcgGameViewModel.maxHpOf(card) + EquipmentEngine.hpBonus(card.id, s.equipment)
             s.copy(
@@ -2208,9 +2310,9 @@ class TcgGameViewModel(
     // ──────────────────────────────────────────────────────────────
 
     fun selectSummonCard(cardId: Int) {
-        _uiState.update { s ->
+        updateState { s ->
             if (s.ownedCards.none { it.id == cardId }) {
-                return@update s.copy(statusMessage = "[현실 소환] 보유하지 않은 캐릭터입니다. (도감 #$cardId)")
+                return@updateState s.copy(statusMessage = "[현실 소환] 보유하지 않은 캐릭터입니다. (도감 #$cardId)")
             }
             s.copy(summonCardId = cardId, summonMessage = null)
         }
@@ -2219,14 +2321,14 @@ class TcgGameViewModel(
     /** 선택한(또는 지정한) 캐릭터를 현실로 소환한다 */
     fun summonToReality(cardId: Int = 0): SummonResult? {
         var resultOut: SummonResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             val targetId = if (cardId > 0) cardId else s.summonCard?.id ?: 0
             val card = s.ownedCards.firstOrNull { it.id == targetId }
-                ?: return@update s.copy(summonMessage = "[현실 소환] 소환할 캐릭터가 없습니다.")
+                ?: return@updateState s.copy(summonMessage = "[현실 소환] 소환할 캐릭터가 없습니다.")
             val result = SummonEngine.summon(card, s.gateEnergy)
             resultOut = result
             if (!result.isSuccess) {
-                return@update s.copy(summonMessage = "[소환 불가] ${result.failureReason}")
+                return@updateState s.copy(summonMessage = "[소환 불가] ${result.failureReason}")
             }
             s.copy(
                 ownedCards = s.ownedCards.map { if (it.id == card.id) card else it },
@@ -2252,7 +2354,7 @@ class TcgGameViewModel(
     // ──────────────────────────────────────────────────────────────
 
     fun selectCard(cardId: Int) {
-        _uiState.update { s ->
+        updateState { s ->
             s.copy(
                 selectedCardId = cardId,
                 selectedVisual = VisualState.BATTLE,
@@ -2263,12 +2365,12 @@ class TcgGameViewModel(
     }
 
     fun selectVisual(visual: VisualState) {
-        _uiState.update { s -> s.copy(selectedVisual = visual) }
+        updateState { s -> s.copy(selectedVisual = visual) }
     }
 
     /** 마왕 카드 자세히 응시하기 (줌 체험) — 10초 응시 + 핀치 줌 */
     fun gazeAtDemonLord() {
-        _uiState.update { s ->
+        updateState { s ->
             val updated = temptationEngine.recordGaze(
                 demonLordId = 112,
                 durationSeconds = 10,
@@ -2289,9 +2391,9 @@ class TcgGameViewModel(
 
     /** 성수 정화 */
     fun purify() {
-        _uiState.update { s ->
+        updateState { s ->
             if (s.holyWater <= 0) {
-                return@update s.copy(statusMessage = "[정화 실패] 성수가 부족합니다. (보유 0)")
+                return@updateState s.copy(statusMessage = "[정화 실패] 성수가 부족합니다. (보유 0)")
             }
             val updated = temptationEngine.purifyTemptationWithHolyWater(s.temptationState, 2)
             val penalty = temptationEngine.calculateCombatPenalty(updated)
@@ -2307,11 +2409,11 @@ class TcgGameViewModel(
 
     /** 2웨이 합성 ① 한계 돌파 — 동일 카드 흡수 */
     fun limitBreakSelected() {
-        _uiState.update { s ->
+        updateState { s ->
             val original = s.ownedCards.firstOrNull { it.id == s.selectedCardId }
-                ?: return@update s.copy(synthesisMessage = "[한계 돌파 불가] 보유하지 않은 카드입니다.")
+                ?: return@updateState s.copy(synthesisMessage = "[한계 돌파 불가] 보유하지 않은 카드입니다.")
             if (original.starLevel >= 5) {
-                return@update s.copy(synthesisMessage = "[한계 돌파] 이미 5성 최대치입니다. 3단 비주얼도 모두 개방되었습니다.")
+                return@updateState s.copy(synthesisMessage = "[한계 돌파] 이미 5성 최대치입니다. 3단 비주얼도 모두 개방되었습니다.")
             }
             val base = original.copy()
             val material = original.copy()
@@ -2319,7 +2421,7 @@ class TcgGameViewModel(
             val prevDef = base.def
             val success = synthesisEngine.synthesizeCard(base, material)
             if (!success) {
-                return@update s.copy(synthesisMessage = "[한계 돌파 실패] 조건을 만족하지 못했습니다.")
+                return@updateState s.copy(synthesisMessage = "[한계 돌파 실패] 조건을 만족하지 못했습니다.")
             }
             s.copy(
                 ownedCards = s.ownedCards.map { if (it.id == base.id) base else it },
@@ -2332,19 +2434,19 @@ class TcgGameViewModel(
 
     /** 2웨이 합성 ② 신규 연성 — 잡카드 3장 + 300G */
     fun craftNewCharacter() {
-        _uiState.update { s ->
+        updateState { s ->
             if (s.junkCards < 3) {
-                return@update s.copy(synthesisMessage = "[신규 연성 불가] 잡카드가 부족합니다. (보유 ${s.junkCards}장 / 3장 필요)")
+                return@updateState s.copy(synthesisMessage = "[신규 연성 불가] 잡카드가 부족합니다. (보유 ${s.junkCards}장 / 3장 필요)")
             }
             if (s.gold < 300) {
-                return@update s.copy(synthesisMessage = "[신규 연성 불가] 수수료 300G가 부족합니다. (보유 ${s.gold}G)")
+                return@updateState s.copy(synthesisMessage = "[신규 연성 불가] 수수료 300G가 부족합니다. (보유 ${s.gold}G)")
             }
             // 아직 계약하지 않은 카드(마왕 등) 중 가장 앞 번호와 계약한다
             val candidate = CardCatalog.unownedCandidates(s.ownedCards.map { it.id }).firstOrNull()
             val nextId = candidate?.id
             val gainedName = candidate?.fullName
             if (nextId == null || gainedName == null) {
-                return@update s.copy(
+                return@updateState s.copy(
                     junkCards = s.junkCards - 3,
                     gold = s.gold - 300,
                     synthesisMessage = "[신규 연성] 잡카드 3장을 연성했지만 이미 보유한 캐릭터의 조각만 나왔습니다. (금화 -300G, 잡카드 -3)",
@@ -2375,9 +2477,9 @@ class TcgGameViewModel(
      *  화면에서 고른 파트너를 대상으로 한다.)
      */
     fun interactRealWorld(activity: RealWorldActivity) {
-        _uiState.update { s ->
+        updateState { s ->
             val partner = s.summonCard
-                ?: return@update s.copy(statusMessage = "[현실 교감] 교감할 파트너가 없습니다. 카드팩으로 동료를 계약하세요.")
+                ?: return@updateState s.copy(statusMessage = "[현실 교감] 교감할 파트너가 없습니다. 카드팩으로 동료를 계약하세요.")
             val working = s.ownedCards.firstOrNull { it.id == partner.id } ?: partner
             val partnerName = CardCatalog.find(working.id)?.name ?: working.name
             val newBond = dualWorldEngine.interactInRealWorld(working, activity)
@@ -2422,11 +2524,11 @@ class TcgGameViewModel(
      * — 현실 교감 경로. 전장 승리 경로는 전투 승리 정산에서 자동 지급된다.
      */
     fun bondMemoryResetPartner(cardId: Int) {
-        _uiState.update { s ->
+        updateState { s ->
             val card = s.ownedCards.firstOrNull { it.id == cardId }
-                ?: return@update s.copy(statusMessage = "[교감 불가] 보유하지 않은 카드입니다. (ID: $cardId)")
+                ?: return@updateState s.copy(statusMessage = "[교감 불가] 보유하지 않은 카드입니다. (ID: $cardId)")
             if (!card.isMemoryReset) {
-                return@update s.copy(
+                return@updateState s.copy(
                     statusMessage = "[교감] '${card.name}'은(는) 기억이 온전한 상태라 파편이 필요하지 않습니다."
                 )
             }
@@ -2445,13 +2547,13 @@ class TcgGameViewModel(
     /** 「기억의 조각 회상」 특별 이벤트 — 파편 3/3 달성 시 스탯 보너스와 기억 복원 */
     fun openMemoryRecall(cardId: Int): MemoryRecallResult? {
         var resultOut: MemoryRecallResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             val card = s.ownedCards.firstOrNull { it.id == cardId }
-                ?: return@update s.copy(statusMessage = "[회상 불가] 보유하지 않은 카드입니다. (ID: $cardId)")
+                ?: return@updateState s.copy(statusMessage = "[회상 불가] 보유하지 않은 카드입니다. (ID: $cardId)")
             val result = memoryRecallEngine.openRecallEvent(card)
             resultOut = result
             if (!result.isSuccess) {
-                return@update s.copy(
+                return@updateState s.copy(
                     memoryRecallMessage = result.message,
                     statusMessage = result.message
                 )
@@ -2474,14 +2576,14 @@ class TcgGameViewModel(
     /** 교차 이벤트 선택지 A/B 처리 */
     fun resolveTrustRift(choiceId: String): TrustRiftResolution? {
         var resultOut: TrustRiftResolution? = null
-        _uiState.update { s ->
+        updateState { s ->
             if (s.trustRiftChoice != null) {
-                return@update s.copy(statusMessage = "[교차 이벤트] 이미 선택을 마친 이벤트입니다.")
+                return@updateState s.copy(statusMessage = "[교차 이벤트] 이미 선택을 마친 이벤트입니다.")
             }
             val result = trustRiftEngine.resolve(choiceId, s.temptationState, s.partnerBond)
             resultOut = result
             if (!result.isSuccess) {
-                return@update s.copy(statusMessage = result.message)
+                return@updateState s.copy(statusMessage = result.message)
             }
             val penalty = temptationEngine.calculateCombatPenalty(result.resolvedState)
             val summary = result.message.lineSequence().first()
@@ -2512,13 +2614,13 @@ class TcgGameViewModel(
     /** 페어 얼티밋 오의 발동 (전투당 1회) */
     fun activatePairUltimate(): PairUltimateResult? {
         var resultOut: PairUltimateResult? = null
-        _uiState.update { s ->
+        updateState { s ->
             if (s.enemyHp <= 0) {
-                return@update s.copy(statusMessage = "[전투 종료] 적이 없습니다. 새 원정을 시작하세요.")
+                return@updateState s.copy(statusMessage = "[전투 종료] 적이 없습니다. 새 원정을 시작하세요.")
             }
             val attacker = s.party.firstOrNull { it.isAlive && it.isFrontRow }
                 ?: s.party.firstOrNull { it.isAlive }
-                ?: return@update s.copy(statusMessage = "[오의 불가] 생존한 아군이 없습니다.")
+                ?: return@updateState s.copy(statusMessage = "[오의 불가] 생존한 아군이 없습니다.")
 
             val result = pairUltimateEngine.activate(
                 attacker = attacker.card,
@@ -2530,7 +2632,7 @@ class TcgGameViewModel(
             )
             resultOut = result
             if (!result.isSuccess) {
-                return@update s.copy(
+                return@updateState s.copy(
                     battleLog = s.battleLog + result.failureReason.orEmpty(),
                     statusMessage = result.failureReason ?: "[오의 불가] 발동 조건을 만족하지 못했습니다."
                 )
@@ -2574,10 +2676,10 @@ class TcgGameViewModel(
 
     /** 5화 이후 제2장 프롤로그 노드 열기 */
     fun openChapter2Prelude() {
-        _uiState.update { s ->
+        updateState { s ->
             val node: StoryArcNode = ChapterTwoScript.SHADOW_KNIGHT_PRELUDE
             if (!node.isUnlocked(s.storyStepIndex)) {
-                return@update s.copy(statusMessage = "[제2장] 제1장 5화를 먼저 읽어야 프롤로그 노드가 열립니다.")
+                return@updateState s.copy(statusMessage = "[제2장] 제1장 5화를 먼저 읽어야 프롤로그 노드가 열립니다.")
             }
             s.copy(
                 chapter2PreludeOpened = true,
@@ -2590,10 +2692,10 @@ class TcgGameViewModel(
 
     /** 제1군단장 그림자 기사 전초전 개시 */
     fun startChapter2BossBattle() {
-        _uiState.update { s ->
+        updateState { s ->
             val node = ChapterTwoScript.SHADOW_KNIGHT_PRELUDE
             if (!node.isUnlocked(s.storyStepIndex)) {
-                return@update s.copy(statusMessage = "[제2장] 5화 이후에만 전초전을 열 수 있습니다.")
+                return@updateState s.copy(statusMessage = "[제2장] 5화 이후에만 전초전을 열 수 있습니다.")
             }
             s.copy(
                 chapter2PreludeOpened = true,
