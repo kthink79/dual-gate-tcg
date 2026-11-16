@@ -2,6 +2,7 @@ package com.game.tcg.ui
 
 import com.game.tcg.audio.AudioScene
 import com.game.tcg.audio.AudioSettings
+import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.engine.IntroStoryState
 import com.game.tcg.core.engine.TemptationEngine
 import com.game.tcg.core.model.CardCatalog
@@ -128,7 +129,9 @@ private fun TcgCard.toSavedCard(): SavedCard = SavedCard(
     equippedRelicCount = equippedRelicCount,
     isMemoryReset = isMemoryReset,
     memoryFragments = memoryFragments,
-    visual = currentVisual.name
+    visual = currentVisual.name,
+    battleCount = battleCount,
+    lastBondDay = lastBondDay
 )
 
 /**
@@ -138,6 +141,12 @@ private fun TcgCard.toSavedCard(): SavedCard = SavedCard(
  * - 보유 카드가 하나도 복원되지 않으면 `base`(신규 시작 상태)를 그대로 돌려준다.
  */
 fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
+    /** 친밀도 단계보다 높은 비주얼은 잠금 단계로 내린다 (2026-11-16 개편) */
+    fun capVisual(visual: VisualState, bond: Int): VisualState {
+        val limit = AffinityRules.visualFor(bond)
+        return if (visual.ordinal > limit.ordinal) limit else visual
+    }
+
     val restoredCards: List<TcgCard> = cards.mapNotNull { row ->
         val record = CardCatalog.find(row.cardId) ?: return@mapNotNull null
         record.toCard().copy(
@@ -152,7 +161,9 @@ fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
             equippedRelicCount = row.equippedRelicCount.coerceIn(0, MAX_EQUIPMENT_SLOTS),
             isMemoryReset = row.isMemoryReset,
             memoryFragments = row.memoryFragments.coerceIn(0, TcgCard.MEMORY_FRAGMENT_TARGET),
-            currentVisual = visualOf(row.visual)
+            currentVisual = capVisual(visualOf(row.visual), row.bondLevel.coerceIn(0, 100)),
+            battleCount = row.battleCount.coerceAtLeast(0),
+            lastBondDay = row.lastBondDay
         )
     }.distinctBy { it.id }
 
@@ -160,6 +171,12 @@ fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
     if (restoredCards.isEmpty()) return base
 
     val cardById = restoredCards.associateBy { it.id }
+
+    /** 카드 번호의 복원된 친밀도 (3번은 partnerBond 와 카드 값 중 높은 쪽) */
+    fun bondOfId(cardId: Int): Int {
+        val fromCard = cardById[cardId]?.bondLevel ?: 0
+        return if (cardId == 3) maxOf(partnerBond.coerceIn(0, 100), fromCard) else fromCard
+    }
 
     val restoredParty: List<PartyMember> = party
         .filter { it.slotIndex in 0 until DeckRules.MAX_DECK_SIZE }
@@ -274,14 +291,13 @@ fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
         activeStage = null,
         lobbyHeroId = if (cardById.containsKey(lobbyHeroId)) lobbyHeroId
         else restoredCards.first().id,
-        lobbyVisual = visualOf(lobbyVisual),
-        growthCardId = if (cardById.containsKey(growthCardId)) growthCardId
+        lobbyVisual = capVisual(visualOf(lobbyVisual), bondOfId(lobbyHeroId)),        growthCardId = if (cardById.containsKey(growthCardId)) growthCardId
         else restoredCards.first().id,
         summonCardId = if (cardById.containsKey(summonCardId)) summonCardId
         else restoredCards.first().id,
         selectedCardId = if (cardById.containsKey(selectedCardId)) selectedCardId
         else restoredCards.first().id,
-        selectedVisual = visualOf(selectedVisual),
+        selectedVisual = capVisual(visualOf(selectedVisual), bondOfId(selectedCardId)),
         introStory = IntroStoryState(
             sceneIndex = 0,
             isPlaying = !introSeen,

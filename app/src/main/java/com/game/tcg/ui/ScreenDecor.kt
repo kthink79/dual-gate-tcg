@@ -1,6 +1,7 @@
 package com.game.tcg.ui
 
 import com.game.tcg.R
+import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.engine.ExplorationMode
 import com.game.tcg.core.engine.ExplorationResult
 import com.game.tcg.core.engine.RealWorldActivity
@@ -108,10 +109,11 @@ object RealWorldDecor {
     /** 하트 게이지 텍스트 */
     fun heartLabel(bond: Int): String = "❤ ${bond.coerceIn(0, 100)}/100"
 
-    /** 호감도 단계 라벨 (0~49 첫 만남 · 50~99 일상 · 100 서약) */
+    /** 친밀도 단계 라벨 (0~29 첫 만남 · 30~69 일상 사복 · 70~99 데이트 · 100 서약) */
     fun bondStageLabel(bond: Int): String = when {
         bond >= SummonEngine.ULTIMATE_UNLOCK_BOND -> "서약 완성 · 페어 얼티밋 오의"
-        bond >= SummonEngine.DATE_UNLOCK_BOND -> "일상 사복 진화 · 데이트 룩"
+        bond >= SummonEngine.DATE_UNLOCK_BOND -> "데이트 룩 해금"
+        bond >= SummonEngine.CASUAL_UNLOCK_BOND -> "일상 사복 · 현실 소환 가능"
         else -> "첫 만남 · 전투 모습"
     }
 
@@ -125,14 +127,18 @@ object RealWorldDecor {
         val tone: InfoTone
     )
 
-    /** 선물 대화 데이트 — 세 가지 교감 카드 (엔진의 호감도 상승치와 일치) */
+    /**
+     * 선물·대화·데이트 — 세 가지 교감 카드.
+     * 2026-11-16 개편: 교감은 **보조 경로**이므로 상승 폭이 작다(+1~+2).
+     * 친밀도의 중심은 전투 출전([AffinityRules.BATTLE_WIN_GAIN])이다.
+     */
     fun actionCards(): List<ActionCard> = listOf(
         ActionCard(
             activity = RealWorldActivity.ROMANTIC_EVENING_DATE,
             icon = "🌹",
-            title = "카페 데이트",
-            hint = "데이트 룩 연출 · 가장 큰 호감도",
-            bondGain = 30,
+            title = "카페 데이트 · 선물",
+            hint = "데이트 룩 연출 · 교감 최대치",
+            bondGain = AffinityRules.DATE_GAIN,
             tone = InfoTone.GOLD
         ),
         ActionCard(
@@ -140,15 +146,15 @@ object RealWorldDecor {
             icon = "☕",
             title = "저녁 산책",
             hint = "일상 사복 · 편안한 대화",
-            bondGain = 15,
+            bondGain = AffinityRules.WALK_GAIN,
             tone = InfoTone.HEAL
         ),
         ActionCard(
             activity = RealWorldActivity.DAILY_GREETING,
             icon = "💬",
             title = "짧은 대화",
-            hint = "부담 없는 인사 · 소소한 호감도",
-            bondGain = 5,
+            hint = "부담 없는 인사 · 소소한 친밀도",
+            bondGain = AffinityRules.DAILY_TALK_GAIN,
             tone = InfoTone.MANA
         )
     )
@@ -158,9 +164,9 @@ object RealWorldDecor {
      */
     fun reactionLine(bond: Int): String = when {
         bond >= 100 -> "「오의가 열렸습니다. 제 모든 것을 당신의 검에 맡기죠.」"
-        bond >= 70 -> "「오늘은… 조금 더 가까이 있어도 될까요.」"
+        bond >= 85 -> "「오늘은… 조금 더 가까이 있어도 될까요.」"
         bond >= SummonEngine.DATE_UNLOCK_BOND -> "「이런 옷… 어울릴까요? 당신 앞에서만 입어 볼게요.」"
-        bond >= 30 -> "「당신과 걷는 밤은, 이세계의 어떤 전장보다 조용합니다.」"
+        bond >= SummonEngine.CASUAL_UNLOCK_BOND -> "「당신과 걷는 밤은, 이세계의 어떤 전장보다 조용합니다.」"
         else -> "「오늘도 부르셨습니까, 계약자.」"
     }
 
@@ -193,7 +199,7 @@ object ExplorationDecor {
         Zone(
             mode = ExplorationMode.FRAGMENT,
             backdropResId = R.drawable.intro_scene_4,
-            expectedRewards = listOf("🌙 기억 파편", "❤ 호감도"),
+            expectedRewards = listOf("🌙 기억 파편", "❤ 친밀도"),
             tone = InfoTone.ABYSS
         ),
         Zone(

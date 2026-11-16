@@ -74,7 +74,11 @@ class FullRoster170Test {
             Element.values().toSet(),
             all.map { it.element }.toSet()
         )
-        assertEquals("플레이 가능 170명은 호감도 50으로 합류한다", 50, all.map { it.bondSeed }.toSet().single())
+        assertEquals(
+            "플레이 가능 170명은 친밀도 0에서 합류한다 (2026-11-16 개편 — 전투 출전으로 30/70/100 해금)",
+            0,
+            all.map { it.bondSeed }.toSet().single()
+        )
     }
 
     @Test
@@ -251,8 +255,10 @@ class FullRoster170Test {
             assertEquals(record.fullName, card.name)
             assertTrue("#$id 스킬", card.skillText.isNotBlank())
             assertFalse("#$id 미보유", id in state.ownedCardIds)
+            // 미계약(=친밀도 0) 카드는 일상·데이트 룩이 잠긴다 — 도감에서도 잠금 안내가 보인다
             vm.selectVisual(VisualState.ROMANTIC_DATE)
-            assertEquals(VisualState.ROMANTIC_DATE, vm.uiState.value.selectedVisual)
+            assertEquals(VisualState.BATTLE, vm.uiState.value.selectedVisual)
+            assertNotNull(vm.uiState.value.visualLockMessage)
         }
     }
 
@@ -342,7 +348,8 @@ class FullRoster170Test {
         assertEquals(target.id, result!!.companionCardId)
         assertEquals(target.fullName, result.companionDisplayName)
         assertTrue(result.rewards.any { it.type == ExplorationRewardType.COMPANION_BOND })
-        assertEquals(before + 15, vm.uiState.value.ownedCards.first { it.id == target.id }.bondLevel)
+        // 2026-11-16 개편: 탐색 조우(선물)는 보조 경로 — index 64 → +1
+        assertEquals(before + 1, vm.uiState.value.ownedCards.first { it.id == target.id }.bondLevel)
     }
 
     @Test

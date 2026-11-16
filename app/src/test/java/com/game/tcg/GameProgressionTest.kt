@@ -1,5 +1,6 @@
 package com.game.tcg
 
+import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.engine.AdvancedSynthesisEngine
 import com.game.tcg.core.engine.CardUpgradeEngine
 import com.game.tcg.core.engine.EquipmentEngine
@@ -16,6 +17,7 @@ import com.game.tcg.core.model.MidBossCatalog
 import com.game.tcg.core.model.PackCatalog
 import com.game.tcg.core.model.ShardWallet
 import com.game.tcg.core.model.StageCatalog
+import com.game.tcg.core.model.VisualState
 import com.game.tcg.core.model.StartingRoster
 import com.game.tcg.ui.CharacterArtRegistry
 import com.game.tcg.ui.LobbyDestination
@@ -46,13 +48,15 @@ class GameProgressionTest {
         cleared: Set<Int> = emptySet(),
         gold: Int = 5000,
         shards: ShardWallet = ShardWallet(),
-        seed: Int = 7
+        seed: Int = 7,
+        bond: Int = 0
     ) = TcgGameViewModel(
         random = Random(seed),
         initialOwnedCardIds = allIds,
         initialGold = gold,
         initialShards = shards,
-        initialClearedStages = cleared
+        initialClearedStages = cleared,
+        initialBondLevel = bond
     )
 
     /** 시작 3장 상태의 ViewModel (재화 시드 가능) */
@@ -60,13 +64,15 @@ class GameProgressionTest {
         gold: Int = 5000,
         shards: ShardWallet = ShardWallet(),
         tickets: Int = 1,
-        seed: Int = 42
+        seed: Int = 42,
+        bond: Int = 0
     ) = TcgGameViewModel(
         random = Random(seed),
         initialOwnedCardIds = listOf(3, 1, 2),
         initialGold = gold,
         initialPackTickets = tickets,
-        initialShards = shards
+        initialShards = shards,
+        initialBondLevel = bond
     )
 
     /** 전투를 승리까지 진행한다 (최대 40턴) */
@@ -656,8 +662,9 @@ class GameProgressionTest {
     // =========================================================================
 
     @Test
-    fun `현실 소환은 차원 에너지를 쓰고 호감도와 전투 버프를 준다`() {
-        val vm = starterViewModel()
+    fun `현실 소환은 차원 에너지를 쓰고 친밀도와 전투 버프를 준다`() {
+        // 현실 소환은 일상 사복(친밀도 30) 해금 후에만 가능하다
+        val vm = starterViewModel(bond = AffinityRules.CASUAL_UNLOCK_BOND)
         val before = vm.uiState.value
         val bondBefore = before.ownedCards.first { it.id == 3 }.bondLevel
 
@@ -666,7 +673,7 @@ class GameProgressionTest {
         val after = vm.uiState.value
         assertTrue(result.isSuccess)
         assertEquals("차원 에너지 차감", before.gateEnergy - SummonEngine.ENERGY_COST, after.gateEnergy)
-        assertEquals("호감도 상승", (bondBefore + SummonEngine.BOND_GAIN).coerceAtMost(100),
+        assertEquals("친밀도 상승(보조 폭)", (bondBefore + SummonEngine.BOND_GAIN).coerceAtMost(100),
             after.ownedCards.first { it.id == 3 }.bondLevel)
         assertEquals("버프 수치", SummonEngine.BUFF_PERCENT, after.summonBuffPercent)
         assertEquals("버프 전투 수", SummonEngine.BUFF_BATTLES, after.summonBuffBattles)
@@ -677,7 +684,7 @@ class GameProgressionTest {
 
     @Test
     fun `차원 에너지가 모자라면 소환할 수 없다`() {
-        val vm = starterViewModel()
+        val vm = starterViewModel(bond = AffinityRules.CASUAL_UNLOCK_BOND)
         repeat(3) { vm.summonToReality(3) }
         assertEquals("10 - 9 = 1", 1, vm.uiState.value.gateEnergy)
 
@@ -690,7 +697,7 @@ class GameProgressionTest {
     @Test
     fun `소환 버프는 전투 데미지를 올리고 승리하면 1회 소모된다`() {
         val plain = strongViewModel(seed = 21)
-        val buffed = strongViewModel(seed = 21)
+        val buffed = strongViewModel(seed = 21, bond = AffinityRules.CASUAL_UNLOCK_BOND)
         assertTrue(plain.startStageBattle(1))
         assertTrue(buffed.summonToReality(buffed.uiState.value.ownedCards.first().id)!!.isSuccess)
         assertTrue(buffed.startStageBattle(1))
@@ -708,25 +715,44 @@ class GameProgressionTest {
     }
 
     @Test
-    fun `호감도 50 미만은 데이트 룩이 잠기고 소환으로 열린다`() {
-        val vm = TcgGameViewModel(
-            random = Random(8),
-            initialOwnedCardIds = listOf(3, 1, 2),
-            initialGold = 100,
-            initialShards = ShardWallet(),
-            initialPackTickets = 0
-        )
-        // 시작 호감도는 50(시드)이므로 40으로 낮춘 카드를 직접 만들어 잠금을 확인한다
-        val card = TcgGameViewModel.characterCard(3).copy(bondLevel = 45)
+    fun `일상 사복 30 미만은 현실 소환이 잠기고 30부터 열린다`() {
         val engine = SummonEngine
-        var bond = card.bondLevel
-        repeat(1) { bond = SummonEngine.summon(card, gateEnergy = 10).bondAfter }
-        assertEquals("45 → 53", 53, bond)
-        assertTrue("데이트 룩 해금", bond >= SummonEngine.DATE_UNLOCK_BOND)
-        assertTrue("소환은 성공한다", SummonEngine.canSummon(10))
-        assertFalse(SummonEngine.canSummon(2))
-        assertNotNull(vm.uiState.value)
-        assertTrue(engine.ENERGY_COST == 3)
+
+        // 친밀도 29 — 일상 사복 미해금이므로 현실 소환 불가 (잠금 안내 + 진행도)
+        val locked = TcgGameViewModel.characterCard(3).copy(bondLevel = AffinityRules.CASUAL_UNLOCK_BOND - 1)
+        val blocked = SummonEngine.summon(locked, gateEnergy = 10)
+        assertFalse("일상 사복 30 미만은 소환 불가", blocked.isSuccess)
+        assertTrue(blocked.failureReason!!.contains("일상 사복"))
+        assertEquals(AffinityRules.CASUAL_UNLOCK_BOND, blocked.requiredBond)
+        assertEquals("실패하면 친밀도는 그대로", 29, locked.bondLevel)
+        assertNotNull(SummonEngine.lockReason(locked))
+
+        // 친밀도 30 — 일상 사복 해금 → 현실 소환 가능
+        val opened = TcgGameViewModel.characterCard(3).copy(bondLevel = AffinityRules.CASUAL_UNLOCK_BOND)
+        val success = SummonEngine.summon(opened, gateEnergy = 10)
+        assertTrue("일상 사복 해금 후에는 소환된다", success.isSuccess)
+        assertEquals(
+            AffinityRules.CASUAL_UNLOCK_BOND + SummonEngine.BOND_GAIN,
+            opened.bondLevel
+        )
+        assertNull(SummonEngine.lockReason(opened))
+        assertTrue("소환 판정은 친밀도까지 본다", SummonEngine.canSummon(opened, 10))
+        assertFalse("차원 에너지가 모자라면 소환 불가", SummonEngine.canSummon(opened, 2))
+        assertEquals(3, engine.ENERGY_COST)
+    }
+
+    @Test
+    fun `데이트 룩은 친밀도 70에서 열린다`() {
+        val card = TcgGameViewModel.characterCard(3).copy(bondLevel = AffinityRules.DATE_UNLOCK_BOND - 2)
+        assertEquals(VisualState.CASUAL_CUTE, AffinityRules.visualFor(card.bondLevel))
+
+        // 소환(+2)으로 70에 닿으면 데이트 룩이 열린다
+        val result = SummonEngine.summon(card, gateEnergy = 10)
+
+        assertTrue(result.isSuccess)
+        assertEquals(AffinityRules.DATE_UNLOCK_BOND, card.bondLevel)
+        assertEquals(VisualState.ROMANTIC_DATE, card.currentVisual)
+        assertTrue(result.unlockedDateLook)
     }
 
     // =========================================================================

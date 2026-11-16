@@ -1,5 +1,6 @@
 package com.game.tcg
 
+import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.engine.ExplorationMode
 import com.game.tcg.core.engine.ExplorationResult
 import com.game.tcg.core.engine.ExplorationReward
@@ -123,7 +124,11 @@ class ScreenDecorTest {
             ),
             cards.map { it.activity }
         )
-        assertEquals(listOf(30, 15, 5), cards.map { it.bondGain })
+        assertEquals(
+            "데이트(+2) > 산책(+1) = 대화(+1) — 교감은 보조 경로",
+            listOf(AffinityRules.DATE_GAIN, AffinityRules.WALK_GAIN, AffinityRules.DAILY_TALK_GAIN),
+            cards.map { it.bondGain }
+        )
         cards.forEach { card ->
             assertTrue(card.icon.isNotBlank())
             assertTrue(card.title.isNotBlank())
@@ -134,7 +139,7 @@ class ScreenDecorTest {
     @Test
     fun `파트너 반응 대사는 호감도에 따라 달라진다`() {
         val low = RealWorldDecor.reactionLine(10)
-        val mid = RealWorldDecor.reactionLine(60)
+        val mid = RealWorldDecor.reactionLine(75)
         val high = RealWorldDecor.reactionLine(100)
         assertTrue(low.startsWith("「"))
         assertTrue(mid.contains("옷"))

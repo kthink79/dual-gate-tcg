@@ -211,6 +211,26 @@ class CharacterVideoTest {
         assertTrue("등록 영상은 5편 이상", index.size >= 5)
     }
 
+    @Test
+    fun `2026-11-16 추가한 8편(3·7·8·9·10·11·12·13)이 프레임 대조로 확정한 번호 그대로 탑재됐다`() {
+        val names = assetsDir().listFiles()?.filter { it.isFile }?.map { it.name } ?: emptyList()
+        val index = CharacterVideoIndex.fromFileNames(names)
+
+        // Tcg_video 폴더의 신규 업로드분을 프레임 추출 후 CardCatalog 원화와 대조해 확정한 번호
+        //  - 532b3aa1 → No.3 아우렐리아 · 526f981d → No.7 닉스 · 6f43f48b → No.8 릴리스
+        //  - c5a140a4 → No.9 마리오네트 · 554a8e59(=d3ca49af) → No.10 루케리아
+        //  - 69c84cdb(=bda6e48c) → No.11 이그니아 · 3246d190 → No.12 사미라 · c6653aa8 → No.13 피아마
+        listOf(3, 7, 8, 9, 10, 11, 12, 13).forEach { cardId ->
+            assertTrue("No.$cardId 등장 영상이 없다", index.hasVideo(cardId))
+            assertEquals("character_videos/$cardId.mp4", index.videoFor(cardId))
+            assertTrue(
+                "No.$cardId 는 카드 카탈로그에 있어야 한다",
+                CardCatalog.ALL.any { it.id == cardId }
+            )
+        }
+        assertTrue("등록 영상은 13편", index.size >= 13)
+    }
+
     // ── 5. BGM 일시정지 · 복구 ────────────────────────────────────
 
     @Test

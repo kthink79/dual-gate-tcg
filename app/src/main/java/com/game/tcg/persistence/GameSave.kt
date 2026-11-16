@@ -38,7 +38,7 @@ data class GameSave(
     // ── 유혹(홀림) ──
     val temptation: SavedTemptation = SavedTemptation(),
     // ── 현실 교감 ──
-    val partnerBond: Int = 20,
+    val partnerBond: Int = 0,
     val partnerVisual: String = "BATTLE",
     val dateLookUnlocked: Boolean = false,
     val ultimateUnlocked: Boolean = false,
@@ -105,7 +105,11 @@ data class SavedCard(
     val equippedRelicCount: Int = 0,
     val isMemoryReset: Boolean = false,
     val memoryFragments: Int = 0,
-    val visual: String = "BATTLE"
+    val visual: String = "BATTLE",
+    /** 이 카드가 출전한 전투 횟수 — 친밀도 상승의 주 경로 (2026-11-16) */
+    val battleCount: Int = 0,
+    /** 보유 기간 친밀도를 마지막으로 정산한 날 (에포크 일, 0 = 미정산) */
+    val lastBondDay: Int = 0
 )
 
 /** 편성 슬롯 1칸 (전열 0~2 · 후열/대기 3~11) */

@@ -1,5 +1,6 @@
 package com.game.tcg
 
+import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.engine.BattleEngine
 import com.game.tcg.core.engine.DualWorldEngine
 import com.game.tcg.core.engine.RealWorldActivity
@@ -239,36 +240,32 @@ class TcgEngineTest {
         val card = TcgCard(51, "단아", Element.WIND, 7, 7400, 6200, bondLevel = 0, skillText = "")
         assertEquals(VisualState.BATTLE, card.currentVisual)
 
-        // Daily greeting (+5 bond) -> bond 5, remains BATTLE (< 50)
-        val bond1 = dualWorldEngine.interactInRealWorld(card, RealWorldActivity.DAILY_GREETING)
-        assertEquals(5, bond1)
+        // 2026-11-16 개편: 교감은 보조 경로(+1 / +1 / +2) — 전투 출전(+4~+6)보다 작다
+        assertEquals(1, dualWorldEngine.interactInRealWorld(card, RealWorldActivity.DAILY_GREETING))
         assertEquals(VisualState.BATTLE, card.currentVisual)
 
-        // Casual cafe walk (+15 bond) -> bond 20, remains BATTLE (< 50)
-        val bond2 = dualWorldEngine.interactInRealWorld(card, RealWorldActivity.CASUAL_CAFE_WALK)
-        assertEquals(20, bond2)
+        assertEquals(2, dualWorldEngine.interactInRealWorld(card, RealWorldActivity.CASUAL_CAFE_WALK))
         assertEquals(VisualState.BATTLE, card.currentVisual)
 
-        // Casual cafe walk two more times -> bond 50, switches to CASUAL_CUTE
-        dualWorldEngine.interactInRealWorld(card, RealWorldActivity.CASUAL_CAFE_WALK)
-        dualWorldEngine.interactInRealWorld(card, RealWorldActivity.CASUAL_CAFE_WALK)
-        assertEquals(50, card.bondLevel)
+        // 30(일상 사복)에 딱 맞춰지면 자동으로 일상 모습으로 승급한다
+        while (card.bondLevel < AffinityRules.CASUAL_UNLOCK_BOND) {
+            dualWorldEngine.interactInRealWorld(card, RealWorldActivity.CASUAL_CAFE_WALK)
+        }
+        assertEquals(AffinityRules.CASUAL_UNLOCK_BOND, card.bondLevel)
         assertEquals(VisualState.CASUAL_CUTE, card.currentVisual)
 
-        // Romantic evening date (+30 bond) -> switches to ROMANTIC_DATE
-        dualWorldEngine.interactInRealWorld(card, RealWorldActivity.ROMANTIC_EVENING_DATE)
-        assertEquals(80, card.bondLevel)
+        // 70(데이트 룩)에서 로맨틱 데이트로
+        while (card.bondLevel < AffinityRules.DATE_UNLOCK_BOND) {
+            dualWorldEngine.interactInRealWorld(card, RealWorldActivity.ROMANTIC_EVENING_DATE)
+        }
+        assertEquals(AffinityRules.DATE_UNLOCK_BOND, card.bondLevel)
         assertEquals(VisualState.ROMANTIC_DATE, card.currentVisual)
 
-        // Romantic evening date (+30 bond) -> capped at 100, unlocks ultimate
-        dualWorldEngine.interactInRealWorld(card, RealWorldActivity.ROMANTIC_EVENING_DATE)
+        // 100 상한 · 페어 오의 해금
+        repeat(20) { dualWorldEngine.interactInRealWorld(card, RealWorldActivity.ROMANTIC_EVENING_DATE) }
         assertEquals(100, card.bondLevel)
         assertTrue(card.isUltimateUnlocked)
         assertEquals(VisualState.ROMANTIC_DATE, card.currentVisual)
-
-        // Further interaction does not exceed 100
-        dualWorldEngine.interactInRealWorld(card, RealWorldActivity.DAILY_GREETING)
-        assertEquals(100, card.bondLevel)
     }
 
     @Test

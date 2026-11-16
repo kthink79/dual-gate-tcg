@@ -277,7 +277,7 @@ class TcgScenarioExpansionTest {
         val after = vm.uiState.value
         assertEquals("RIFT_A_CONFESS", after.trustRiftChoice)
         assertEquals(1, after.combatPenalty.totalStacks)
-        assertEquals("호감도 +10", 30, after.partnerBond)
+        assertEquals("호감도 +10 (0 → 10)", 10, after.partnerBond)
         assertFalse("이미 선택한 이벤트는 다시 열리지 않는다", after.isTrustRiftAvailable)
         assertNotNull(after.trustRiftMessage)
 

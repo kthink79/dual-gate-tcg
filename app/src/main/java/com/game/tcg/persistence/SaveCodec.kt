@@ -92,7 +92,9 @@ object SaveCodec {
                     c.cardId, c.atk, c.def, c.starLevel, c.currentExp, c.bondLevel,
                     c.upgradeLevel, c.memoryAffinity, c.reincarnationCount,
                     c.equippedRelicCount, flag(c.isMemoryReset), c.memoryFragments
-                ).joinToString(FIELD) + FIELD + c.visual
+                ).joinToString(FIELD) + FIELD + c.visual +
+                    // 2026-11-16 추가 필드 — 뒤에 붙여 구버전 저장과 호환된다
+                    FIELD + c.battleCount + FIELD + c.lastBondDay
             )
         }
         save.party.forEach { p ->
@@ -221,7 +223,10 @@ object SaveCodec {
                 equippedRelicCount = f[9].toIntOrNull() ?: 0,
                 isMemoryReset = f[10] == "1" || f[10] == "true",
                 memoryFragments = f[11].toIntOrNull() ?: 0,
-                visual = f[12]
+                visual = f[12],
+                // 뒤에 붙은 선택 필드 — 없으면(구버전 저장) 0
+                battleCount = f.getOrNull(13)?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
+                lastBondDay = f.getOrNull(14)?.toIntOrNull() ?: 0
             )
         }.distinctBy { it.cardId }
 

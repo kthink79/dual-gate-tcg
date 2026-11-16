@@ -214,7 +214,7 @@ fun ExplorationScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(card.name, color = TcgColors.Text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             Text(
-                                "기억 파편 ${card.memoryFragments}/${TcgCard.MEMORY_FRAGMENT_TARGET} · 호감도 ${card.bondLevel}/100",
+                                "기억 파편 ${card.memoryFragments}/${TcgCard.MEMORY_FRAGMENT_TARGET} · 친밀도 ${card.bondLevel}/100",
                                 color = TcgColors.Muted,
                                 fontSize = 9.sp
                             )
@@ -240,7 +240,7 @@ fun ExplorationScreen(
             LogBox(state.explorationLog, maxLines = 6)
             ActionTile(
                 label = "🏙 현실 소환으로 이동",
-                hint = "탐색으로 오른 호감도로 데이트 룩을 해금하세요",
+                hint = "전투 출전으로 오른 친밀도로 일상·데이트 룩을 해금하세요",
                 accent = TcgColors.Gold,
                 onClick = onOpenRealWorld
             )

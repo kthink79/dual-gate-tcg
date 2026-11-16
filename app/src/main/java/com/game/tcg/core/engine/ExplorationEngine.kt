@@ -322,8 +322,14 @@ class ExplorationEngine(
                     title = "아우렐리아와의 밤 산책",
                     narrative = "평상복 차림의 아우렐리아가 조용히 곁을 걸었다. 「계약자님, 오늘은… 조금 쉬어도 되나요?」 " +
                             "그녀의 손끝이 당신의 봉인 문양 위에 잠시 머물렀다.",
-                    rewards = listOf(ExplorationReward(ExplorationRewardType.BOND, 10, "호감도 +10")),
-                    bondGained = 10
+                    rewards = listOf(
+                        ExplorationReward(
+                            ExplorationRewardType.BOND,
+                            AffinityRules.WALK_GAIN,
+                            "친밀도 +${AffinityRules.WALK_GAIN}"
+                        )
+                    ),
+                    bondGained = AffinityRules.WALK_GAIN
                 )
             }
             r < 70 -> companionEncounter(context)
@@ -362,7 +368,8 @@ class ExplorationEngine(
         // 탐색 횟수까지 반영해 같은 판정값이라도 매번 다른 인연이 걸리도록 한다
         val index = (context.explorationCount + roll()) % roster.size
         val record = roster[index]
-        val bond = 10 + (index % 3) * 5   // 10 / 15 / 20
+        // 선물을 건네는 정도의 작은 폭 (1 / 2) — 친밀도의 중심은 전투 출전이다
+        val bond = 1 + (index % 2)
         return ExplorationResult(
             mode = ExplorationMode.ENCOUNTER,
             title = "인연 조우 · ${record.fullName}",

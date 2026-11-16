@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -34,6 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.engine.RealWorldActivity
 import com.game.tcg.core.engine.SummonEngine
 import com.game.tcg.core.model.TcgCard
@@ -59,6 +61,9 @@ fun RealWorldScreen(
     val partnerName = summonTarget?.name ?: "파트너"
     val bond = summonTarget?.bondLevel ?: state.partnerBond
     val look = summonTarget?.currentVisual ?: state.partnerVisual
+    // 현실(일상) 소환 조건 — 일상 사복(CASUAL_CUTE) 해금 = 친밀도 30
+    val canSummonPartner = summonTarget != null && AffinityRules.canRealitySummon(summonTarget.bondLevel)
+    val casualProgress = AffinityRules.casualProgress(bond)
 
     ScreenFrame {
         // ── ① 현실 소환 — 차원 에너지로 보유 캐릭터를 부른다 ──
@@ -68,20 +73,21 @@ fun RealWorldScreen(
             accent = TcgColors.Violet
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // 대상 초상화
+                // 대상 초상화 — 2:3 원본 비율을 유지해 머리·발끝이 잘리지 않게 그린다
                 Box(
                     modifier = Modifier
                         .width(54.dp)
-                        .height(70.dp)
+                        .aspectRatio(2f / 3f)
                         .clip(RoundedCornerShape(10.dp))
+                        .background(TcgColors.SurfaceAlt)
                         .border(1.dp, TcgColors.Violet.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
                 ) {
                     CardArtImage(
                         cardId = summonTarget?.id ?: TcgGameViewModel.DEFAULT_LOBBY_HERO_ID,
                         visual = look,
                         contentDescription = partnerName,
-                        contentScale = ContentScale.Crop,
-                        alignment = Alignment.TopCenter,
+                        contentScale = ContentScale.Fit,
+                        alignment = Alignment.Center,
                         modifier = Modifier.fillMaxSize(),
                         targetWidthPx = 200
                     )
@@ -89,13 +95,16 @@ fun RealWorldScreen(
                 Spacer(Modifier.width(8.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        "차원 균열 에너지 ${SummonEngine.ENERGY_COST}로 소환 → 호감도 +${SummonEngine.BOND_GAIN}",
+                        "차원 균열 에너지 ${SummonEngine.ENERGY_COST}로 소환 → 친밀도 +${SummonEngine.BOND_GAIN}",
                         color = TcgColors.Text.copy(alpha = 0.9f),
                         fontSize = 10.sp,
                         lineHeight = 15.sp
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Pill("50 일상 · 100 오의", TcgColors.Gold)
+                        Pill(
+                            "일상 ${AffinityRules.CASUAL_UNLOCK_BOND} · 데이트 ${AffinityRules.DATE_UNLOCK_BOND}",
+                            TcgColors.Gold
+                        )
                         Pill("+${SummonEngine.BUFF_PERCENT}% ${SummonEngine.BUFF_BATTLES}회", TcgColors.Heal)
                     }
                     if (state.hasSummonBuff) {
@@ -112,23 +121,56 @@ fun RealWorldScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 state.ownedCards.sortedByDescending { it.bondLevel }.forEach { owned ->
+                    // 일상 사복 미해금(친밀도 30 미만) 캐릭터는 목록에서 잠금으로 보인다
+                    val locked = !AffinityRules.canRealitySummon(owned.bondLevel)
                     ChipButton(
-                        label = "${owned.name.take(6)} ${owned.bondLevel}",
+                        label = "${if (locked) "🔒 " else ""}${owned.name.take(6)} ${owned.bondLevel}",
                         selected = owned.id == summonTarget?.id,
-                        accent = elementColor(owned.element)
+                        accent = if (locked) TcgColors.Line else elementColor(owned.element)
                     ) { onSelectSummonCard(owned.id) }
+                }
+            }
+            if (summonTarget != null && !canSummonPartner) {
+                // 미해금 — 잠금 안내 + 해금까지의 진행도 게이지
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "🔒 $partnerName — 일상 사복 미해금",
+                        color = TcgColors.Danger,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "친밀도 ${AffinityRules.CASUAL_UNLOCK_BOND} 이상에서 현실 소환이 열립니다. " +
+                            "(현재 $bond/100 · ${(AffinityRules.CASUAL_UNLOCK_BOND - bond).coerceAtLeast(0)} 더 필요)",
+                        color = TcgColors.Text.copy(alpha = 0.85f),
+                        fontSize = 9.sp,
+                        lineHeight = 14.sp
+                    )
+                    StatBar(ratio = casualProgress, color = TcgColors.Danger, height = 8)
+                    Text(
+                        "가장 빠른 길은 이계 전투 출전 — 출전 1회 +${AffinityRules.BATTLE_DEPLOY_GAIN}, " +
+                            "승리하면 +${AffinityRules.BATTLE_WIN_GAIN} (출전 $bond/100)",
+                        color = TcgColors.Muted,
+                        fontSize = 9.sp,
+                        lineHeight = 14.sp
+                    )
                 }
             }
             if (summonTarget != null) {
                 ActionTile(
-                    label = "🌙 $partnerName 현실 소환 (⚡ ${SummonEngine.ENERGY_COST})",
-                    hint = if (state.gateEnergy >= SummonEngine.ENERGY_COST) {
-                        "호감도 +${SummonEngine.BOND_GAIN} · 아군 공격력 +${SummonEngine.BUFF_PERCENT}% (${SummonEngine.BUFF_BATTLES}회)"
+                    label = if (canSummonPartner) {
+                        "🌙 $partnerName 현실 소환 (⚡ ${SummonEngine.ENERGY_COST})"
                     } else {
-                        "차원 에너지 부족 — 이계 전투 승리로 +2 회복"
+                        "🔒 $partnerName 현실 소환 — 친밀도 ${AffinityRules.CASUAL_UNLOCK_BOND} 필요"
                     },
-                    accent = TcgColors.Violet,
-                    enabled = state.gateEnergy >= SummonEngine.ENERGY_COST,
+                    hint = when {
+                        !canSummonPartner -> "이계 전투 출전으로 친밀도를 올리면 열립니다 (현재 $bond/100)"
+                        state.gateEnergy >= SummonEngine.ENERGY_COST ->
+                            "친밀도 +${SummonEngine.BOND_GAIN} · 아군 공격력 +${SummonEngine.BUFF_PERCENT}% (${SummonEngine.BUFF_BATTLES}회)"
+                        else -> "차원 에너지 부족 — 이계 전투 승리로 +2 회복"
+                    },
+                    accent = if (canSummonPartner) TcgColors.Violet else TcgColors.Muted,
+                    enabled = canSummonPartner && state.gateEnergy >= SummonEngine.ENERGY_COST,
                     onClick = { onSummon(summonTarget.id) }
                 )
             }
@@ -172,7 +214,8 @@ fun RealWorldScreen(
                 }
             }
             Text(
-                "호감도 50에서 일상·데이트 룩, 100에서 페어 얼티밋 오의(+25%)가 열립니다.",
+                "친밀도 ${AffinityRules.CASUAL_UNLOCK_BOND}에서 일상 사복·현실 소환, " +
+                    "${AffinityRules.DATE_UNLOCK_BOND}에서 데이트 룩, 100에서 페어 얼티밋 오의(+25%)가 열립니다.",
                 color = TcgColors.Muted,
                 fontSize = 9.sp,
                 lineHeight = 14.sp
@@ -194,7 +237,7 @@ fun RealWorldScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(190.dp)
+                    .aspectRatio(2f / 3f)
                     .clip(RoundedCornerShape(14.dp))
             ) {
                 CardArtImage(
@@ -205,7 +248,7 @@ fun RealWorldScreen(
                         VisualState.CASUAL_CUTE
                     },
                     contentDescription = "데이트 룩",
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize(),
                     targetWidthPx = 540
                 )
@@ -217,7 +260,7 @@ fun RealWorldScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "🔒 호감도 50 달성 시 해금\n(현재 $bond/100)",
+                            "🔒 친밀도 ${SummonEngine.DATE_UNLOCK_BOND} 달성 시 해금\n(현재 $bond/100)",
                             color = TcgColors.Text,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
@@ -272,7 +315,8 @@ private fun BondPortraitCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(360.dp)
+            // 540×810(2:3) 원본 비율을 그대로 유지 — 머리·발끝이 잘리지 않는다
+            .aspectRatio(2f / 3f)
             .clip(RoundedCornerShape(16.dp))
             .border(
                 1.5.dp,
@@ -288,7 +332,7 @@ private fun BondPortraitCard(
             cardId = cardId,
             visual = visual,
             contentDescription = name,
-            contentScale = ContentScale.Crop,
+            contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize(),
             targetWidthPx = 900
         )
@@ -448,7 +492,7 @@ private fun MemoryRecallSection(
             Box(
                 modifier = Modifier
                     .width(72.dp)
-                    .height(96.dp)
+                    .aspectRatio(2f / 3f)
                     .clip(RoundedCornerShape(12.dp))
                     .border(1.dp, TcgColors.Abyss.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
             ) {
@@ -456,8 +500,8 @@ private fun MemoryRecallSection(
                     cardId = partner.id,
                     visual = VisualState.CASUAL_CUTE,
                     contentDescription = partner.name,
-                    contentScale = ContentScale.Crop,
-                    alignment = Alignment.TopCenter,
+                    contentScale = ContentScale.Fit,
+                    alignment = Alignment.Center,
                     modifier = Modifier.fillMaxSize(),
                     targetWidthPx = 240
                 )
@@ -485,7 +529,7 @@ private fun MemoryRecallSection(
             height = 9
         )
         Text(
-            "기억 파편 ${partner.memoryFragments}/$target · 호감도 ${partner.bondLevel}/100",
+            "기억 파편 ${partner.memoryFragments}/$target · 친밀도 ${partner.bondLevel}/100",
             color = TcgColors.Muted,
             fontSize = 9.sp
         )

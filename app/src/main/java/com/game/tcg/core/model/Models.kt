@@ -94,7 +94,10 @@ data class TcgCard(
     val baseDef: Int = def,           // 원본 방어력 — 환생 초기화 기준값
     // ── 「기억의 잔향」: 환생 재획득 직후 기억 초기화 상태 ──
     var isMemoryReset: Boolean = false, // true = 기억이 지워진 동료 (파편을 모아야 회상)
-    var memoryFragments: Int = 0        // 회상에 필요한 기억 파편 (0 ~ MEMORY_FRAGMENT_TARGET)
+    var memoryFragments: Int = 0,       // 회상에 필요한 기억 파편 (0 ~ MEMORY_FRAGMENT_TARGET)
+    // ── 친밀도 개편(2026-11-16): 전투 출전이 친밀도의 주 경로 ──
+    var battleCount: Int = 0,           // 이 캐릭터가 출전한 전투 횟수 (출전마다 친밀도 +4)
+    var lastBondDay: Int = 0            // 보유 기간 친밀도를 마지막으로 정산한 날 (에포크 일, 0 = 미정산)
 ) {
     /**
      * 호감도 MAX(100) 달성 시 개방되는 '페어 얼티밋 오의' 활성화 여부

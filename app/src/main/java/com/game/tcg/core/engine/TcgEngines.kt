@@ -135,22 +135,19 @@ class SynthesisEngine : ISynthesisEngine {
 class DualWorldEngine : IDualWorldEngine {
 
     /**
-     * 현실 소환 모드: 일상 교감으로 호감도 육성
+     * 현실 소환 모드: 일상 교감으로 친밀도 육성.
+     *
+     * 2026-11-16 개편 — 교감(대화·산책·데이트)은 **보조 경로**이므로 상승 폭이 작다
+     * (+1 / +1 / +2). 친밀도의 중심은 전투 출전([AffinityRules.BATTLE_DEPLOY_GAIN])이다.
      */
     override fun interactInRealWorld(card: TcgCard, activity: RealWorldActivity): Int {
         val bondIncrease = when (activity) {
-            RealWorldActivity.DAILY_GREETING -> 5
-            RealWorldActivity.CASUAL_CAFE_WALK -> 15
-            RealWorldActivity.ROMANTIC_EVENING_DATE -> 30
+            RealWorldActivity.DAILY_GREETING -> AffinityRules.DAILY_TALK_GAIN
+            RealWorldActivity.CASUAL_CAFE_WALK -> AffinityRules.WALK_GAIN
+            RealWorldActivity.ROMANTIC_EVENING_DATE -> AffinityRules.DATE_GAIN
         }
-        card.bondLevel = (card.bondLevel + bondIncrease).coerceAtMost(100)
-
-        // 비주얼 스킨 자동 전환
-        card.currentVisual = when {
-            activity == RealWorldActivity.ROMANTIC_EVENING_DATE -> VisualState.ROMANTIC_DATE
-            card.bondLevel >= 50 -> VisualState.CASUAL_CUTE
-            else -> VisualState.BATTLE
-        }
+        // 단계(30 일상 / 70 데이트 / 100 오의)를 넘으면 비주얼이 자동 승급한다(내려가지는 않음).
+        AffinityRules.applyGain(card, bondIncrease)
 
         return card.bondLevel
     }

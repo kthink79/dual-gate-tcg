@@ -1,6 +1,7 @@
 package com.game.tcg
 
 import com.game.tcg.core.engine.ExplorationContext
+import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.engine.ExplorationEngine
 import com.game.tcg.core.engine.ExplorationMode
 import com.game.tcg.core.engine.ExplorationRewardType
@@ -97,26 +98,36 @@ class LobbyAndExplorationTest {
     }
 
     @Test
-    fun `3단 비주얼은 전투 일상 데이트 모두 바로 전환된다`() {
+    fun `3단 비주얼은 친밀도 단계에 따라 잠기고 열린다`() {
         val vm = TcgGameViewModel()
 
-        // 170명 전원이 호감도 50으로 합류하므로 데이트 룩이 처음부터 열려 있다
-        assertEquals(TcgGameViewModel.DATE_LOOK_UNLOCK_BOND, vm.uiState.value.lobbyHeroBond)
-        assertTrue(vm.uiState.value.isLobbyDateLookUnlocked)
+        // 2026-11-16 개편: 새 캐릭터는 친밀도 0으로 시작 — 일상(30)·데이트(70) 모두 잠김
+        assertEquals(0, vm.uiState.value.lobbyHeroBond)
+        assertFalse(vm.uiState.value.isLobbyCasualLookUnlocked)
+        assertFalse(vm.uiState.value.isLobbyDateLookUnlocked)
 
         vm.selectLobbyVisual(VisualState.CASUAL_CUTE)
-        assertEquals(VisualState.CASUAL_CUTE, vm.uiState.value.lobbyVisual)
-        vm.selectLobbyVisual(VisualState.ROMANTIC_DATE)
-        assertEquals("데이트 룩이 잠기지 않는다", VisualState.ROMANTIC_DATE, vm.uiState.value.lobbyVisual)
+        assertEquals("일상 사복은 30 미만에서 잠긴다", VisualState.BATTLE, vm.uiState.value.lobbyVisual)
+        assertNotNull(vm.uiState.value.visualLockMessage)
+
+        // 친밀도 70이면 일상·데이트 모두 열린다
+        val unlocked = TcgGameViewModel(
+            initialOwnedCardIds = listOf(3, 1, 2),
+            initialBondLevel = AffinityRules.DATE_UNLOCK_BOND
+        )
+        unlocked.selectLobbyVisual(VisualState.CASUAL_CUTE)
+        assertEquals(VisualState.CASUAL_CUTE, unlocked.uiState.value.lobbyVisual)
+        unlocked.selectLobbyVisual(VisualState.ROMANTIC_DATE)
+        assertEquals("데이트 룩이 잠기지 않는다", VisualState.ROMANTIC_DATE, unlocked.uiState.value.lobbyVisual)
 
         // 다른 캐릭터로 바꿔도 데이트 룩이 유지된다
-        vm.selectLobbyHero(2)
-        assertEquals(VisualState.ROMANTIC_DATE, vm.uiState.value.lobbyVisual)
+        unlocked.selectLobbyHero(2)
+        assertEquals(VisualState.ROMANTIC_DATE, unlocked.uiState.value.lobbyVisual)
 
-        // 현실 교감으로 호감도가 더 올라간다
-        val before = vm.uiState.value.lobbyHeroBond
-        vm.interactRealWorld(RealWorldActivity.ROMANTIC_EVENING_DATE)
-        assertTrue(vm.uiState.value.lobbyHeroBond >= before)
+        // 현실 교감으로 친밀도가 더 올라간다
+        val before = unlocked.uiState.value.lobbyHeroBond
+        unlocked.interactRealWorld(RealWorldActivity.ROMANTIC_EVENING_DATE)
+        assertTrue(unlocked.uiState.value.lobbyHeroBond >= before)
     }
 
     @Test
@@ -125,7 +136,7 @@ class LobbyAndExplorationTest {
         val state = vm.uiState.value
 
         assertNotNull(state.lobbyHero)
-        assertEquals(50, state.lobbyHeroBond)
+        assertEquals("새 캐릭터의 친밀도는 0에서 시작한다", 0, state.lobbyHeroBond)
         assertFalse(state.lobbyHero.isMemoryReset)
     }
 
@@ -274,12 +285,12 @@ class LobbyAndExplorationTest {
 
     @Test
     fun `랜덤 조우는 호감도와 유혹 스택을 올릴 수 있다`() {
-        // 40~59 : 아우렐리아 밤 산책
+        // 40~59 : 아우렐리아 밤 산책 — 교감은 보조 폭(+1)만 오른다
         val walk = TcgGameViewModel(explorationEngine = ExplorationEngine { 45 })
         val before = walk.uiState.value
         walk.explore(ExplorationMode.ENCOUNTER)
-        assertEquals(before.partnerBond + 10, walk.uiState.value.partnerBond)
-        assertTrue(walk.uiState.value.lobbyHeroBond >= 30)
+        assertEquals(before.partnerBond + AffinityRules.WALK_GAIN, walk.uiState.value.partnerBond)
+        assertTrue(walk.uiState.value.lobbyHeroBond >= 0)
 
         // 20~39 : 위장한 마왕 릴리 — 금화는 늘고 [홀림]이 쌓인다
         val lily = TcgGameViewModel(explorationEngine = ExplorationEngine { 25 })

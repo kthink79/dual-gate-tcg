@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -32,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.model.CardCatalog
 import com.game.tcg.core.model.DeckRules
 import com.game.tcg.core.model.TcgCard
@@ -163,14 +165,15 @@ fun CollectionScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(320.dp)
+                    // 540×810(2:3) 원본 비율 유지 — 일상·데이트 일러스트의 머리·발끝이 잘리지 않는다
+                    .aspectRatio(2f / 3f)
                     .clip(RoundedCornerShape(14.dp))
             ) {
                 CardArtImage(
                     cardId = selected.id,
                     visual = state.selectedVisual,
                     contentDescription = selected.name,
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize(),
                     targetWidthPx = 720
                 )
@@ -223,17 +226,47 @@ fun CollectionScreen(
                 }
             }
 
-            // 3단 비주얼 전환
+            // 3단 비주얼 전환 — ② 일상은 친밀도 30, ③ 데이트는 70부터 (미해금은 자물쇠)
+            val bond = state.selectedCardBond
+            val casualOpen = AffinityRules.isCasualUnlocked(bond)
+            val dateOpen = AffinityRules.isDateUnlocked(bond)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ChipButton("① 전투", state.selectedVisual == VisualState.BATTLE) {
                     onSelectVisual(VisualState.BATTLE)
                 }
-                ChipButton("② 일상", state.selectedVisual == VisualState.CASUAL_CUTE, TcgColors.Heal) {
+                ChipButton(
+                    if (casualOpen) "② 일상" else "② 일상 🔒",
+                    state.selectedVisual == VisualState.CASUAL_CUTE,
+                    if (casualOpen) TcgColors.Heal else TcgColors.Muted
+                ) {
                     onSelectVisual(VisualState.CASUAL_CUTE)
                 }
-                ChipButton("③ 데이트", state.selectedVisual == VisualState.ROMANTIC_DATE, TcgColors.Gold) {
+                ChipButton(
+                    if (dateOpen) "③ 데이트" else "③ 데이트 🔒",
+                    state.selectedVisual == VisualState.ROMANTIC_DATE,
+                    if (dateOpen) TcgColors.Gold else TcgColors.Muted
+                ) {
                     onSelectVisual(VisualState.ROMANTIC_DATE)
                 }
+            }
+            if (!casualOpen) {
+                // 일상·데이트 미해금 — 도감에서도 잠금 안내와 진행도를 일관되게 보여 준다
+                Text(
+                    "🔒 미해금 비주얼 — 일상 ${AffinityRules.CASUAL_UNLOCK_BOND} · 데이트 ${AffinityRules.DATE_UNLOCK_BOND} " +
+                        "(현재 친밀도 $bond/100 · 전투 출전 ${selected.battleCount}회)",
+                    color = TcgColors.Muted,
+                    fontSize = 9.sp,
+                    lineHeight = 14.sp
+                )
+                StatBar(ratio = AffinityRules.casualProgress(bond), color = TcgColors.Danger, height = 7)
+            }
+            if (state.visualLockMessage != null) {
+                Text(
+                    state.visualLockMessage,
+                    color = TcgColors.Danger,
+                    fontSize = 10.sp,
+                    lineHeight = 15.sp
+                )
             }
 
             // 🎬 등장 영상 다시 보기 — 등장 MP4 가 있는 캐릭터만
@@ -298,7 +331,8 @@ fun CollectionScreen(
                 StatColumn("ATK", "${selected.atk}", TcgColors.Hp)
                 StatColumn("DEF", "${selected.def}", TcgColors.Mana)
                 StatColumn("성급", "${selected.starLevel}★", TcgColors.Gold)
-                StatColumn("호감도", "${selected.bondLevel}", TcgColors.Heal)
+                StatColumn("친밀도", "${selected.bondLevel}", TcgColors.Heal)
+                StatColumn("출전", "${selected.battleCount}회", TcgColors.Violet)
             }
             Text("스킬 · ${selected.skillText}", color = TcgColors.Text.copy(alpha = 0.85f), fontSize = 11.sp, lineHeight = 16.sp)
             if (!isOwned) {

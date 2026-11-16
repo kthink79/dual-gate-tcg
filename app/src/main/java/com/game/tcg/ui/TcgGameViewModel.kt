@@ -1,6 +1,7 @@
 package com.game.tcg.ui
 
 import androidx.lifecycle.ViewModel
+import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.engine.BattleEngine
 import com.game.tcg.core.engine.ChapterTwoScript
 import com.game.tcg.core.engine.DualWorldEngine
@@ -399,10 +400,12 @@ data class TcgGameState(
     val selectedCardId: Int = 3,
     val selectedVisual: VisualState = VisualState.BATTLE,
     val synthesisMessage: String? = null,
+    /** 도감에서 잠긴 비주얼(일상 30 · 데이트 70)을 누를 때 띄우는 안내 */
+    val visualLockMessage: String? = null,
     // ── 현실 교감 ──
-    val partnerBond: Int = 20,
+    val partnerBond: Int = 0,
     val partnerVisual: VisualState = VisualState.BATTLE,
-    val realWorldLog: List<String> = listOf("[현실 교감] 아우렐리아 소환 대기 중. 호감도 20/100"),
+    val realWorldLog: List<String> = listOf("[현실 교감] 파트너 대기 중. 친밀도는 전투 출전으로 올라갑니다."),
     val dateLookUnlocked: Boolean = false,
     val ultimateUnlocked: Boolean = false,
     // ── 「기억의 잔향」: 환생 재획득 후 기억 초기화·파편 회상 ──
@@ -622,9 +625,29 @@ data class TcgGameState(
     val lobbyHeroBond: Int
         get() = if (lobbyHeroId == 3) maxOf(partnerBond, lobbyHero.bondLevel) else lobbyHero.bondLevel
 
-    /** 데이트 룩(③) 해금 여부 — 호감도 50 이상 */
+    /** 데이트 룩(③) 해금 여부 — 친밀도 70 이상 */
     val isLobbyDateLookUnlocked: Boolean
         get() = lobbyHeroBond >= TcgGameViewModel.DATE_LOOK_UNLOCK_BOND
+
+    /** 일상 사복(②) 해금 여부 — 친밀도 30 이상 (현실 소환 조건과 같은 값) */
+    val isLobbyCasualLookUnlocked: Boolean
+        get() = lobbyHeroBond >= TcgGameViewModel.CASUAL_LOOK_UNLOCK_BOND
+
+    /** 로비 대표 캐릭터의 친밀도 해금 진행도 (0~1) */
+    val lobbyHeroCasualProgress: Float
+        get() = AffinityRules.casualProgress(lobbyHeroBond)
+
+    /** 지금 로비에서 고를 수 있는 가장 높은 비주얼 (친밀도에 따른 상한) */
+    val lobbyVisualCap: VisualState
+        get() = AffinityRules.visualFor(lobbyHeroBond)
+
+    /** 도감에서 지금 보고 있는 카드의 친밀도 */
+    val selectedCardBond: Int
+        get() = if (selectedCardId == 3) {
+            maxOf(partnerBond, ownedCards.firstOrNull { it.id == 3 }?.bondLevel ?: 0)
+        } else {
+            ownedCards.firstOrNull { it.id == selectedCardId }?.bondLevel ?: 0
+        }
 
     /** 차원 균열 에너지 최대치 */
     val gateEnergyMax: Int get() = TcgGameViewModel.GATE_ENERGY_MAX
@@ -711,6 +734,10 @@ class TcgGameViewModel(
     initialClearedStages: Set<Int> = emptySet(),
     /** 앱을 다시 켰을 때 인트로를 이미 본 상태라면 true (MainActivity가 저장값을 넘긴다) */
     introAlreadySeen: Boolean = false,
+    /** 시작 카드의 친밀도 — 기본 0(모든 캐릭터는 0에서 시작). 테스트·데모에서만 지정한다 */
+    private val initialBondLevel: Int = CardCatalog.ROSTER_BOND_SEED,
+    /** 보유 기간 정산에 쓰는 「오늘」(에포크 일) — 단위 테스트는 고정값을 넘긴다 */
+    private val todayEpochDay: () -> Int = { AffinityRules.epochDay(System.currentTimeMillis()) },
     /**
      * 진행 상태 자동 저장소 — 넘기면 상태가 바뀔 때마다 저장하고, 생성 시 저장본을 복원한다.
      * null 이면 저장하지 않는다(단위 테스트·데모 기본값).
@@ -722,7 +749,7 @@ class TcgGameViewModel(
     private val starterCards: List<TcgCard> =
         (initialOwnedCardIds ?: StartingRoster.draw(random))
             .distinct()
-            .map { TcgGameViewModel.characterCard(it) }
+            .map { TcgGameViewModel.characterCard(it, initialBondLevel) }
 
     /** 시작 덱 — 뽑힌 카드를 전열 1~3칸에 자동 배치 */
     private val starterParty: List<PartyMember> =
@@ -760,7 +787,70 @@ class TcgGameViewModel(
     init {
         starterCards.forEach { lifecycleEngine.registerOwnedCard(it) }
         restoreSavedProgress()
+        // 보유 기간 친밀도(하루 +1) 정산 — 앱을 다시 켰을 때 지난 날짜만큼만
+        claimHoldingBond()
     }
+
+    /**
+     * 보유 기간 친밀도 정산 — 마지막 정산일로부터 지난 날짜만큼 하루 +1
+     * (한 번에 최대 [AffinityRules.HOLDING_GAIN_MAX_PER_CLAIM]).
+     * 전투 1회 +6 에 비하면 아주 작은 보조 경로다 — 전투가 친밀도의 중심이라는 규칙 유지.
+     */
+    private fun claimHoldingBond() {
+        val today = todayEpochDay()
+        updateState { s ->
+            if (s.ownedCards.isEmpty()) return@updateState s
+            val lines = mutableListOf<String>()
+            s.ownedCards.forEach { card ->
+                if (card.lastBondDay == 0) {
+                    // 처음 보는 날 — 오늘을 기준일로만 기록 (아직 상승 없음)
+                    card.lastBondDay = today
+                    return@forEach
+                }
+                val days = today - card.lastBondDay
+                if (days <= 0) return@forEach
+                val change = AffinityRules.creditHolding(card, days)
+                card.lastBondDay = today
+                if (change.gained > 0) {
+                    lines += "[보유 ${days}일] ${shortName(card.id, card.name)} 친밀도 " +
+                        "${change.before}→${change.after} (+${change.gained})"
+                }
+            }
+            if (lines.isEmpty()) return@updateState s
+            s.copy(
+                ownedCards = s.ownedCards.toList(),
+                realWorldLog = (s.realWorldLog + lines).takeLast(6),
+                battleLog = s.battleLog + lines
+            )
+        }
+    }
+
+    /**
+     * 전투 출전 정산 — 출전한 카드마다 친밀도 +[AffinityRules.BATTLE_DEPLOY_GAIN], 출전 횟수 +1.
+     * 승리하면 [applyVictory] 가 승리 보너스(+2)를 더해 **한 전투 +6** 이 된다.
+     * (TcgCard 는 편성·보유가 같은 인스턴스를 공유하므로 제자리 변경으로 충분하다)
+     */
+    private fun creditBattleDeployment(s: TcgGameState): TcgGameState {
+        val deployed = s.party.map { it.card.id }.distinct()
+        if (deployed.isEmpty()) return s
+        val lines = mutableListOf<String>()
+        deployed.forEach { id ->
+            val card = s.ownedCards.firstOrNull { it.id == id } ?: return@forEach
+            val change = AffinityRules.creditBattleDeployment(card)
+            lines += "[출전] ${shortName(id, card.name)} 출전 ${card.battleCount}회 · " +
+                "친밀도 ${change.before}→${change.after} (+${change.gained})" +
+                affinityUnlockSuffix(change)
+        }
+        return s.copy(ownedCards = s.ownedCards.toList(), battleLog = s.battleLog + lines)
+    }
+
+    /** 친밀도 상승으로 새 단계가 열렸을 때 로그에 붙이는 문구 */
+    private fun affinityUnlockSuffix(change: AffinityRules.BondChange): String =
+        if (change.newlyUnlocked.isEmpty()) {
+            ""
+        } else {
+            " · 🎉 ${change.newlyUnlocked.joinToString("·") { it.displayName }} 개방!"
+        }
 
     // ──────────────────────────────────────────────────────────────
     // 진행 상태 자동 저장 (앱을 꺼도 이어서)
@@ -823,7 +913,7 @@ class TcgGameViewModel(
         lastPersisted = null
 
         // 무작위로 새 스타팅 3인방을 다시 뽑아 진짜 처음부터 시작한다.
-        val freshCards = TcgGameViewModel.initialOwnedCards(random)
+        val freshCards = TcgGameViewModel.initialOwnedCards(random, initialBondLevel)
         val freshParty = TcgGameViewModel.initialParty(freshCards)
 
         // 상실 판정 엔진의 보유/환생 목록도 초기화
@@ -1024,13 +1114,7 @@ class TcgGameViewModel(
             val bond = bondOf(s, cardId)
             s.copy(
                 lobbyHeroId = cardId,
-                lobbyVisual = if (s.lobbyVisual == VisualState.ROMANTIC_DATE &&
-                    bond < TcgGameViewModel.DATE_LOOK_UNLOCK_BOND
-                ) {
-                    VisualState.BATTLE
-                } else {
-                    s.lobbyVisual
-                },
+                lobbyVisual = capVisual(s.lobbyVisual, bond),
                 statusMessage = "[대표 캐릭터] $heroName — 메인 화면에 소환되었습니다."
             )
         }
@@ -1050,34 +1134,40 @@ class TcgGameViewModel(
             val bond = bondOf(s, nextId)
             s.copy(
                 lobbyHeroId = nextId,
-                lobbyVisual = if (s.lobbyVisual == VisualState.ROMANTIC_DATE &&
-                    bond < TcgGameViewModel.DATE_LOOK_UNLOCK_BOND
-                ) {
-                    VisualState.BATTLE
-                } else {
-                    s.lobbyVisual
-                },
+                lobbyVisual = capVisual(s.lobbyVisual, bond),
                 statusMessage = "[대표 캐릭터] $heroName (${nextIndex + 1}/${roster.size})"
             )
         }
     }
 
-    /** 메인 화면 3단 비주얼(전투 · 일상 · 데이트) 전환 — 데이트는 호감도 50 이상 해금 */
+    /**
+     * 메인 화면 3단 비주얼(전투 · 일상 · 데이트) 전환.
+     * ② 일상은 친밀도 30, ③ 데이트는 70부터 열린다(2026-11-16 개편).
+     */
     fun selectLobbyVisual(visual: VisualState) {
         updateState { s ->
             val heroName = s.lobbyHeroProfile?.displayName ?: s.lobbyHero.name
-            val unlocked = visual != VisualState.ROMANTIC_DATE || s.isLobbyDateLookUnlocked
-            if (!unlocked) {
+            val bond = s.lobbyHeroBond
+            if (!AffinityRules.isVisualUnlocked(visual, bond)) {
+                val need = AffinityRules.requiredBond(visual)
                 return@updateState s.copy(
-                    statusMessage = "[잠금] 데이트 룩은 $heroName 호감도 ${TcgGameViewModel.DATE_LOOK_UNLOCK_BOND} 이상에서 열립니다. " +
-                            "(현재 ${s.lobbyHeroBond}/100 — 현실 소환에서 교감하세요)"
+                    statusMessage = "[잠금] ${visual.displayName}은(는) $heroName 친밀도 $need 이상에서 열립니다. " +
+                            "(현재 $bond/100 — 이계 전투 출전 1회 +${AffinityRules.BATTLE_WIN_GAIN})",
+                    visualLockMessage = AffinityRules.lockLabel(visual, bond)
                 )
             }
             s.copy(
                 lobbyVisual = visual,
+                visualLockMessage = null,
                 statusMessage = "[연출] $heroName — ${visual.displayName}"
             )
         }
+    }
+
+    /** 친밀도에 맞는 단계까지만 비주얼을 유지한다 */
+    private fun capVisual(visual: VisualState, bond: Int): VisualState {
+        val cap = AffinityRules.visualFor(bond)
+        return if (visual.ordinal > cap.ordinal) cap else visual
     }
 
     private fun heroDisplayName(cardId: Int): String =
@@ -1224,7 +1314,9 @@ class TcgGameViewModel(
             )
 
             if (result.startsBattle) {
-                next = next.copy(
+                // 탐색에서 마수와 마주친 것도 전투 출전이다 — 친밀도 +4
+                val deployBase = creditBattleDeployment(next)
+                next = deployBase.copy(
                     enemyName = result.enemyName ?: s.enemyName,
                     enemyElement = result.enemyElement,
                     enemyHp = result.enemyHp,
@@ -1234,7 +1326,7 @@ class TcgGameViewModel(
                     isChapter2BossBattle = false,
                     turn = 1,
                     mana = ManaState(1, 1),
-                    party = freshParty(s),
+                    party = freshParty(deployBase),
                     retreatInfo = BattleRetreatInfo(turn = 1),
                     pairUltimateUsedThisBattle = false,
                     pairUltimateBanner = null,
@@ -1374,7 +1466,9 @@ class TcgGameViewModel(
                 )
             }
             val penalty = temptationEngine.calculateCombatPenalty(s.temptationState)
-            s.copy(
+            // 친밀도: 출전 카드마다 +4 (승리 시 정산에서 +2)
+            val base = creditBattleDeployment(s)
+            base.copy(
                 enemyName = "마왕 릴리스",
                 enemyElement = Element.DARK,
                 enemyHp = 25000,
@@ -1383,7 +1477,7 @@ class TcgGameViewModel(
                 isDemonLordBattle = true,
                 turn = 1,
                 mana = ManaState(1, 1),
-                party = freshParty(s),
+                party = freshParty(base),
                 retreatInfo = BattleRetreatInfo(turn = 1),
                 isAutoBattle = true,
                 lastCutIn = null,
@@ -1394,7 +1488,7 @@ class TcgGameViewModel(
                 audioScene = AudioScene.BOSS,
                 pendingLootGold = 2500,
                 pendingLootGems = 30,
-                battleLog = s.battleLog + listOf(
+                battleLog = base.battleLog + listOf(
                     "[마왕전 개시] 황혼과 욕망의 마왕 릴리스 — HP 25000 / 공격력 2800",
                     penalty.debuffDescription
                 ),
@@ -1412,7 +1506,9 @@ class TcgGameViewModel(
                     statusMessage = "[출전 불가] 보유 동료 0장 — 재계약(무료)이나 긴급 보급이 필요합니다."
                 )
             }
-            s.copy(
+            // 친밀도: 출전 카드마다 +4 (승리 시 정산에서 +2)
+            val base = creditBattleDeployment(s)
+            base.copy(
                 enemyName = "차원 틈새의 마수",
                 enemyElement = Element.DARK,
                 enemyHp = 12000,
@@ -1421,7 +1517,7 @@ class TcgGameViewModel(
                 isDemonLordBattle = false,
                 turn = 1,
                 mana = ManaState(1, 1),
-                party = freshParty(s),
+                party = freshParty(base),
                 retreatInfo = BattleRetreatInfo(turn = 1),
                 isAutoBattle = true,
                 lastCutIn = null,
@@ -1432,7 +1528,7 @@ class TcgGameViewModel(
                 audioScene = AudioScene.BATTLE,
                 pendingLootGold = 300,
                 pendingLootGems = 5,
-                battleLog = s.battleLog + "[원정 개시] 차원 틈새의 마수 — HP 12000 / 공격력 900",
+                battleLog = base.battleLog + "[원정 개시] 차원 틈새의 마수 — HP 12000 / 공격력 900",
                 statusMessage = "[원정] 차원 틈새의 마수와 교전을 시작합니다."
             )
         }
@@ -1653,6 +1749,19 @@ class TcgGameViewModel(
         val rewardGold = s.pendingLootGold
         val rewardGems = s.pendingLootGems
 
+        // ── 친밀도(2026-11-16 개편): 이번 전투에 출전한 카드에 승리 보너스 +2 ──
+        // (출전 시 +4는 이미 지급됨 → 승리한 전투 1회 = 총 +6)
+        val affinityLogs = mutableListOf<String>()
+        s.party.map { it.card.id }.distinct().forEach { id ->
+            val card = s.ownedCards.firstOrNull { it.id == id } ?: return@forEach
+            val change = AffinityRules.creditBattleVictory(card)
+            affinityLogs += "[출전 승리] ${shortName(id, card.name)} 친밀도 ${change.before}→${change.after} " +
+                "(+${change.gained} · 누적 출전 ${card.battleCount}회)" +
+                (if (change.newlyUnlocked.isNotEmpty()) {
+                    " · 🎉 ${change.newlyUnlocked.joinToString("·") { it.displayName }} 개방!"
+                } else "")
+        }
+
         // 「기억의 잔향」: 전투 승리로 기억이 지워진 동료에게 기억 파편 +1
         val fragmentLogs = mutableListOf<String>()
         s.ownedCards.forEach { card ->
@@ -1668,7 +1777,7 @@ class TcgGameViewModel(
             battleLog = s.battleLog + logLines +
                     "[전투 승리] ${s.enemyName} 토벌 완료!" +
                     (if (rewardGold > 0 || rewardGems > 0) " (전리품 금화 ${rewardGold}G · 보석 ${rewardGems})" else "") +
-                    fragmentLogs,
+                    fragmentLogs + affinityLogs,
             gold = s.gold + rewardGold,
             gems = s.gems + rewardGems,
             gateEnergy = (s.gateEnergy + GATE_ENERGY_RECOVERY).coerceAtMost(s.gateEnergyMax),
@@ -2225,6 +2334,8 @@ class TcgGameViewModel(
                 )
             }
             started = true
+            // 친밀도: 이번 출전으로 출전한 카드마다 +4 (승리하면 정산에서 +2 더)
+            val base = creditBattleDeployment(s)
             val bossScene = when (stage.bossKind) {
                 com.game.tcg.core.model.BossKind.MID_BOSS -> AudioScene.BOSS
                 com.game.tcg.core.model.BossKind.DEMON_LORD -> AudioScene.BOSS
@@ -2235,7 +2346,7 @@ class TcgGameViewModel(
                 com.game.tcg.core.model.BossKind.DEMON_LORD -> " · 대마왕 관문"
                 else -> ""
             }
-            s.copy(
+            base.copy(
                 enemyName = stage.enemyName,
                 enemyElement = stage.enemyElement,
                 enemyHp = stage.enemyHp,
@@ -2247,7 +2358,7 @@ class TcgGameViewModel(
                 selectedStage = number,
                 turn = 1,
                 mana = ManaState(1, 1),
-                party = freshParty(s),
+                party = freshParty(base),
                 retreatInfo = BattleRetreatInfo(turn = 1),
                 isAutoBattle = true,
                 lastCutIn = null,
@@ -2259,7 +2370,7 @@ class TcgGameViewModel(
                 currentScreen = LobbyDestination.BATTLE,
                 audioScene = bossScene,
                 stageMessage = "[스테이지 $number] ${stage.name} — ${stage.enemyName}",
-                battleLog = s.battleLog + listOf(
+                battleLog = base.battleLog + listOf(
                     "[스테이지 $number] ${stage.chapter}장 ${stage.chapterName} · ${stage.name}$bossLine",
                     "${stage.enemyName} — HP ${stage.enemyHp} / 공격력 ${stage.enemyAtk} / 속성 ${stage.enemyElement.displayName}",
                     "권장 전투력 ${stage.recommendedPower} · 내 덱 ${s.deckTotalPower} (${StageEngine.readiness(s.deckTotalPower, stage).label})"
@@ -2637,6 +2748,7 @@ class TcgGameViewModel(
             s.copy(
                 selectedCardId = cardId,
                 selectedVisual = VisualState.BATTLE,
+                visualLockMessage = null,
                 gazeMessage = null,
                 synthesisMessage = null
             )
@@ -2644,7 +2756,17 @@ class TcgGameViewModel(
     }
 
     fun selectVisual(visual: VisualState) {
-        updateState { s -> s.copy(selectedVisual = visual) }
+        updateState { s ->
+            val bond = s.selectedCardBond
+            if (!AffinityRules.isVisualUnlocked(visual, bond)) {
+                val locked = AffinityRules.lockLabel(visual, bond)
+                return@updateState s.copy(
+                    visualLockMessage = locked,
+                    statusMessage = "[잠금] ${locked ?: visual.displayName}"
+                )
+            }
+            s.copy(selectedVisual = visual, visualLockMessage = null)
+        }
     }
 
     /** 마왕 카드 자세히 응시하기 (줌 체험) — 10초 응시 + 핀치 줌 */
@@ -2770,14 +2892,20 @@ class TcgGameViewModel(
                 null
             }
             val label = when (activity) {
-                RealWorldActivity.DAILY_GREETING -> "짧은 일상 대화 (+5)"
-                RealWorldActivity.CASUAL_CAFE_WALK -> "저녁 산책·카페 (+15)"
-                RealWorldActivity.ROMANTIC_EVENING_DATE -> "카페 데이트 (+30)"
+                RealWorldActivity.DAILY_GREETING -> "짧은 일상 대화 (+${AffinityRules.DAILY_TALK_GAIN})"
+                RealWorldActivity.CASUAL_CAFE_WALK -> "저녁 산책·카페 (+${AffinityRules.WALK_GAIN})"
+                RealWorldActivity.ROMANTIC_EVENING_DATE -> "카페 데이트·선물 (+${AffinityRules.DATE_GAIN})"
             }
-            val unlockedDate = newBond >= 50
-            val unlockedUltimate = newBond >= 100
-            val logLine = "[현실 교감] $partnerName · $label → 호감도 $newBond/100" +
-                    (if (unlockedDate) " · 데이트 룩 해금 연출" else "") +
+            val unlockedDate = visual == VisualState.ROMANTIC_DATE && newBond >= AffinityRules.DATE_UNLOCK_BOND
+            val unlockedUltimate = newBond >= AffinityRules.ULTIMATE_UNLOCK_BOND
+            val unlockedCasual = newBond >= AffinityRules.CASUAL_UNLOCK_BOND
+            val logLine = "[현실 교감] $partnerName · $label → 친밀도 $newBond/100" +
+                    (if (unlockedCasual && newBond - AffinityRules.DAILY_TALK_GAIN < AffinityRules.CASUAL_UNLOCK_BOND) {
+                        " · 🎉 일상 사복·현실 소환 개방!"
+                    } else "") +
+                    (if (unlockedDate && newBond - AffinityRules.DATE_GAIN < AffinityRules.DATE_UNLOCK_BOND) {
+                        " · 데이트 룩 해금 연출"
+                    } else "") +
                     (if (unlockedUltimate) " · 페어 얼티밋 오의 개방!" else "")
             val fragmentLine = if (fragmentGain != null && fragmentGain.isSuccess) fragmentGain.message else null
             s.copy(
@@ -3002,7 +3130,9 @@ class TcgGameViewModel(
             if (!node.isUnlocked(s.storyStepIndex)) {
                 return@updateState s.copy(statusMessage = "[제2장] 5화 이후에만 전초전을 열 수 있습니다.")
             }
-            s.copy(
+            // 친밀도: 출전 카드마다 +4 (승리 시 정산에서 +2)
+            val base = creditBattleDeployment(s)
+            base.copy(
                 chapter2PreludeOpened = true,
                 enemyName = node.bossName,
                 enemyElement = node.bossElement,
@@ -3013,7 +3143,7 @@ class TcgGameViewModel(
                 isChapter2BossBattle = true,
                 turn = 1,
                 mana = ManaState(1, 1),
-                party = freshParty(s),
+                party = freshParty(base),
                 retreatInfo = BattleRetreatInfo(turn = 1),
                 isAutoBattle = true,
                 lastCutIn = null,
@@ -3024,7 +3154,7 @@ class TcgGameViewModel(
                 pendingLootGems = 20,
                 audioScene = AudioScene.BOSS,
                 chapter2Message = "[${node.chapter}] ${node.title} — ${node.bossSkill}",
-                battleLog = s.battleLog + listOf(
+                battleLog = base.battleLog + listOf(
                     "[전초전 개시] ${node.bossName} — HP ${node.bossHp} / 공격력 ${node.bossAtk}",
                     node.bossSkill
                 ),
@@ -3104,8 +3234,11 @@ class TcgGameViewModel(
         /** 이계 전투 승리 시 회복되는 차원 균열 에너지 */
         const val GATE_ENERGY_RECOVERY: Int = 2
 
-        /** 메인 로비 데이트 룩 해금 호감도 */
-        const val DATE_LOOK_UNLOCK_BOND: Int = 50
+        /** 메인 로비 일상 사복(②) 해금 친밀도 — 현실 소환 조건과 같은 값 */
+        const val CASUAL_LOOK_UNLOCK_BOND: Int = AffinityRules.CASUAL_UNLOCK_BOND
+
+        /** 메인 로비 데이트 룩(③) 해금 친밀도 */
+        const val DATE_LOOK_UNLOCK_BOND: Int = AffinityRules.DATE_UNLOCK_BOND
 
         /**
          * 메인 로비 좌우 전환 순서 — 스타팅 3인방 → 나머지 플레이 가능 167인 → 중간 보스 6인.
@@ -3116,8 +3249,9 @@ class TcgGameViewModel(
                 CardCatalog.ALL.map { it.id }.filter { it !in listOf(3, 1, 2) } +
                 com.game.tcg.core.model.MidBossCatalog.ALL.map { it.id }
 
-        /** 도감 카탈로그에서 카드 1장을 만든다 (미등록 번호도 안전한 대체 카드로 복원) */
-        fun characterCard(id: Int): TcgCard = CardCatalog.require(id).toCard()
+        /** 도감 카탈로그에서 카드 1장을 만든다 (미등록 번호는 0으로 안전하게 대체) */
+        fun characterCard(id: Int, bondLevel: Int = CardCatalog.ROSTER_BOND_SEED): TcgCard =
+            CardCatalog.require(id).toCard(bondLevel)
 
         /**
          * 카드의 전장 최대 HP.
@@ -3141,8 +3275,11 @@ class TcgGameViewModel(
             }
 
         /** 게임 시작 시 보유 카드 — 저코스트 풀에서 무작위 3장 */
-        fun initialOwnedCards(random: Random = Random.Default): List<TcgCard> =
-            StartingRoster.starterCards(StartingRoster.draw(random))
+        fun initialOwnedCards(
+            random: Random = Random.Default,
+            bondLevel: Int = CardCatalog.ROSTER_BOND_SEED
+        ): List<TcgCard> =
+            StartingRoster.starterCards(StartingRoster.draw(random)).onEach { it.bondLevel = bondLevel }
 
         /**
          * 도감 프로필 — 등록된 170인 전체 (No.1~169 + No.184).

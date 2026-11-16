@@ -80,7 +80,7 @@ fun DeckScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(card.name, color = TcgColors.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         Text(
-                            "${card.element.displayName} · ${card.starLevel}★ · ATK ${card.atk} / DEF ${card.def} · 호감도 ${card.bondLevel}",
+                            "${card.element.displayName} · ${card.starLevel}★ · ATK ${card.atk} / DEF ${card.def} · 친밀도 ${card.bondLevel}",
                             color = TcgColors.Muted,
                             fontSize = 9.sp
                         )

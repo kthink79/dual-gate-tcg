@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.model.Element
 import com.game.tcg.core.model.VisualState
 
@@ -246,7 +247,11 @@ fun MainLobbyScreen(
                 ChipButton("① 전투", state.lobbyVisual == VisualState.BATTLE) {
                     onSelectVisual(VisualState.BATTLE)
                 }
-                ChipButton("② 일상", state.lobbyVisual == VisualState.CASUAL_CUTE, TcgColors.Heal) {
+                ChipButton(
+                    if (state.isLobbyCasualLookUnlocked) "② 일상" else "② 일상 🔒",
+                    state.lobbyVisual == VisualState.CASUAL_CUTE,
+                    if (state.isLobbyCasualLookUnlocked) TcgColors.Heal else TcgColors.Muted
+                ) {
                     onSelectVisual(VisualState.CASUAL_CUTE)
                 }
                 ChipButton(
@@ -287,7 +292,8 @@ fun MainLobbyScreen(
                 HeroCycleButton("▶") { onCycleHero(1) }
             }
             Text(
-                "대표 캐릭터 ${rosterIndex + 1}/${roster.size} · 좌우 서브메뉴로 이동",
+                "대표 캐릭터 ${rosterIndex + 1}/${roster.size} · 일상 ${TcgGameViewModel.CASUAL_LOOK_UNLOCK_BOND} / " +
+                    "데이트 ${TcgGameViewModel.DATE_LOOK_UNLOCK_BOND} 해금 · 전투 출전 1회 +${AffinityRules.BATTLE_WIN_GAIN}",
                 color = TcgColors.Muted.copy(alpha = 0.8f),
                 fontSize = 8.sp
             )

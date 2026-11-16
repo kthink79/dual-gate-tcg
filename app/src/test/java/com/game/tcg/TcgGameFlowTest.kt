@@ -1,5 +1,6 @@
 package com.game.tcg
 
+import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.engine.RealWorldActivity
 import com.game.tcg.core.model.CardCatalog
 import com.game.tcg.core.model.VisualState
@@ -128,17 +129,24 @@ class TcgGameFlowTest {
     }
 
     @Test
-    fun `현실 교감은 호감도를 올리고 데이트 룩을 해금한다`() {
+    fun `현실 교감은 친밀도를 올리고 단계에 따라 데이트 룩을 해금한다`() {
         // 교감은 화면에서 고른 파트너(소환 대상)를 대상으로 한다 — 아우렐리아(3)를 선택
-        val vm = TcgGameViewModel(initialOwnedCardIds = listOf(3, 1, 2))
+        // 친밀도 68(일상 사복 단계) → 카페 데이트·선물(+2) → 70에서 데이트 룩 해금
+        val vm = TcgGameViewModel(
+            initialOwnedCardIds = listOf(3, 1, 2),
+            initialBondLevel = AffinityRules.DATE_UNLOCK_BOND - 2
+        )
         vm.selectSummonCard(3)
 
         vm.interactRealWorld(RealWorldActivity.ROMANTIC_EVENING_DATE)
 
         val after = vm.uiState.value
-        // 아우렐리아는 호감도 50으로 합류하므로 카페 데이트(+30)로 80이 된다
-        assertEquals(80, after.partnerBond)
-        assertTrue("호감도 50 이상에서 데이트 룩이 해금된다", after.dateLookUnlocked)
+        assertEquals(
+            "교감은 보조 경로 — 데이트 1회 +2",
+            AffinityRules.DATE_UNLOCK_BOND,
+            after.partnerBond
+        )
+        assertTrue("친밀도 70에서 데이트 룩이 해금된다", after.dateLookUnlocked)
         assertEquals(VisualState.ROMANTIC_DATE, after.partnerVisual)
     }
 

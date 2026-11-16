@@ -77,10 +77,14 @@ object CardCatalog {
     const val ROSTER_SIZE: Int = 170
 
     /**
-     * 합류 시점 호감도 — 170명 전원이 50에서 시작한다.
-     * 데이트 룩 해금 기준(50)과 같으므로 로비·도감에서 3단 비주얼을 바로 확인할 수 있다.
+     * 합류 시점 친밀도 — 170명 전원이 **0**에서 시작한다(2026-11-16 개편).
+     *
+     * 예전에는 50으로 일괄 시작해서 일상·데이트 룩이 처음부터 열려 있었고,
+     * 해금 진행이 실제로 작동하지 않았다. 이제는 0에서 시작해
+     * **전투 출전**으로 30(일상 사복·현실 소환) → 70(데이트 룩) → 100(페어 오의)까지 올린다.
+     * (규칙 상수는 [com.game.tcg.core.engine.AffinityRules] 한 곳에 있다.)
      */
-    const val ROSTER_BOND_SEED: Int = 50
+    const val ROSTER_BOND_SEED: Int = 0
 
     // ── 170명 등록 기록 ────────────────────────────────────────────
     private val RECORDS: List<CharacterRecord> = listOf(
