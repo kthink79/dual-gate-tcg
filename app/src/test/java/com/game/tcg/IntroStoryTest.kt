@@ -1,5 +1,6 @@
 package com.game.tcg
 
+import com.game.tcg.core.engine.IntroAdvancePolicy
 import com.game.tcg.core.engine.IntroEffect
 import com.game.tcg.core.engine.IntroSceneId
 import com.game.tcg.core.engine.IntroScript
@@ -315,6 +316,54 @@ class IntroStoryTest {
             assertEquals(IntroArtRegistry.resId(index), IntroArtRegistry.resIdOf(scene.id))
             assertEquals("intro_scene_${index + 1}", scene.id.artName)
         }
+    }
+
+    // ── 5. 터치 진행 (2026-11-16 사용자 요청: 자동 재생 제거) ─────────
+
+    @Test
+    fun `인트로는 자동으로 넘어가지 않고 터치로만 진행된다`() {
+        assertFalse("자동 넘김 금지", IntroAdvancePolicy.AUTO_ADVANCE_ENABLED)
+        assertEquals("화면을 터치해 계속 ▶", IntroAdvancePolicy.TAP_PROMPT)
+        assertEquals("⚔ 이계로 들어가기", IntroAdvancePolicy.START_PROMPT)
+
+        var state = engine.initialState(alreadySeen = false)
+        assertTrue(IntroAdvancePolicy.isWaitingForTap(state))
+        assertEquals(IntroAdvancePolicy.TAP_PROMPT, IntroAdvancePolicy.prompt(state))
+
+        // 한 번에 한 장면씩만 — 탭 1회 = 장면 +1
+        state = engine.advance(state)
+        assertEquals(1, state.sceneIndex)
+        assertTrue(state.isPlaying)
+        state = engine.advance(state)
+        assertEquals(2, state.sceneIndex)
+        state = engine.advance(state)
+        assertEquals(3, state.sceneIndex)
+        assertEquals(IntroAdvancePolicy.START_PROMPT, IntroAdvancePolicy.prompt(state))
+
+        // 마지막 장면에서 탭하면 인트로 종료
+        state = engine.advance(state)
+        assertFalse(state.isPlaying)
+        assertFalse(IntroAdvancePolicy.isWaitingForTap(state))
+    }
+
+    @Test
+    fun `하단 안내는 장면 번호를 1부터 4까지 보여 준다`() {
+        var state = engine.initialState(alreadySeen = false)
+        (1..4).forEach { expected ->
+            assertEquals("$expected/4", IntroAdvancePolicy.sceneCounter(state))
+            state = engine.advance(state)
+        }
+    }
+
+    @Test
+    fun `ViewModel도 탭 호출 없이는 장면을 넘기지 않는다`() {
+        val vm = TcgGameViewModel()
+        val before = vm.uiState.value.introStory.sceneIndex
+        assertEquals(before, vm.uiState.value.introStory.sceneIndex)
+        // 탭(=advanceIntro) 전에는 그대로 0장면
+        assertEquals(0, vm.uiState.value.introStory.sceneIndex)
+        vm.advanceIntro()
+        assertEquals(1, vm.uiState.value.introStory.sceneIndex)
     }
 
     @Test

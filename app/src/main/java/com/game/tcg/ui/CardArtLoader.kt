@@ -111,12 +111,35 @@ fun CardArtImage(
     alignment: Alignment = Alignment.Center,
     targetWidthPx: Int = 540
 ) {
-    val context = LocalContext.current
     val resId = CharacterArtRegistry.resId(cardId, visual)
     if (resId == null) {
         ArtPlaceholder(modifier)
         return
     }
+    ResourceArtImage(
+        resId = resId,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        contentScale = contentScale,
+        alignment = alignment,
+        targetWidthPx = targetWidthPx
+    )
+}
+
+/**
+ * 드로어블 리소스 1장을 화면 크기에 맞춰 축소 디코딩해 그린다.
+ * 카드가 아닌 배경(인트로 장면·구역 배너)을 그릴 때도 같은 LRU 캐시를 공유한다.
+ */
+@Composable
+fun ResourceArtImage(
+    resId: Int,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop,
+    alignment: Alignment = Alignment.Center,
+    targetWidthPx: Int = 540
+) {
+    val context = LocalContext.current
     // 요청 폭이 0/음수여도 캐시 키·축소 배율이 일관되도록 보정
     val targetPx = targetWidthPx.coerceAtLeast(1)
     val bitmap by produceState<ImageBitmap?>(

@@ -46,7 +46,8 @@ enum class IntroEffect {
  * @param narration 자막 본문 (2~3줄)
  * @param effect   Canvas 연출
  * @param accentHex 강조색 (0xAARRGGBB)
- * @param autoAdvanceMillis 자동 진행까지의 시간 — 화면을 탭하면 즉시 넘어간다
+ * @param autoAdvanceMillis 장면 연출 길이 — 카메라 무빙(켄 번즈)의 길이로만 쓴다.
+ *        **자동 넘김에는 쓰지 않는다**(2026-11-16 사용자 요청: 자동 재생이 너무 빨라 감상 불가 → 터치 진행)
  */
 data class IntroScene(
     val id: IntroSceneId,
@@ -65,7 +66,7 @@ data class IntroScene(
 /** 4장면 대본 */
 object IntroScript {
 
-    /** 장면당 자동 진행 시간의 허용 범위 (사용자 요청: 약 3.5~4초) */
+    /** 장면당 연출 길이의 허용 범위 — 자동 넘김이 아니라 카메라 무빙 길이 기준 */
     const val MIN_AUTO_ADVANCE_MS = 3_500L
     const val MAX_AUTO_ADVANCE_MS = 4_000L
 
@@ -135,6 +136,35 @@ object IntroScript {
 }
 
 /**
+ * 인트로 진행 정책 — 자동 넘김 제거(2026-11-16 사용자 요청).
+ *
+ * "자동 재생 속도가 너무 빨라 감상하기 어렵다" → 화면을 **터치해야** 다음 장면으로 넘어간다.
+ * 화면(`ui/IntroStoryScreen.kt`)은 시간 기반 [IntroStoryEngine.advance] 호출을 하지 않고,
+ * 탭 콜백에서만 부른다. 이 객체는 그 사실과 안내 문구를 한곳에 고정해 테스트로 지킨다.
+ */
+object IntroAdvancePolicy {
+
+    /** 자동 넘김 타이머를 쓰지 않는다 */
+    const val AUTO_ADVANCE_ENABLED: Boolean = false
+
+    /** 하단 탭 안내 (중간 장면) */
+    const val TAP_PROMPT: String = "화면을 터치해 계속 ▶"
+
+    /** 마지막 장면의 시작 버튼 */
+    const val START_PROMPT: String = "⚔ 이계로 들어가기"
+
+    /** 장면 번호 표기 ("1/4") */
+    fun sceneCounter(state: IntroStoryState): String =
+        "${state.sceneIndex + 1}/${IntroScript.sceneCount}"
+
+    /** 장면별 하단 안내 — 마지막 장면이면 시작 버튼 문구 */
+    fun prompt(state: IntroStoryState): String = if (state.isLastScene) START_PROMPT else TAP_PROMPT
+
+    /** 이 장면이 사용자 입력을 기다리는 중인지 (재생 중이면 항상 true — 자동 진행 없음) */
+    fun isWaitingForTap(state: IntroStoryState): Boolean = state.isPlaying
+}
+
+/**
  * 인트로 재생 상태.
  *
  * @param sceneIndex   현재 장면 (0 ~ 3)
@@ -170,7 +200,7 @@ data class IntroStoryState(
  * 인트로 상태 전이 엔진 — 순수 함수만 가진다.
  *
  * - [initialState]  : 앱 시작 시 상태 (이미 본 적이 있으면 재생하지 않는다)
- * - [advance]       : 탭 / 자동 진행 — 마지막 장면이면 인트로를 끝낸다
+ * - [advance]       : 화면 터치 — 마지막 장면이면 인트로를 끝낸다 (자동 넘김 없음)
  * - [skip]          : SKIP 버튼 — 즉시 끝내고 로비로
  * - [replay]        : 로비의 "🎬 인트로 다시보기"
  */

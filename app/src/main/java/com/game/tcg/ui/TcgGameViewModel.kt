@@ -44,7 +44,11 @@ import com.game.tcg.core.engine.CraftTarget
 import com.game.tcg.core.engine.EquipResult
 import com.game.tcg.core.engine.EquipmentEngine
 import com.game.tcg.core.engine.ICardUpgradeEngine
+import com.game.tcg.core.engine.IPackOpeningEngine
 import com.game.tcg.core.engine.IPackShopEngine
+import com.game.tcg.core.engine.PackOpeningEngine
+import com.game.tcg.core.engine.PackOpeningPhase
+import com.game.tcg.core.engine.PackOpeningState
 import com.game.tcg.core.engine.PackShopEngine
 import com.game.tcg.core.engine.StageClearOutcome
 import com.game.tcg.core.engine.StageEngine
@@ -424,6 +428,8 @@ data class TcgGameState(
     val packTickets: Int = 0,
     val equipment: List<EquipmentItem> = emptyList(),
     val lastPackOpen: PackOpenResult? = null,
+    /** 카드팩 개봉 연출 단계 (봉인 카드팩 → 카드 1장씩 → 전체 그리드) */
+    val packOpening: PackOpeningState = PackOpeningState(),
     val shopMessage: String? = null,
     // ── 성장: 강화(업그레이드) · 연성(합성) ──
     val growthCardId: Int = 0,
@@ -439,6 +445,8 @@ data class TcgGameState(
     // ── 도입부 스토리(4장면 컷신) ──
     val introStory: IntroStoryState = IntroStoryState(),
     // ── 메인 로비 (캐릭터 중심) · 탐색 ──
+    /** 로비 「📊 정보」 패널이 열렸는지 — 상단 1줄 요약만 남기고 나머지 정보를 여기에 모은다 */
+    val isInfoPanelOpen: Boolean = false,
     val currentScreen: LobbyDestination = LobbyDestination.LOBBY,
     val lobbyHeroId: Int = TcgGameViewModel.DEFAULT_LOBBY_HERO_ID,
     val lobbyVisual: VisualState = VisualState.BATTLE,
@@ -604,6 +612,12 @@ data class TcgGameState(
     /** 도입부 인트로가 지금 화면을 덮고 있는지 */
     val isIntroPlaying: Boolean get() = introStory.isPlaying
 
+    /** 카드팩 개봉 연출이 지금 화면을 덮고 있는지 */
+    val isPackOpeningActive: Boolean get() = packOpening.isActive
+
+    /** 로비 정보 패널의 최상단 1줄 요약 (차원·재화 3종) */
+    val lobbyTopSummaryLine: String get() = LobbyInfoPanel.topSummaryLine(this)
+
     /** 메인 로비 경보 — 누르면 해당 화면으로 이동 */
     val lobbyAlerts: List<LobbyAlert>
         get() = buildList {
@@ -655,6 +669,8 @@ class TcgGameViewModel(
     private val introEngine: IntroStoryEngine = IntroStoryEngine(),
     // ── 진행 루프(2026-11-16): 카드팩 · 강화 · 연성 · 장비 · 스테이지 ──
     private val packShopEngine: IPackShopEngine = PackShopEngine(),
+    /** 카드팩 개봉 연출 상태 전이 (봉인 → 1장씩 → 전체 보기) */
+    private val packOpeningEngine: IPackOpeningEngine = PackOpeningEngine(),
     private val upgradeEngine: ICardUpgradeEngine = CardUpgradeEngine(),
     /** 시작 3장 추첨 · 카드팩 개봉 · 장비 드롭에 쓰는 난수 (테스트는 고정 시드) */
     private val random: Random = Random.Default,
@@ -869,6 +885,7 @@ class TcgGameViewModel(
         updateState { s ->
             s.copy(
                 currentScreen = LobbyDestination.LOBBY,
+                isInfoPanelOpen = false,
                 introStory = introEngine.replay(s.introStory),
                 statusMessage = "[도입부] 다시보기 — ${IntroScript.SCENES.first().title}부터 재생합니다."
             )
@@ -900,10 +917,56 @@ class TcgGameViewModel(
     }
 
     /** 좌·우측 측면 서브메뉴에서 기능 화면 열기 */
+    // ──────────────────────────────────────────────────────────────
+    // 메인 로비 「📊 정보」 패널 — 상단 정보 과다를 한곳으로 모은다
+    // ──────────────────────────────────────────────────────────────
+
+    /** 「📊 정보」 — 진행도 · 정신 상태 · 설정 · 경보를 모은 패널 열기 */
+    fun openInfoPanel() {
+        updateState { s ->
+            s.copy(
+                isInfoPanelOpen = true,
+                statusMessage = "[정보] 스테이지·덱·정신 상태·설정을 한곳에서 확인합니다."
+            )
+        }
+    }
+
+    /** 패널 닫기 */
+    fun closeInfoPanel() {
+        updateState { s -> if (!s.isInfoPanelOpen) s else s.copy(isInfoPanelOpen = false) }
+    }
+
+    /** 패널 열기/닫기 토글 */
+    fun toggleInfoPanel() {
+        updateState { s ->
+            if (s.isInfoPanelOpen) {
+                s.copy(isInfoPanelOpen = false)
+            } else {
+                s.copy(
+                    isInfoPanelOpen = true,
+                    statusMessage = "[정보] 스테이지·덱·정신 상태·설정을 한곳에서 확인합니다."
+                )
+            }
+        }
+    }
+
+    /** 패널 안의 경보 → 해당 화면으로 이동하며 패널을 닫는다 */
+    fun openAlertDestination(destination: LobbyDestination) {
+        updateState { s ->
+            s.copy(
+                currentScreen = destination,
+                isInfoPanelOpen = false,
+                audioScene = audioSceneOf(s.copy(currentScreen = destination)),
+                statusMessage = "[${destination.label}] ${destination.tagline}"
+            )
+        }
+    }
+
     fun openScreen(destination: LobbyDestination) {
         updateState { s ->
             s.copy(
                 currentScreen = destination,
+                isInfoPanelOpen = false,
                 audioScene = audioSceneOf(s.copy(currentScreen = destination)),
                 statusMessage = if (destination == LobbyDestination.LOBBY) {
                     "[메인 로비] ${s.lobbyHeroProfile?.displayName ?: s.lobbyHero.name}이(가) 당신을 맞이합니다."
@@ -919,6 +982,7 @@ class TcgGameViewModel(
         updateState { s ->
             s.copy(
                 currentScreen = LobbyDestination.LOBBY,
+                isInfoPanelOpen = false,
                 audioScene = AudioScene.LOBBY,
                 statusMessage = "[메인 로비] ${s.lobbyHeroProfile?.displayName ?: s.lobbyHero.name}이(가) 기다리고 있었습니다."
             )
@@ -2087,11 +2151,61 @@ class TcgGameViewModel(
                 ownedCards = (s.ownedCards + newCards).distinctBy { it.id },
                 shards = wallet,
                 lastPackOpen = applied,
+                packOpening = packOpeningEngine.start(applied),
                 shopMessage = opened.message + ticketLine,
                 statusMessage = opened.message + ticketLine
             )
         }
         return resultOut
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 카드팩 개봉 연출 — 봉인 카드팩 → 카드 1장씩 → 전체 그리드
+    // (구매·개봉 판정은 [openPack]이 끝내고, 이 단계들은 연출만 움직인다)
+    // ──────────────────────────────────────────────────────────────
+
+    /** 봉인된 카드팩을 터치로 개봉 — 첫 카드가 등장한다 */
+    fun tearPackSeal() {
+        updateState { s ->
+            val next = packOpeningEngine.tearSeal(s.packOpening)
+            if (next == s.packOpening) return@updateState s
+            s.copy(
+                packOpening = next,
+                statusMessage = "[개봉] ${next.packName} — 카드 ${next.total}장이 빛을 뿌립니다."
+            )
+        }
+    }
+
+    /** 다음 카드 1장 공개 (마지막 카드 뒤에는 전체 보기로) */
+    fun revealNextPackDraw() {
+        updateState { s ->
+            val next = packOpeningEngine.revealNext(s.packOpening)
+            if (next == s.packOpening) return@updateState s
+            s.copy(packOpening = next)
+        }
+    }
+
+    /** 남은 카드를 한 번에 펼치기 (전체 그리드) */
+    fun revealAllPackDraws() {
+        updateState { s ->
+            val next = packOpeningEngine.revealAll(s.packOpening)
+            if (next == s.packOpening) return@updateState s
+            s.copy(packOpening = next)
+        }
+    }
+
+    /**「🎬 개봉 연출 다시 보기」 — 마지막 개봉 결과로 봉인 카드팩부터 다시 연출한다 */
+    fun replayPackOpening() {
+        val result = _uiState.value.lastPackOpen ?: return
+        updateState { s -> s.copy(packOpening = packOpeningEngine.start(result)) }
+    }
+
+    /** 개봉 연출 닫기 — 결과는 상점 화면 아래 목록에 그대로 남는다 */
+    fun closePackOpening() {
+        updateState { s ->
+            if (!s.packOpening.isActive) return@updateState s
+            s.copy(packOpening = packOpeningEngine.close())
+        }
     }
 
     // ──────────────────────────────────────────────────────────────

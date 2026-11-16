@@ -130,10 +130,19 @@ fun TcgApp(viewModel: TcgGameViewModel) {
         }
     }
 
-    // Android 시스템 뒤로가기 → 인트로 중이면 SKIP, 그 외에는 메인 로비
-    BackHandler(enabled = isIntroPlaying || screen != LobbyDestination.LOBBY) {
+    // Android 시스템 뒤로가기 → 인트로 중이면 SKIP, 개봉 연출/정보 패널이면 닫기,
+    // 그 외에는 메인 로비로 복귀
+    BackHandler(
+        enabled = isIntroPlaying || state.packOpening.isActive || state.isInfoPanelOpen ||
+            screen != LobbyDestination.LOBBY
+    ) {
         audio.click()
-        if (isIntroPlaying) viewModel.skipIntro() else viewModel.backToLobby()
+        when {
+            isIntroPlaying -> viewModel.skipIntro()
+            state.packOpening.isActive -> viewModel.closePackOpening()
+            state.isInfoPanelOpen -> viewModel.closeInfoPanel()
+            else -> viewModel.backToLobby()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -172,7 +181,12 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                             onCycleHero = { direction -> audio.click(); viewModel.cycleLobbyHero(direction) },
                             onSelectVisual = { visual -> audio.click(); viewModel.selectLobbyVisual(visual) },
                             onReplayIntro = { audio.click(); viewModel.replayIntro() },
-                            onResetGame = { audio.click(); viewModel.resetGame() }
+                            onResetGame = { audio.click(); viewModel.resetGame() },
+                            onOpenInfo = { audio.click(); viewModel.openInfoPanel() },
+                            onCloseInfo = { audio.click(); viewModel.closeInfoPanel() },
+                            // 🔊 아이콘·정보 패널의 BGM/SFX 토글 — 재생기와 화면 상태를 함께 맞춘다
+                            onToggleBgm = { syncAudio(audio, viewModel) { it.toggleBgm() } },
+                            onToggleSfx = { syncAudio(audio, viewModel) { it.toggleSfx() } }
                         )
                         LobbyDestination.SCENARIO -> ScenarioScreen(
                             state = state,
@@ -220,7 +234,13 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                             state = state,
                             onOpenPack = { packId -> viewModel.openPack(packId) },
                             onOpenGrowth = { viewModel.openScreen(LobbyDestination.GROWTH) },
-                            onOpenCollection = { viewModel.openScreen(LobbyDestination.COLLECTION) }
+                            onOpenCollection = { viewModel.openScreen(LobbyDestination.COLLECTION) },
+                            onTearPack = { viewModel.tearPackSeal() },
+                            onRevealNextDraw = { viewModel.revealNextPackDraw() },
+                            onRevealAllDraws = { viewModel.revealAllPackDraws() },
+                            onCloseOpening = { viewModel.closePackOpening() },
+                            onReplayOpening = { viewModel.replayPackOpening() },
+                            onSfx = { effect -> audio.playSfx(effect) }
                         )
                         LobbyDestination.GROWTH -> GrowthScreen(
                             state = state,
@@ -436,9 +456,10 @@ fun GameAudioEffects(state: com.game.tcg.ui.TcgGameState, audio: AudioManager) {
         if (state.lastAllyHitTick > 0) audio.hit()
         state.lastAllyHitTick
     }
-    // 카드팩 개봉 결과
-    androidx.compose.runtime.remember(state.lastPackOpen) {
-        if (state.lastPackOpen != null) audio.packOpen()
+    // 카드팩 개봉 결과 — 상점 화면에서는 개봉 연출(봉인 해제 순간)이 직접 pack_open 을 울리므로
+    // 여기서는 중복 재생을 피한다.
+    androidx.compose.runtime.remember(state.lastPackOpen, state.currentScreen) {
+        if (state.lastPackOpen != null && state.currentScreen != LobbyDestination.SHOP) audio.packOpen()
         state.lastPackOpen
     }
     // 강화·연성·초월·장비 성공 (growthMessage 가 바뀔 때)
@@ -470,5 +491,26 @@ fun GameAudioEffects(state: com.game.tcg.ui.TcgGameState, audio: AudioManager) {
     androidx.compose.runtime.remember(state.reincarnationPool.size) {
         if (state.reincarnationPool.isNotEmpty()) audio.hit()
         state.reincarnationPool.size
+    }
+}
+
+/**
+ * 🔊 BGM·SFX 토글 — 재생기(AudioManager) 설정과 화면 상태(TcgGameState.audioSettings)를
+ * 함께 갱신해 로비 정보 패널의 표시가 실제 재생 상태와 어긋나지 않게 한다.
+ */
+private fun syncAudio(
+    audio: AudioManager,
+    viewModel: TcgGameViewModel,
+    toggle: (AudioManager) -> Unit
+) {
+    toggle(audio)
+    val settings = audio.settings()
+    viewModel.updateAudioSettings {
+        it.copy(
+            bgmEnabled = settings.bgmEnabled,
+            sfxEnabled = settings.sfxEnabled,
+            bgmVolume = settings.bgmVolume,
+            sfxVolume = settings.sfxVolume
+        )
     }
 }

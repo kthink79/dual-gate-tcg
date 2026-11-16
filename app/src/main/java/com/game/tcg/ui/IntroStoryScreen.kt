@@ -51,11 +51,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.game.tcg.R
+import com.game.tcg.core.engine.IntroAdvancePolicy
 import com.game.tcg.core.engine.IntroEffect
 import com.game.tcg.core.engine.IntroSceneId
 import com.game.tcg.core.engine.IntroScript
@@ -92,13 +92,19 @@ object IntroArtRegistry {
 }
 
 /**
+ * 장면 카메라 무빙(Ken Burns) 길이 — 자동 넘김 대신 연출만 천천히 이어진다.
+ */
+private const val KEN_BURNS_MILLIS = 6_000
+
+/**
  * 《듀얼 게이트》 도입부 스토리 — 4장면 풀스크린 컷신.
  *
  * 연출
- *  - 장면마다 부드러운 Ken Burns 줌/패닝 (장면 길이에 맞춰 선형 진행)
+ *  - 장면마다 부드러운 Ken Burns 줌/패닝 (장면이 바뀌면 처음부터, 연출 길이 6초)
  *  - Canvas 기반 빛 입자 · 카드팩 섬광/충격 링 · 회전하는 차원의 문 링 · 소환 오라
  *  - 단계별 자막 페이드인 (ACT → 부제 → 제목 → 본문 → 안내)
- *  - 장면당 3.8~4.2초 자동 진행 + 화면 탭으로 즉시 다음 장면 + 우상단 SKIP
+ *  - **자동 넘김 없음** — 화면을 터치해야 다음 장면으로 넘어간다(2026-11-16 사용자 요청).
+ *    하단에 「화면을 터치해 계속 ▶」 안내와 장면 번호(1/4)를 보여 주고, 우상단 SKIP 은 그대로 둔다.
  *  - 마지막 장면에서는 안내 문구 대신 「⚔ 이계로 들어가기」 버튼
  *
  * 상태 전이는 모두 [com.game.tcg.core.engine.IntroStoryEngine]이 담당하고, 이 화면은
@@ -114,7 +120,7 @@ fun IntroStoryScreen(
     val scene = state.scene
     val accent = Color(scene.accentHex)
 
-    // ── Ken Burns: 장면이 바뀔 때마다 0 → 1 로 다시 진행 ──
+    // ── Ken Burns: 장면이 바뀔 때마다 0 → 1 로 다시 진행 (자동 넘김 없음 — 연출만 이어진다) ──
     val kenBurns = remember { Animatable(0f) }
     LaunchedEffect(state.sceneIndex, state.isPlaying) {
         if (!state.isPlaying) return@LaunchedEffect
@@ -122,18 +128,14 @@ fun IntroStoryScreen(
         kenBurns.animateTo(
             targetValue = 1f,
             animationSpec = tween(
-                durationMillis = scene.autoAdvanceMillis.toInt() + 700,
+                durationMillis = KEN_BURNS_MILLIS,
                 easing = LinearEasing
             )
         )
     }
 
-    // ── 자동 진행: 장면 시간이 지나면 다음 장면(=마지막이면 종료) ──
-    LaunchedEffect(state.sceneIndex, state.isPlaying) {
-        if (!state.isPlaying) return@LaunchedEffect
-        delay(scene.autoAdvanceMillis)
-        onNext()
-    }
+    // 자동 진행 타이머는 없다 — 다음 장면은 사용자가 화면을 터치해야 넘어간다.
+    // (엔진 정책: IntroAdvancePolicy.AUTO_ADVANCE_ENABLED = false)
 
     // ── 입자 · 링 애니메이션용 연속 시계 (0~1 반복) ──
     val clock by rememberInfiniteTransition(label = "intro-clock").animateFloat(
@@ -362,13 +364,33 @@ fun IntroStoryScreen(
                     )
                 }
             } else {
-                Text(
-                    "화면을 탭하면 다음 장면 ▸",
-                    color = TcgColors.Muted.copy(alpha = 0.9f * hintAlpha * (0.6f + 0.4f * pulsing)),
-                    fontSize = 10.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // 터치 진행 안내 — 자동 넘김이 없으므로 가장 눈에 띄는 위치에 둔다
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(hintAlpha)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color(0x99120E1C))
+                        .border(1.dp, accent.copy(alpha = 0.7f), RoundedCornerShape(50))
+                        .clickable { onNext() }
+                        .padding(horizontal = 16.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        IntroAdvancePolicy.TAP_PROMPT,
+                        color = TcgColors.Text.copy(alpha = 0.7f + 0.3f * pulsing),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        IntroAdvancePolicy.sceneCounter(state),
+                        color = accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

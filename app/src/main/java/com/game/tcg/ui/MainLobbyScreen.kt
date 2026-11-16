@@ -3,8 +3,6 @@ package com.game.tcg.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,16 +13,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,15 +29,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.game.tcg.core.model.TcgCard
 import com.game.tcg.core.model.Element
 import com.game.tcg.core.model.VisualState
 
 /**
- * 메인 로비 — 캐릭터 중심 화면
- * 중앙에 대표 캐릭터를 크게 세우고, 좌측(이세계·모험) / 우측(현실·관리) 측면 레일에
- * 서브메뉴 6종을 도킹한다. 상단은 랭크·차원 에너지·재화·경보 스트립, 하단은
- * 캐릭터 이름·칭호·호감도·3단 비주얼·캐릭터 전환.
+ * 메인 로비 — 캐릭터 중심 화면.
+ *
+ * 2026-11-16 사용자 요청(실기기 스크린샷) 반영:
+ *  - 상단은 **1줄**만 — 차원 에너지 · 재화 3종 · 음소거 아이콘 · 「📊 정보」 버튼.
+ *    (스테이지·덱 전투력·보유 인원·정신 상태·자동 저장·인트로 다시보기·새 게임은
+ *     [LobbyInfoOverlay] 패널로 옮겨 캐릭터 얼굴/상반신을 가리지 않게 했다.)
+ *  - 하단 캐릭터 정보도 이름·칭호·호감도·3단 비주얼·캐릭터 전환만 남겨 컴팩트하게 정돈.
+ *  - 좌·우 측면 레일의 서브메뉴 6종은 그대로.
  */
 @Composable
 fun MainLobbyScreen(
@@ -56,21 +53,27 @@ fun MainLobbyScreen(
     onSelectVisual: (VisualState) -> Unit,
     onReplayIntro: () -> Unit = {},
     /** 「새 게임」 — 확인 다이얼로그에서 승인했을 때만 불린다 */
-    onResetGame: () -> Unit = {}
+    onResetGame: () -> Unit = {},
+    /** 「📊 정보」 패널 열기 / 닫기 */
+    onOpenInfo: () -> Unit = {},
+    onCloseInfo: () -> Unit = {},
+    /** 상단 음소거 아이콘 — BGM·SFX 를 함께 끄고 켠다 */
+    onToggleBgm: () -> Unit = {},
+    onToggleSfx: () -> Unit = {}
 ) {
     val hero = state.lobbyHero
     val profile = state.lobbyHeroProfile
     val roster = state.lobbyRoster
     val rosterIndex = roster.indexOf(state.lobbyHeroId).coerceAtLeast(0)
-    // 진행 초기화 확인 다이얼로그
-    var showResetDialog by remember { mutableStateOf(false) }
+    val settings = audioSettings ?: state.audioSettings
+    val muted = !settings.bgmEnabled && !settings.sfxEnabled
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(TcgColors.Background)
     ) {
-        // ── 중앙 대형 캐릭터 아트 ──
+        // ── 중앙 대형 캐릭터 아트 (화면의 주인공) ──
         CardArtImage(
             cardId = hero.id,
             visual = state.lobbyVisual,
@@ -85,120 +88,75 @@ fun MainLobbyScreen(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color(0xD90B0A12),
-                            Color(0x140B0A12),
-                            Color(0x330B0A12),
+                            Color(0xB30B0A12),
+                            Color(0x0A0B0A12),
+                            Color(0x1A0B0A12),
                             Color(0xF20B0A12)
                         )
                     )
                 )
         )
 
-        // ── 상단 상태 스트립 + 경보 ──
-        Column(
+        // ── ① 최상단 1줄: 차원·재화 요약 + 음소거 + 📊 정보 ──
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Pill("🎴 듀얼 게이트", TcgColors.Violet)
-                Spacer(Modifier.width(5.dp))
-                Pill(state.storyProgressLabel, TcgColors.Muted)
-                Spacer(Modifier.weight(1f))
-                // 🔊/🔇 BGM · SFX 토글 (로비 상단 우측)
-                if (audioManager != null && audioSettings != null) {
-                    AudioToggleRowInline(audioManager, audioSettings)
-                    Spacer(Modifier.width(6.dp))
-                }
-                Pill(
-                    if (state.combatPenalty.totalStacks > 0) "[홀림] ${state.combatPenalty.totalStacks}" else "정신 맑음",
-                    if (state.combatPenalty.totalStacks > 0) TcgColors.Danger else TcgColors.Heal
-                )
+            // 좁은 화면에서도 재화 4종 + 정보 버튼이 한 줄에 들어가도록 제목은 아이콘만 남긴다
+            LobbySummaryChip("🎴", TcgColors.Violet)
+            LobbyInfoPanel.topSummary(state).forEach { entry ->
+                LobbySummaryChip(entry.line, entry.tone.color())
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Pill("⚡ 차원 ${state.gateEnergy}/${state.gateEnergyMax}", TcgColors.Mana)
-                Pill("🪙 ${state.gold}G", TcgColors.Gold)
-                Pill("💎 ${state.gems}", TcgColors.Violet)
-                Pill("🎟 ${state.packTickets}", TcgColors.Heal)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Pill("🗺 ${state.stageCleared.size}/30 스테이지", TcgColors.Violet)
-                Pill("⚔ 덱 ${state.deckTotalPower}", TcgColors.Heal)
-                Pill("🎴 보유 ${state.ownedCards.size}명", TcgColors.Gold)
-                if (state.hasSummonBuff) {
-                    Pill("소환 +${state.summonBuffPercent}% (${state.summonBuffBattles})", TcgColors.Mana)
-                }
-            }
-            if (state.lobbyAlerts.isNotEmpty()) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    state.lobbyAlerts.take(3).forEach { alert ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .clickable { onOpenScreen(alert.destination) }
-                        ) {
-                            Pill(
-                                "⚠ ${alert.label} ›",
-                                if (alert.isUrgent) TcgColors.Danger else TcgColors.Gold
-                            )
+            Spacer(Modifier.weight(1f))
+            // 작은 음소거 아이콘 — 누르면 BGM·SFX 를 함께 끄고 켠다
+            Box(
+                modifier = Modifier
+                    .width(28.dp)
+                    .height(24.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0x99120E1C))
+                    .border(1.dp, TcgColors.Line, RoundedCornerShape(50))
+                    .clickable {
+                        if (muted) {
+                            if (!settings.bgmEnabled) onToggleBgm()
+                            if (!settings.sfxEnabled) onToggleSfx()
+                        } else {
+                            if (settings.bgmEnabled) onToggleBgm()
+                            if (settings.sfxEnabled) onToggleSfx()
                         }
-                    }
-                }
-            }
-            // 「🎬 인트로 다시보기」 + 「🆕 새 게임」 — 진행은 상태 변화마다 자동 저장된다
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                Pill("💾 진행 자동 저장", TcgColors.Muted)
-                Spacer(Modifier.width(5.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .clickable { onReplayIntro() }
-                ) {
-                    Pill("🎬 인트로 다시보기", TcgColors.Violet)
-                }
-                Spacer(Modifier.width(5.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .clickable { showResetDialog = true }
-                ) {
-                    Pill("🆕 새 게임", TcgColors.Danger)
-                }
+                Text(if (muted) "🔇" else "🔊", fontSize = 10.sp)
             }
-
-            if (showResetDialog) {
-                AlertDialog(
-                    onDismissRequest = { showResetDialog = false },
-                    title = { Text("새 게임으로 시작할까요?", color = TcgColors.Text) },
-                    text = {
-                        Text(
-                            "보유 카드 ${state.ownedCards.size}명 · 스테이지 ${state.stageCleared.size}/30 · " +
-                                "${state.gold}G 가 모두 사라지고 처음 상태로 돌아갑니다.\n" +
-                                "이 작업은 되돌릴 수 없습니다.",
-                            color = TcgColors.Muted
-                        )
-                    },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            showResetDialog = false
-                            onResetGame()
-                        }) { Text("진행 초기화", color = TcgColors.Danger) }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showResetDialog = false }) {
-                            Text("취소", color = TcgColors.Violet)
-                        }
+            // 📊 정보 — 상세 정보·설정·경보·인트로 다시보기·새 게임이 모두 여기로
+            val alertCount = LobbyInfoPanel.alertCount(state)
+            val urgent = LobbyInfoPanel.hasUrgentAlert(state)
+            val infoColor = if (urgent) TcgColors.Danger else TcgColors.Violet
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(infoColor.copy(alpha = 0.22f))
+                    .border(1.dp, infoColor.copy(alpha = 0.8f), RoundedCornerShape(50))
+                    .clickable { onOpenInfo() }
+                    .padding(horizontal = 9.dp, vertical = 4.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        LobbyInfoPanel.BUTTON_LABEL,
+                        color = if (urgent) TcgColors.Danger else TcgColors.Text,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (alertCount > 0) {
+                        Spacer(Modifier.width(3.dp))
+                        Text("$alertCount", color = infoColor, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
                     }
-                )
+                }
             }
         }
 
@@ -242,44 +200,45 @@ fun MainLobbyScreen(
             }
         }
 
-        // ── 하단 캐릭터 패널 ──
+        // ── 하단 캐릭터 패널 (컴팩트 — 캐릭터 비중 최대화) ──
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            // 이름 + 칭호 (한 덩어리로)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Pill("★ 대표 캐릭터", TcgColors.Violet, filled = true)
                 Pill(hero.element.displayName, elementColor(hero.element))
                 if (profile?.isDemonLord == true) Pill("마왕", TcgColors.Danger, filled = true)
-                if (hero.isMemoryReset) {
-                    Pill("기억 파편 ${hero.memoryFragments}/${TcgCard.MEMORY_FRAGMENT_TARGET}", TcgColors.Abyss)
-                }
+                Text(
+                    profile?.displayName ?: hero.name,
+                    color = TcgColors.Text,
+                    fontSize = 21.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
-            Text(
-                profile?.displayName ?: hero.name,
-                color = TcgColors.Text,
-                fontSize = 23.sp,
-                fontWeight = FontWeight.Bold
-            )
             Text(
                 profile?.title ?: hero.skillText,
-                color = TcgColors.Violet,
-                fontSize = 11.sp,
+                color = TcgColors.Violet.copy(alpha = 0.95f),
+                fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold
             )
+            // 호감도 · 전투력 · 상태 (한 줄)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Pill("호감도 ${state.lobbyHeroBond}/100", TcgColors.Gold)
-                Pill("${hero.starLevel}★ · ATK ${hero.atk}", TcgColors.Muted)
+                Pill("❤ ${state.lobbyHeroBond}/100", TcgColors.Gold)
+                Pill("${hero.starLevel}★ ATK ${hero.atk}", TcgColors.Muted)
                 if (state.combatPenalty.totalStacks > 0) {
-                    Pill("[홀림] ${state.combatPenalty.totalStacks}스택", TcgColors.Danger)
+                    Pill("🌫 ${state.combatPenalty.totalStacks}", TcgColors.Danger)
+                }
+                if (hero.isMemoryReset) {
+                    Pill("🧩 ${hero.memoryFragments}/${com.game.tcg.core.model.TcgCard.MEMORY_FRAGMENT_TARGET}", TcgColors.Abyss)
                 }
             }
-            Box(modifier = Modifier.width(190.dp)) {
-                StatBar(ratio = state.lobbyHeroBond / 100f, color = TcgColors.Gold, height = 6)
+            Box(modifier = Modifier.width(170.dp)) {
+                StatBar(ratio = state.lobbyHeroBond / 100f, color = TcgColors.Gold, height = 5)
             }
 
             // 3단 비주얼 전환
@@ -308,7 +267,7 @@ fun MainLobbyScreen(
                 HeroCycleButton("◀") { onCycleHero(-1) }
                 Spacer(Modifier.width(8.dp))
                 // 170명 이름 칩은 화면에 보이는 만큼만 구성한다(작은 기기 프레임 드롭 방지)
-                androidx.compose.foundation.lazy.LazyRow(
+                LazyRow(
                     modifier = Modifier.weight(1f, fill = false),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -329,10 +288,37 @@ fun MainLobbyScreen(
             }
             Text(
                 "대표 캐릭터 ${rosterIndex + 1}/${roster.size} · 좌우 서브메뉴로 이동",
-                color = TcgColors.Muted,
+                color = TcgColors.Muted.copy(alpha = 0.8f),
                 fontSize = 8.sp
             )
         }
+
+        // ── 📊 정보 패널 (모달 시트) ──
+        if (state.isInfoPanelOpen) {
+            LobbyInfoOverlay(
+                state = state,
+                onClose = onCloseInfo,
+                onOpenDestination = onOpenScreen,
+                onReplayIntro = onReplayIntro,
+                onToggleBgm = onToggleBgm,
+                onToggleSfx = onToggleSfx,
+                onResetGame = onResetGame
+            )
+        }
+    }
+}
+
+/** 로비 최상단 1줄 요약 칩 — 아주 작고 반투명하게 */
+@Composable
+private fun LobbySummaryChip(label: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color(0x99120E1C))
+            .border(1.dp, color.copy(alpha = 0.55f), RoundedCornerShape(50))
+            .padding(horizontal = 7.dp, vertical = 3.dp)
+    ) {
+        Text(label, color = color, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
@@ -376,45 +362,5 @@ private fun HeroCycleButton(label: String, onClick: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Text(label, color = TcgColors.Violet, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-/**
- * 로비 상단의 🔊/🔇 BGM·SFX 토글 (MainActivity 의 AudioToggleRow 와 같은 동작).
- * MainActivity 패키지 순환 참조를 피하기 위해 여기서 가볍게 다시 그린다.
- */
-@Composable
-private fun AudioToggleRowInline(
-    audio: com.game.tcg.audio.AudioManager,
-    settings: com.game.tcg.audio.AudioSettings
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        ToggleChip(
-            label = if (settings.bgmEnabled) "🔊 BGM" else "🔇 BGM",
-            active = settings.bgmEnabled
-        ) { audio.toggleBgm() }
-        Spacer(Modifier.width(4.dp))
-        ToggleChip(
-            label = if (settings.sfxEnabled) "🔊 SFX" else "🔇 SFX",
-            active = settings.sfxEnabled
-        ) {
-            val wasOff = !settings.sfxEnabled
-            audio.toggleSfx()
-            if (wasOff) audio.click()
-        }
-    }
-}
-
-@Composable
-private fun ToggleChip(label: String, active: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(if (active) TcgColors.Violet.copy(alpha = 0.18f) else TcgColors.SurfaceAlt.copy(alpha = 0.9f))
-            .border(1.dp, if (active) TcgColors.Violet.copy(alpha = 0.6f) else TcgColors.Line, RoundedCornerShape(50))
-            .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-    ) {
-        Text(label, color = if (active) TcgColors.Violet else TcgColors.Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
     }
 }
