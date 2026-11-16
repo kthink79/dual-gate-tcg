@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -44,6 +45,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.game.tcg.core.model.CardCatalog
 import java.io.File
 import kotlin.math.min
@@ -78,6 +81,20 @@ fun CharacterVideoSurface(
         onDispose { playback.release() }
     }
 
+    // 앱이 백그라운드로 가면 영상도 멈춘다 — 화면을 떠났는데 소리만 남지 않게
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(playback, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> playback.pauseForBackground()
+                Lifecycle.Event.ON_RESUME -> playback.resumeAfterBackground()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // assetPath 가 바뀌면 뷰를 새로 만든다 — 이전 카드 영상이 남아 재생되지 않게
     key(assetPath) {
         AndroidView(
@@ -110,6 +127,7 @@ private class CharacterVideoPlayback(
     private var attachedTexture: SurfaceTexture? = null
     private var videoWidth = 0
     private var videoHeight = 0
+    private var pausedByBackground = false
     private var released = false
 
     fun attach(textureView: TextureView) {
@@ -188,6 +206,25 @@ private class CharacterVideoPlayback(
             }
         }
         mp.setDataSource(cached.absolutePath)
+    }
+
+    /** 홈·다른 앱으로 나가면 일시정지 (돌아오면 이어서) */
+    fun pauseForBackground() {
+        val mp = player ?: return
+        pausedByBackground = runCatching {
+            if (mp.isPlaying) {
+                mp.pause()
+                true
+            } else {
+                false
+            }
+        }.getOrDefault(false)
+    }
+
+    fun resumeAfterBackground() {
+        if (!pausedByBackground) return
+        pausedByBackground = false
+        player?.let { mp -> runCatching { mp.start() } }
     }
 
     /** 영상 비율 유지 · 화면 안에 맞춤(레터박스) — 좌우/상하 여백은 배경색이 채운다 */
