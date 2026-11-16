@@ -73,6 +73,7 @@ import com.game.tcg.audio.AudioSceneMapper
 import com.game.tcg.audio.AudioSettings
 import com.game.tcg.audio.SfxEffect
 import com.game.tcg.core.model.BattleCardHp
+import com.game.tcg.core.model.BattleLineup
 import com.game.tcg.core.model.BattleRetreatInfo
 import com.game.tcg.core.model.BattleSlot
 import com.game.tcg.core.model.BattleState
@@ -381,6 +382,15 @@ data class TcgGameState(
     val lastAllyHitDamage: Int = 0,
     val lastAllyHitSlot: Int = -1,
     val lastAllyHitTick: Int = 0,
+    /**
+     * 🤖 자동 전투 — 전투에 들어가면 기본 ON (2026-11-16 사용자 요청).
+     * 화면의 `🤖 자동 전투 ON/OFF` 토글이 언제든 끄고 수동 조작으로 돌린다.
+     */
+    val isAutoBattle: Boolean = true,
+    /** ⏩ 전투 배속 — 컷인·타격 이펙트·자동 스텝 시간을 함께 나눈다 */
+    val battleSpeed: BattleSpeed = BattleSpeed.X1,
+    /** ⚔️ 공격 1회의 컷인 스냅샷 (tick 이 바뀌면 화면이 컷인을 다시 재생) */
+    val lastCutIn: BattleCutIn? = null,
     val pendingLootGold: Int = 300,
     val pendingLootGems: Int = 5,
     val lastAcquisition: String? = null,
@@ -490,6 +500,19 @@ data class TcgGameState(
 
     /** 슬롯 0~11 중 배치된 카드 (없으면 null) */
     fun memberAt(slotIndex: Int): PartyMember? = party.firstOrNull { it.slotIndex == slotIndex }
+
+    /**
+     * 적 컷인에 세울 보스 카드 번호 — VS 화면 적 진영 첫 카드와 같은 규칙
+     * (스테이지 보스 → 마왕 → 속성 최고 DEF 순).
+     */
+    val enemyCutInCardId: Int
+        get() = BattleLineup.enemyLineup(
+            enemyElement = enemyElement,
+            enemyName = enemyName,
+            size = 3,
+            isDemonLordBattle = isDemonLordBattle,
+            bossCardId = activeStage?.let { StageCatalog.find(it)?.bossId }
+        ).first().cardId
 
     // ── 진행 루프 파생 상태 ──
 
@@ -1362,6 +1385,8 @@ class TcgGameViewModel(
                 mana = ManaState(1, 1),
                 party = freshParty(s),
                 retreatInfo = BattleRetreatInfo(turn = 1),
+                isAutoBattle = true,
+                lastCutIn = null,
                 pairUltimateUsedThisBattle = false,
                 pairUltimateBanner = null,
                 pairUltimateBannerSubtitle = null,
@@ -1398,6 +1423,8 @@ class TcgGameViewModel(
                 mana = ManaState(1, 1),
                 party = freshParty(s),
                 retreatInfo = BattleRetreatInfo(turn = 1),
+                isAutoBattle = true,
+                lastCutIn = null,
                 pairUltimateUsedThisBattle = false,
                 pairUltimateBanner = null,
                 pairUltimateBannerSubtitle = null,
@@ -1464,7 +1491,17 @@ class TcgGameViewModel(
                 applyVictory(s, newMana, listOf(logLine)).copy(
                     lastEnemyHitDamage = finalDamage,
                     lastEnemyHitTick = s.lastEnemyHitTick + 1,
-                    lastAttackerSlot = attacker.slotIndex
+                    lastAttackerSlot = attacker.slotIndex,
+                    lastCutIn = allyCutIn(
+                        s = s,
+                        attacker = attacker,
+                        front = front,
+                        damage = finalDamage,
+                        multiplier = base.multiplier,
+                        critical = base.isCriticalElement,
+                        ultimate = base.isUltimateTriggered,
+                        lethal = true
+                    )
                 )
             } else {
                 s.copy(
@@ -1473,11 +1510,136 @@ class TcgGameViewModel(
                     lastEnemyHitDamage = finalDamage,
                     lastEnemyHitTick = s.lastEnemyHitTick + 1,
                     lastAttackerSlot = attacker.slotIndex,
+                    lastCutIn = allyCutIn(
+                        s = s,
+                        attacker = attacker,
+                        front = front,
+                        damage = finalDamage,
+                        multiplier = base.multiplier,
+                        critical = base.isCriticalElement,
+                        ultimate = base.isUltimateTriggered,
+                        lethal = false
+                    ),
                     battleLog = s.battleLog + logLine,
                     statusMessage = "[공격] ${attacker.card.name} ${finalDamage} 데미지 — 적 HP ${newEnemyHp}/${s.enemyMaxHp}"
                 )
             }
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 🤖 자동 전투 · ⚔️ 공격 컷인 (2026-11-16 사용자 요청)
+    // ──────────────────────────────────────────────────────────────
+
+    /** 컷인 배너에 쓰는 짧은 이름 (칭호를 뺀 표시 이름) */
+    private fun shortName(cardId: Int, fallback: String): String =
+        TcgGameViewModel.profileOf(cardId)?.displayName?.takeIf { it.isNotBlank() }
+            ?: fallback.substringAfterLast(' ').takeIf { it.isNotBlank() }
+            ?: fallback
+
+    /** 다음 컷인 트리거 번호 */
+    private fun nextCutInTick(s: TcgGameState): Int = (s.lastCutIn?.tick ?: 0) + 1
+
+    /** 아군 공격 컷인 — 공격자 카드 아트를 중앙에 확대하고 속성 빛 테두리를 두른다 */
+    private fun allyCutIn(
+        s: TcgGameState,
+        attacker: PartyMember,
+        front: Boolean,
+        damage: Int,
+        multiplier: Double,
+        critical: Boolean,
+        ultimate: Boolean,
+        lethal: Boolean
+    ): BattleCutIn = BattleCutIn(
+        tick = nextCutInTick(s),
+        fromEnemy = false,
+        kind = if (front) BattleAttackKind.FRONT else BattleAttackKind.BACK,
+        attackerCardId = attacker.card.id,
+        attackerName = shortName(attacker.card.id, attacker.card.name),
+        element = attacker.card.element,
+        attackName = if (front) "공격" else "후열 지원 사격",
+        attackerSlot = attacker.slotIndex,
+        targetName = s.enemyName,
+        damage = damage,
+        critical = critical,
+        multiplier = multiplier,
+        ultimate = ultimate,
+        lethal = lethal
+    )
+
+    /** 적 반격 컷인 — 적 보스 카드 아트가 중앙에 확대되고 아군 피해 슬롯이 흔들린다 */
+    private fun enemyCutIn(s: TcgGameState, victim: PartyMember, damage: Int): BattleCutIn = BattleCutIn(
+        tick = nextCutInTick(s),
+        fromEnemy = true,
+        kind = BattleAttackKind.ENEMY_COUNTER,
+        attackerCardId = s.enemyCutInCardId,
+        attackerName = s.enemyName,
+        element = s.enemyElement,
+        attackName = "반격",
+        attackerSlot = -1,
+        targetName = shortName(victim.card.id, victim.card.name),
+        targetSlot = victim.slotIndex,
+        damage = damage,
+        critical = false,
+        multiplier = 1.0,
+        ultimate = false,
+        lethal = victim.hp - damage <= 0
+    )
+
+    /** 🤖 자동 전투 ON/OFF */
+    fun setAutoBattle(enabled: Boolean) {
+        updateState { s ->
+            if (s.isAutoBattle == enabled) return@updateState s
+            s.copy(
+                isAutoBattle = enabled,
+                statusMessage = if (enabled) {
+                    "🤖 자동 전투 ON — ${BattleAutoDecor.stepIntervalMillis(s.battleSpeed)}ms 간격으로 " +
+                            "${BattleAutoPilot.nextAction(s.copy(isAutoBattle = true)).label} 진행"
+                } else {
+                    "✋ 수동 전투로 전환했습니다. FIGHT · 턴 진행 · 전술로 직접 지휘하세요."
+                }
+            )
+        }
+    }
+
+    /** 🤖 자동 전투 토글 (화면 상단 버튼) */
+    fun toggleAutoBattle() = setAutoBattle(!_uiState.value.isAutoBattle)
+
+    /** ✋ 자동 전투 종료 (승리·전멸·연출 종료 시) — 전투 상태 문구는 그대로 둔다 */
+    fun stopAutoBattle() {
+        updateState { s -> if (s.isAutoBattle) s.copy(isAutoBattle = false) else s }
+    }
+
+    /** ⏩ 전투 배속 지정 (1x / 2x) — 컷인·타격 이펙트 시간이 함께 줄어든다 */
+    fun setBattleSpeed(speed: BattleSpeed) {
+        updateState { s ->
+            if (s.battleSpeed == speed) return@updateState s
+            s.copy(
+                battleSpeed = speed,
+                statusMessage = "⏩ 전투 배속 ${speed.label} — 컷인 " +
+                        "${BattleAutoDecor.cutInMillis(speed)}ms · 자동 스텝 " +
+                        "${BattleAutoDecor.stepIntervalMillis(speed)}ms"
+            )
+        }
+    }
+
+    /** ⏩ 배속 토글 (1x ↔ 2x) */
+    fun toggleBattleSpeed() = setBattleSpeed(_uiState.value.battleSpeed.toggled())
+
+    /**
+     * 자동 전투 1스텝 — [BattleAutoPilot] 이 고른 행동을 실제로 실행한다.
+     * 화면의 자동 전투 루프가 일정 템포로 호출하며, 승리·전멸에서는 스스로 멈춘다.
+     */
+    fun autoBattleStep(): BattleAutoPilot.Action {
+        val action = BattleAutoPilot.nextAction(_uiState.value)
+        when (action) {
+            BattleAutoPilot.Action.PAIR_ULTIMATE -> activatePairUltimate()
+            BattleAutoPilot.Action.ATTACK_FRONT -> attackFront()
+            BattleAutoPilot.Action.ATTACK_BACK -> attackBack()
+            BattleAutoPilot.Action.NEXT_TURN -> nextTurn()
+            BattleAutoPilot.Action.STOP -> stopAutoBattle()
+        }
+        return action
     }
 
     /**
@@ -1632,6 +1794,7 @@ class TcgGameViewModel(
                 lastAllyHitDamage = mitigated,
                 lastAllyHitSlot = victim.slotIndex,
                 lastAllyHitTick = s.lastAllyHitTick + 1,
+                lastCutIn = enemyCutIn(s, victim, mitigated),
                 retreatInfo = s.retreatInfo.copy(turn = nextTurnNo, retreatUsedThisTurn = false),
                 lastRetreatMessage = null,
                 party = s.party.map { if (it.slotIndex == victim.slotIndex) it.copy(hp = newHp) else it },
@@ -2086,6 +2249,8 @@ class TcgGameViewModel(
                 mana = ManaState(1, 1),
                 party = freshParty(s),
                 retreatInfo = BattleRetreatInfo(turn = 1),
+                isAutoBattle = true,
+                lastCutIn = null,
                 pairUltimateUsedThisBattle = false,
                 pairUltimateBanner = null,
                 pairUltimateBannerSubtitle = null,
@@ -2763,7 +2928,8 @@ class TcgGameViewModel(
                     pairUltimateBannerSubtitle = result.bannerSubtitle,
                     lastEnemyHitDamage = result.damage,
                     lastEnemyHitTick = s.lastEnemyHitTick + 1,
-                    lastAttackerSlot = attacker.slotIndex
+                    lastAttackerSlot = attacker.slotIndex,
+                    lastCutIn = pairUltimateCutIn(s, attacker, result, lethal = true)
                 )
             } else {
                 s.copy(
@@ -2776,6 +2942,7 @@ class TcgGameViewModel(
                     lastEnemyHitDamage = result.damage,
                     lastEnemyHitTick = s.lastEnemyHitTick + 1,
                     lastAttackerSlot = attacker.slotIndex,
+                    lastCutIn = pairUltimateCutIn(s, attacker, result, lethal = false),
                     battleLog = s.battleLog + result.logLines + tail,
                     statusMessage = "[⚡ 페어 얼티밋 오의] ${attacker.card.name} · ${result.damage} 데미지 — 적 HP $newEnemyHp/${s.enemyMaxHp}"
                 )
@@ -2783,6 +2950,30 @@ class TcgGameViewModel(
         }
         return resultOut
     }
+
+    /** ⚡ 페어 얼티밋 오의 컷인 — 금빛 오의 연출(오의 이름을 배너에 싣는다) */
+    private fun pairUltimateCutIn(
+        s: TcgGameState,
+        attacker: PartyMember,
+        result: PairUltimateResult,
+        lethal: Boolean
+    ): BattleCutIn = BattleCutIn(
+        tick = nextCutInTick(s),
+        fromEnemy = false,
+        kind = BattleAttackKind.PAIR_ULTIMATE,
+        attackerCardId = attacker.card.id,
+        attackerName = shortName(attacker.card.id, attacker.card.name),
+        element = attacker.card.element,
+        attackName = result.bannerTitle.substringAfter("—", "").trim()
+            .ifBlank { BattleAttackKind.PAIR_ULTIMATE.defaultLabel },
+        attackerSlot = attacker.slotIndex,
+        targetName = s.enemyName,
+        damage = result.damage,
+        critical = true,
+        multiplier = result.survivorBonusMultiplier,
+        ultimate = true,
+        lethal = lethal
+    )
 
     // ──────────────────────────────────────────────────────────────
     // 제2장 프롤로그 — 제1군단장 「그림자 기사」 전초전
@@ -2824,6 +3015,8 @@ class TcgGameViewModel(
                 mana = ManaState(1, 1),
                 party = freshParty(s),
                 retreatInfo = BattleRetreatInfo(turn = 1),
+                isAutoBattle = true,
+                lastCutIn = null,
                 pairUltimateUsedThisBattle = false,
                 pairUltimateBanner = null,
                 pairUltimateBannerSubtitle = null,

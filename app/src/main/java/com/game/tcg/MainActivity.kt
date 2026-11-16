@@ -211,7 +211,12 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                             onStartFieldBattle = { viewModel.startFieldBattle() },
                             onPairUltimate = { viewModel.activatePairUltimate() },
                             onOpenPartyEdit = { viewModel.openScreen(LobbyDestination.DECK) },
-                            onBack = { viewModel.backToLobby() }
+                            onBack = { viewModel.backToLobby() },
+                            // 🤖 자동 전투 · ⏩ 배속 · ⚔️ 컷인 타격음
+                            onAutoStep = { viewModel.autoBattleStep() },
+                            onToggleAutoBattle = { audio.click(); viewModel.toggleAutoBattle() },
+                            onToggleSpeed = { audio.click(); viewModel.toggleBattleSpeed() },
+                            audioManager = audio
                         )
                         LobbyDestination.EXPLORATION -> ExplorationScreen(
                             state = state,

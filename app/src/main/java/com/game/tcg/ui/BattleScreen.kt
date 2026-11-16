@@ -23,10 +23,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,10 +37,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.game.tcg.core.engine.DeckAutoBuilder
 import com.game.tcg.core.model.BattleLineup
 import com.game.tcg.core.model.DeckRules
@@ -46,6 +51,7 @@ import com.game.tcg.core.model.Element
 import com.game.tcg.core.model.LineupUnit
 import com.game.tcg.core.model.VisualState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 /**
  * ⚔️ 이계 전투 — 비주얼 VS 아레나 (2026-11-16 개편)
@@ -58,6 +64,11 @@ import kotlinx.coroutines.delay
  *
  * 장문 로그는 1줄 티커로 접고, 필요할 때만 「로그」 버튼으로 펼친다.
  * 모든 부가 지령(후열 지원·페어 오의·후퇴·긴급 철수·마왕전)은 「전술」 시트로 모았다.
+ *
+ * 2026-11-16 사용자 요청 반영:
+ *  - 🤖 **기본 자동 전투** — 전투에 들어가면 자동으로 공격·턴이 돌고, 상단 토글로 끈다
+ *  - ⚔️ **공격 카드 중앙 확대 컷인** — 공격자 카드가 중앙에 확대되며 속성 빛 테두리·배너를 띄우고,
+ *    피격 카드에는 흔들림·타격 플래시·참격·떠오르는 데미지 숫자가 함께 터진다
  */
 @Composable
 fun BattleScreen(
@@ -73,7 +84,12 @@ fun BattleScreen(
     onStartFieldBattle: () -> Unit,
     onPairUltimate: () -> Unit,
     onOpenPartyEdit: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    // ── 🤖 자동 전투 · ⚔️ 컷인 (2026-11-16) ──
+    onAutoStep: () -> Unit = {},
+    onToggleAutoBattle: () -> Unit = {},
+    onToggleSpeed: () -> Unit = {},
+    audioManager: com.game.tcg.audio.AudioManager? = null
 ) {
     val deckSize = state.unlockedDeckSize
     val rows = ((deckSize + 2) / 3).coerceIn(3, 4)
@@ -92,34 +108,85 @@ fun BattleScreen(
     }
     val allyCards = remember(state.party, deckSize) { state.party.sortedBy { it.slotIndex } }
 
-    // ── 전투 연출 상태: 공격 포커스 · 피격 팝업 ──
-    var attackerSlot by remember { mutableStateOf(-1) }
-    var enemyPopup by remember { mutableStateOf(0) }
-    var allyPopupSlot by remember { mutableStateOf(-1) }
-    var allyPopup by remember { mutableStateOf(0) }
-
-    LaunchedEffect(state.lastEnemyHitTick) {
-        if (state.lastEnemyHitTick > 0 && state.lastEnemyHitDamage > 0) {
-            attackerSlot = state.lastAttackerSlot
-            enemyPopup = state.lastEnemyHitDamage
-            delay(750)
-            attackerSlot = -1
-            enemyPopup = 0
-        }
-    }
-    LaunchedEffect(state.lastAllyHitTick) {
-        if (state.lastAllyHitTick > 0 && state.lastAllyHitDamage > 0) {
-            allyPopupSlot = state.lastAllyHitSlot
-            allyPopup = state.lastAllyHitDamage
-            delay(750)
-            allyPopupSlot = -1
-            allyPopup = 0
-        }
-    }
+    // ── 전투 연출 상태: 중앙 컷인 · 피격 타격 이펙트 ──
+    var activeCutIn by remember { mutableStateOf<BattleCutIn?>(null) }
+    /** 적이 맞은 순간의 컷인 (피격 플래시·참격·데미지 숫자) */
+    var enemyHit by remember { mutableStateOf<BattleCutIn?>(null) }
+    /** 아군이 맞은 순간의 컷인 */
+    var allyHit by remember { mutableStateOf<BattleCutIn?>(null) }
+    val enemyImpact = remember { Animatable(0f) }
+    val allyImpact = remember { Animatable(0f) }
 
     var showTactics by remember { mutableStateOf(false) }
     var showLog by remember { mutableStateOf(false) }
     var selectedSlot by remember { mutableStateOf(-1) }
+
+    // ── 앱이 전면에 있을 때만 자동 전투를 돌린다 (백그라운드 전환 시 정지) ──
+    val lifecycleOwner = LocalContext.current as? androidx.lifecycle.LifecycleOwner
+    var inForeground by remember { mutableStateOf(true) }
+    DisposableEffect(lifecycleOwner) {
+        if (lifecycleOwner == null) return@DisposableEffect onDispose { }
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> inForeground = true
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> inForeground = false
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        inForeground = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // ── ⚔️ 공격 1회 타임라인: 컷인 확대 → 타격(플래시·참격·데미지) → 잔상 ──
+    LaunchedEffect(state.lastCutIn?.tick) {
+        val cut = state.lastCutIn ?: return@LaunchedEffect
+        val speed = state.battleSpeed
+        activeCutIn = cut
+        delay(BattleAutoDecor.impactMillis(speed))
+        if (cut.fromEnemy) {
+            allyHit = cut
+        } else {
+            enemyHit = cut
+            // 타격 순간에 맞춰 hit SFX (휘두르는 attack 은 상태 틱에서 이미 울렸다)
+            audioManager?.hit()
+        }
+        delay(BattleAutoDecor.hitHoldMillis(speed))
+        enemyHit = null
+        allyHit = null
+        activeCutIn = null
+    }
+    LaunchedEffect(enemyHit) {
+        if (enemyHit != null) {
+            enemyImpact.snapTo(1f)
+            enemyImpact.animateTo(0f, tween(BattleAutoDecor.shakeMillis(state.battleSpeed).toInt()))
+        }
+    }
+    LaunchedEffect(allyHit) {
+        if (allyHit != null) {
+            allyImpact.snapTo(1f)
+            allyImpact.animateTo(0f, tween(BattleAutoDecor.shakeMillis(state.battleSpeed).toInt()))
+        }
+    }
+
+    // ── 🤖 자동 전투 루프 — 컷인 시간을 포함한 템포로 다음 행동을 진행 ──
+    // 전술/로그 시트가 열려 있거나 앱이 백그라운드면 멈추고, 승리·전멸에서도 끝난다.
+    val latestState by rememberUpdatedState(state)
+    LaunchedEffect(state.isAutoBattle, inForeground, showTactics, showLog) {
+        if (!state.isAutoBattle || !inForeground || showTactics || showLog) return@LaunchedEffect
+        while (isActive) {
+            val s = latestState
+            if (!s.isAutoBattle) break
+            if (BattleAutoPilot.nextAction(s) == BattleAutoPilot.Action.STOP) {
+                // 승리·전멸 — ViewModel 이 자동 전투를 끄고 루프를 빠져나온다
+                onAutoStep()
+                break
+            }
+            delay(BattleAutoDecor.stepIntervalMillis(s.battleSpeed))
+            if (!latestState.isAutoBattle) break
+            onAutoStep()
+        }
+    }
 
     val enemyHpRatio = if (state.enemyMaxHp <= 0) 0f else state.enemyHp.toFloat() / state.enemyMaxHp
     val battleOver = state.enemyHp <= 0
@@ -168,6 +235,19 @@ fun BattleScreen(
                 )
             }
 
+            // ── 🤖 자동 전투 · ⏩ 배속 바 ──
+            AutoBattleBar(
+                isAuto = state.isAutoBattle,
+                speed = state.battleSpeed,
+                hint = if (state.isAutoBattle) {
+                    BattleAutoDecor.autoHint(true, state.battleSpeed) + " · " + BattleAutoPilot.nextAction(state).label
+                } else {
+                    BattleAutoDecor.autoHint(false, state.battleSpeed)
+                },
+                onToggleAuto = onToggleAutoBattle,
+                onToggleSpeed = onToggleSpeed
+            )
+
             // ── 적 진영 그리드 ──
             GridSection(
                 caption = "${state.enemyName} · 적 진영 ${enemyUnits.size}장",
@@ -182,10 +262,19 @@ fun BattleScreen(
                     ) {
                         rowUnits.forEachIndexed { colIndex, unit ->
                             val index = rowIndex * 3 + colIndex
+                            val hit = if (index == 0) enemyHit else null
+                            val golden = hit?.let { BattleAutoDecor.isGoldenHit(it) } ?: false
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxSize()
+                                    // 피격 흔들림 — 적 보스 카드가 맞은 순간 좌우로 떨린다
+                                    .graphicsLayer {
+                                        if (index == 0) {
+                                            translationX = BattleAutoDecor.shakeOffset(enemyImpact.value) * 10.dp.toPx()
+                                            rotationZ = BattleAutoDecor.shakeOffset(enemyImpact.value) * 2.2f
+                                        }
+                                    }
                             ) {
                                 EnemyTile(
                                     unit = unit,
@@ -194,12 +283,28 @@ fun BattleScreen(
                                     defeated = battleOver,
                                     onClick = onAttackFront
                                 )
-                                if (index == 0 && enemyPopup > 0) {
-                                    DamagePopup(
-                                        damage = enemyPopup,
-                                        color = Color(0xFFFFEB3B),
-                                        modifier = Modifier.align(Alignment.Center)
+                                if (index == 0) {
+                                    // 타격 플래시 · 참격/스파크 · 떠오르는 데미지 숫자
+                                    HitFlashLayer(
+                                        decay = enemyImpact.value,
+                                        golden = golden,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(RoundedCornerShape(10.dp))
                                     )
+                                    HitSparkLayer(
+                                        decay = enemyImpact.value,
+                                        color = elementColor(hit?.element ?: state.enemyElement),
+                                        golden = golden,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    hit?.let { cut ->
+                                        BattleDamageNumber(
+                                            cutIn = cut,
+                                            color = if (golden) Color(0xFFFFD54F) else Color(0xFFFFEB3B),
+                                            modifier = Modifier.align(Alignment.Center)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -237,12 +342,20 @@ fun BattleScreen(
                     ) {
                         slotRow.forEach { slot ->
                             val member = state.memberAt(slot)
-                            val highlighted = attackerSlot == slot
-                            val showPopup = allyPopupSlot == slot && allyPopup > 0
+                            val highlighted = activeCutIn?.attackerSlot == slot && activeCutIn?.fromEnemy == false
+                            val hit = if (allyHit?.targetSlot == slot) allyHit else null
+                            val golden = hit?.let { BattleAutoDecor.isGoldenHit(it) } ?: false
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxSize()
+                                    // 적 반격에 맞은 아군 카드 흔들림
+                                    .graphicsLayer {
+                                        if (hit != null) {
+                                            translationX = BattleAutoDecor.shakeOffset(allyImpact.value) * 9.dp.toPx()
+                                            rotationZ = BattleAutoDecor.shakeOffset(allyImpact.value) * -2f
+                                        }
+                                    }
                             ) {
                                 if (member == null) {
                                     EmptySlotTile(
@@ -295,9 +408,22 @@ fun BattleScreen(
                                             .padding(top = 2.dp)
                                     )
                                 }
-                                if (showPopup) {
-                                    DamagePopup(
-                                        damage = allyPopup,
+                                if (hit != null) {
+                                    HitFlashLayer(
+                                        decay = allyImpact.value,
+                                        golden = golden,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(RoundedCornerShape(10.dp))
+                                    )
+                                    HitSparkLayer(
+                                        decay = allyImpact.value,
+                                        color = Color(0xFFFF5252),
+                                        golden = golden,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    BattleDamageNumber(
+                                        cutIn = hit,
                                         color = Color(0xFFFF5252),
                                         modifier = Modifier.align(Alignment.Center)
                                     )
@@ -346,6 +472,15 @@ fun BattleScreen(
             onOpenDeck = onOpenPartyEdit,
             onOpenTactics = { showTactics = true }
         )
+
+        // ── ⚔️ 공격 카드 중앙 확대 컷인 (터치를 가로막지 않는 중앙 오버레이) ──
+        activeCutIn?.let { cut ->
+            BattleCutInOverlay(
+                cutIn = cut,
+                speed = state.battleSpeed,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
 
         // ── 전술 시트 ──
         if (showTactics) {
@@ -744,29 +879,6 @@ private fun ArenaPill(text: String, color: Color) {
     ) {
         Text(text, color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
     }
-}
-
-/* ───────────────────── 데미지 팝업 ───────────────────── */
-
-@Composable
-private fun DamagePopup(damage: Int, color: Color, modifier: Modifier = Modifier) {
-    val anim = remember { Animatable(0f) }
-    LaunchedEffect(damage) {
-        anim.snapTo(0f)
-        anim.animateTo(1f, animationSpec = tween(durationMillis = 700))
-    }
-    Text(
-        "-$damage",
-        color = color,
-        fontSize = 18.sp,
-        fontWeight = FontWeight.Black,
-        modifier = modifier.graphicsLayer {
-            translationY = -34f * anim.value
-            alpha = (1f - anim.value * 0.85f).coerceIn(0f, 1f)
-            scaleX = 1f + 0.25f * (1f - anim.value)
-            scaleY = 1f + 0.25f * (1f - anim.value)
-        }
-    )
 }
 
 /* ───────────────────── 시트 (전술/로그) ───────────────────── */
