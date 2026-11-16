@@ -25,9 +25,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +38,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -45,6 +49,7 @@ import com.game.tcg.core.engine.PackOpeningPhase
 import com.game.tcg.core.engine.PackOpeningState
 import com.game.tcg.core.model.PackDraw
 import com.game.tcg.core.model.VisualState
+import com.game.tcg.core.video.CharacterVideoCue
 
 /**
  * 카드팩 개봉 연출 (전체 화면 이벤트).
@@ -58,6 +63,12 @@ import com.game.tcg.core.model.VisualState
  *
  * 연출 단계 전이는 [com.game.tcg.core.engine.PackOpeningEngine]이 담당하고,
  * 개봉음(`pack_open`)은 봉인 해제 순간에 한 번 울린다.
+ *
+ * 🎬 2026-11-16 추가 — 등장 영상(`assets/character_videos/{번호}.mp4`)
+ * 카드 [PackOpeningPhase.REVEAL] 단계에서 그 캐릭터에 등록된 영상이 있으면,
+ * 카드 일러스트보다 **먼저** 영상이 재생되고 `SKIP ▸`/탭으로 건너뛰면 카드 화면으로 이어진다.
+ * 재생 동안에는 [onVideoStart] 로 배경 BGM 을 멈추고, 끝나면 [onVideoEnd] 로 복구한다.
+ * 어느 영상이 있는지는 [CharacterVideoRegistry] 가 assets 를 스캔해 알려 준다(코드 수정 불필요).
  */
 @Composable
 fun PackOpeningOverlay(
@@ -68,9 +79,29 @@ fun PackOpeningOverlay(
     onClose: () -> Unit,
     onOpenGrowth: () -> Unit,
     onOpenCollection: () -> Unit,
-    onSfx: (SfxEffect) -> Unit = {}
+    onSfx: (SfxEffect) -> Unit = {},
+    onVideoStart: () -> Unit = {},
+    onVideoEnd: () -> Unit = {}
 ) {
     if (!opening.isActive) return
+
+    // ── 등장 영상 큐 ─────────────────────────────────────────────
+    // 지금 공개한 카드에 {번호}.mp4 가 있으면 REVEAL 단계에서 1회 재생한다.
+    val context = LocalContext.current
+    val revealCardId = opening.currentDraw?.cardId ?: 0
+    val videoAssetPath = remember(opening.phase, opening.revealIndex, revealCardId) {
+        if (opening.phase == PackOpeningPhase.REVEAL) {
+            CharacterVideoRegistry.videoPath(context, revealCardId)
+        } else {
+            null
+        }
+    }
+    val videoCue = remember(opening.phase, opening.revealIndex, videoAssetPath) {
+        CharacterVideoCue.forReveal(opening.phase, revealCardId, videoAssetPath)
+    }
+    // 이번 카드의 영상이 이미 (끝났거나 건너뛰어) 처리되었는지
+    var videoHandled by remember(opening.phase, opening.revealIndex, videoAssetPath) { mutableStateOf(false) }
+    val playingVideo = videoCue.isPlaying && !videoHandled
 
     // 봉인 카드팩의 숨쉬는 빛
     val glow by rememberInfiniteTransition(label = "pack-glow").animateFloat(
@@ -147,12 +178,34 @@ fun PackOpeningOverlay(
                 }
             )
 
-            PackOpeningPhase.REVEAL -> RevealStage(
-                opening = opening,
-                reveal = reveal.value,
-                onNext = { onSfx(SfxEffect.CLICK); onRevealNext() },
-                onRevealAll = { onSfx(SfxEffect.CLICK); onRevealAll() }
-            )
+            PackOpeningPhase.REVEAL -> if (playingVideo && videoCue.assetPath != null) {
+                // 영상 재생 1회 = BGM 일시정지 1회 (종료·스킵·화면 이탈 모두 onDispose 로 복구)
+                DisposableEffect(Unit) {
+                    onVideoStart()
+                    onDispose { onVideoEnd() }
+                }
+                CharacterVideoEntranceStage(
+                    assetPath = videoCue.assetPath!!,
+                    cardId = videoCue.cardId,
+                    name = opening.currentDraw?.name ?: "NO.${videoCue.cardId}",
+                    stepLabel = opening.stepLabel,
+                    onFinished = { videoHandled = true },
+                    onSkip = { onSfx(SfxEffect.CLICK); videoHandled = true }
+                )
+            } else {
+                RevealStage(
+                    opening = opening,
+                    reveal = reveal.value,
+                    onNext = { onSfx(SfxEffect.CLICK); onRevealNext() },
+                    onRevealAll = { onSfx(SfxEffect.CLICK); onRevealAll() },
+                    hasVideo = videoCue.hasVideo,
+                    onReplayVideo = if (videoCue.hasVideo) {
+                        { onSfx(SfxEffect.CLICK); videoHandled = false }
+                    } else {
+                        null
+                    }
+                )
+            }
 
             PackOpeningPhase.SUMMARY -> SummaryStage(
                 opening = opening,
@@ -275,7 +328,9 @@ private fun RevealStage(
     opening: PackOpeningState,
     reveal: Float,
     onNext: () -> Unit,
-    onRevealAll: () -> Unit
+    onRevealAll: () -> Unit,
+    hasVideo: Boolean = false,
+    onReplayVideo: (() -> Unit)? = null
 ) {
     val draw: PackDraw = opening.currentDraw ?: return
     val card = TcgGameViewModel.characterCard(draw.cardId)
@@ -309,6 +364,10 @@ private fun RevealStage(
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(6.dp))
+            if (hasVideo && onReplayVideo != null) {
+                ChipButton("🎬 등장 영상 다시 보기", false, TcgColors.Gold) { onReplayVideo() }
+                Spacer(Modifier.height(6.dp))
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Pill(draw.rarity.displayName, Color(draw.rarity.color), filled = true)
                 Pill(card.element.displayName, elementColor(card.element))

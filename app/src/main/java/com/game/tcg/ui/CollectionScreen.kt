@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,13 +52,22 @@ fun CollectionScreen(
     onMemoryRecall: (Int) -> Unit,
     onSetLobbyHero: (Int) -> Unit,
     onDeployToParty: (Int, Int) -> Unit,
-    onUndeployFromParty: (Int) -> Unit
+    onUndeployFromParty: (Int) -> Unit,
+    onVideoStart: () -> Unit = {},
+    onVideoEnd: () -> Unit = {}
 ) {
     val selected: TcgCard = state.ownedCards.firstOrNull { it.id == state.selectedCardId }
         ?: TcgGameViewModel.characterCard(state.selectedCardId)
     val isOwned = state.ownedCards.any { it.id == state.selectedCardId }
     val profile = TcgGameViewModel.profileOf(state.selectedCardId)
     val isDemonLordCard = state.selectedCardId == 112
+
+    // 🎬 등장 영상 — assets/character_videos/{번호}.mp4 가 등록된 캐릭터만 버튼을 보여 준다
+    val context = LocalContext.current
+    var videoCardId by remember { mutableStateOf<Int?>(null) }
+    val selectedHasVideo = remember(state.selectedCardId) {
+        CharacterVideoRegistry.hasVideo(context, state.selectedCardId)
+    }
 
     ScreenFrame {
         // ── 카드 선택 (170인 전체 스크롤 목록) ──
@@ -223,6 +234,16 @@ fun CollectionScreen(
                 ChipButton("③ 데이트", state.selectedVisual == VisualState.ROMANTIC_DATE, TcgColors.Gold) {
                     onSelectVisual(VisualState.ROMANTIC_DATE)
                 }
+            }
+
+            // 🎬 등장 영상 다시 보기 — 등장 MP4 가 있는 캐릭터만
+            if (selectedHasVideo) {
+                ActionTile(
+                    label = "🎬 등장 영상 다시 보기",
+                    hint = "카드팩 개봉 연출로 재생",
+                    accent = TcgColors.Gold,
+                    onClick = { videoCardId = state.selectedCardId }
+                )
             }
 
             // 전투 편성 — 이 캐릭터를 전열/후열 슬롯에 직접 소환
@@ -519,6 +540,22 @@ fun CollectionScreen(
                 fontSize = 9.sp
             )
         }
+    }
+
+    // ── 🎬 등장 영상 전체 화면 (다시 보기) ──
+    val playingCardId = videoCardId
+    val playingPath = playingCardId?.let { CharacterVideoRegistry.videoPath(context, it) }
+    if (playingCardId != null && playingPath != null) {
+        // 영상 재생 1회 = BGM 일시정지 1회 (닫기·종료·건너뛰기 모두 onDispose 로 복구)
+        DisposableEffect(playingCardId) {
+            onVideoStart()
+            onDispose { onVideoEnd() }
+        }
+        CharacterVideoOverlay(
+            cardId = playingCardId,
+            assetPath = playingPath,
+            onClose = { videoCardId = null }
+        )
     }
 }
 

@@ -44,7 +44,9 @@ fun PackShopScreen(
     onRevealAllDraws: () -> Unit = {},
     onCloseOpening: () -> Unit = {},
     onReplayOpening: () -> Unit = {},
-    onSfx: (SfxEffect) -> Unit = {}
+    onSfx: (SfxEffect) -> Unit = {},
+    onVideoStart: () -> Unit = {},
+    onVideoEnd: () -> Unit = {}
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         ScreenFrame {
@@ -186,7 +188,9 @@ fun PackShopScreen(
                 onClose = onCloseOpening,
                 onOpenGrowth = onOpenGrowth,
                 onOpenCollection = onOpenCollection,
-                onSfx = onSfx
+                onSfx = onSfx,
+                onVideoStart = onVideoStart,
+                onVideoEnd = onVideoEnd
             )
         }
     }

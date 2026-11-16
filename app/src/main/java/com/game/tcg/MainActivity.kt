@@ -240,7 +240,10 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                             onRevealAllDraws = { viewModel.revealAllPackDraws() },
                             onCloseOpening = { viewModel.closePackOpening() },
                             onReplayOpening = { viewModel.replayPackOpening() },
-                            onSfx = { effect -> audio.playSfx(effect) }
+                            onSfx = { effect -> audio.playSfx(effect) },
+                            // 🎬 등장 영상 재생 동안 BGM 일시정지 → 종료·스킵 시 복구
+                            onVideoStart = { audio.suspendBgmForVideo() },
+                            onVideoEnd = { audio.resumeBgmAfterVideo() }
                         )
                         LobbyDestination.GROWTH -> GrowthScreen(
                             state = state,
@@ -275,7 +278,10 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                                 viewModel.openScreen(LobbyDestination.LOBBY)
                             },
                             onDeployToParty = { id, slot -> viewModel.deployToParty(id, slot) },
-                            onUndeployFromParty = { id -> viewModel.undeployFromParty(id) }
+                            onUndeployFromParty = { id -> viewModel.undeployFromParty(id) },
+                            // 🎬 도감 「등장 영상 다시 보기」 재생 동안 BGM 일시정지
+                            onVideoStart = { audio.suspendBgmForVideo() },
+                            onVideoEnd = { audio.resumeBgmAfterVideo() }
                         )
                         LobbyDestination.DECK -> DeckBuilderScreen(
                             state = state,

@@ -32,6 +32,16 @@
    - **다시보기**: 로비 상단 스트립의 `🎬 인트로 다시보기` 칩(또는 ViewModel `replayIntro()`)로 1장면부터 언제든 재생. 다시보기는 로비 상태(골드·보유 카드·편성·대표 캐릭터)를 건드리지 않습니다.
    - **구조**: 대본·상태 전이는 `core/engine/IntroStoryEngine.kt`(Android 비의존) 한 곳에서만 일어나고, 화면 `ui/IntroStoryScreen.kt`는 그 상태를 그릴 뿐입니다. `IntroStoryTest` 22건이 4단계 진행·SKIP·다시보기·최초 실행/재실행 분기·리소스 매핑을 검증합니다.
 
+### 🎬 캐릭터 등장 영상 — 카드팩 개봉 시 MP4 재생 + 파일만 넣으면 자동 반영 (2026-11-16)
+   - **무엇이**: Google Drive `Tcg_video` 폴더의 캐릭터 등장 영상 6편(원본 1280×720 · 10초 · 편당 8~10MB)을 캐릭터별로 매칭해 모바일용 MP4로 압축하고, 카드팩에서 그 캐릭터가 나올 때 재생합니다.
+   - **탑재 5편** (`app/src/main/assets/character_videos/{번호}.mp4`) — No.1 세라피엘(0.98MB) · No.2 엘리리아(0.92MB) · No.4 히스이(1.11MB) · No.6 카르밀라(0.97MB) · No.114 모르가나(0.51MB). 720×406 · 10.0초 · `libx264 crf28 preset slow` · AAC 64k · faststart · **원본 38.69MB → 4.49MB(88% 감소)**.
+   - **개봉 연출**: `REVEAL` 단계에서 그 카드의 영상이 등록되어 있으면 **카드 일러스트보다 먼저** 16:9 무대에 영상이 재생되고(`SKIP ▸` 또는 화면 탭으로 건너뛰기), 재생 중에는 배경 BGM 이 멈췄다가 종료·스킵 시 같은 트랙으로 복구됩니다. 카드 화면에는 `🎬 등장 영상 다시 보기` 칩이 붙습니다.
+   - **도감**: 보유/미보유와 무관하게 캐릭터 상세에서 `🎬 등장 영상 다시 보기`(전체 화면 다이얼로그).
+   - **확장 구조(핵심)**: 앱은 `assets/character_videos/` 를 **런타임에 스캔**합니다(`CharacterVideoRegistry` ← `CharacterVideoIndex`). **새 캐릭터 영상은 `{번호}.mp4` 파일만 넣으면 Kotlin 코드 수정 없이** 다음 빌드에서 자동 인식됩니다. `114-5.mp4` 같은 원본 파일명도 앞 번호를 읽어 인식하고, 같은 번호의 여러 테이크가 있으면 정식 `{번호}.mp4` 가 우선합니다.
+   - **추가 방법**: `python3 scripts/compress_character_videos.py ~/Downloads/영상.mp4:31` (또는 파일명이 `31-2.mp4` 면 `:31` 생략) → 압축과 배치를 한 번에. 옵션 `--max-width/--crf/--dry-run`. ffmpeg 는 `imageio_ffmpeg` 번들 바이너리를 쓰므로 시스템 설치 불필요.
+   - **구조**: 파일명 파서·색인 `core/video/CharacterVideoIndex.kt` · 트리거 상태 `core/video/CharacterVideoCue.kt`(둘 다 Android 비의존) / 스캔 `ui/CharacterVideoRegistry.kt` / 재생 `ui/CharacterVideoPlayer.kt`(`TextureView` + `MediaPlayer` + `assets.openFd`, 무압축 `noCompress mp4`) / BGM 일시정지 `AudioManager.suspendBgmForVideo()`·`resumeBgmAfterVideo()`.
+   - **검증**: `CharacterVideoTest` 15건(파일명 규약·자동 감지·중복 테이크·개봉 트리거·건너뛰기/다시 보기·탑재 5편의 규약/용량/MP4 시그니처·BGM 복구) + `qa_resource_integrity.py` 7번 항목(등장 영상 이름 규약·카탈로그 번호·1.5MB 상한·ftyp 시그니처).
+
 ### 🗺 게임 진행 루프 — 3장 시작 · 30스테이지 캠페인 · 카드팩 · 강화/연성/장비/소환 (2026-11-16)
    - **시작 상태**: 도감 170명 전원 보유 → **코스트 3~4 저코스트 풀에서 무작위 3장**만 계약하고 시작합니다. 뽑힌 3장은 9칸 덱의 **전열 3칸(전1~전3)** 에 자동 배치되고 나머지 6칸은 빈 슬롯입니다. 나머지 카드는 도감에서 `🔒` 실루엣으로 잠겨 있고, 카드팩·연성으로만 획득합니다. (3장은 속성이 겹치지 않게 뽑습니다 — `StartingRoster`)
    - **메인 플로우**: `스테이지 클리어 → 골드·경험치·카드팩 티켓·조각·확률 장비 → 카드팩 개봉으로 동료 확보 → 강화·장비로 덱 전투력 상승 → 다음 스테이지`
@@ -59,6 +69,7 @@
 ### 🔍 리소스·아트 무결성 검사 스크립트
    - `python3 scripts/qa_resource_integrity.py` — `CardCatalog`(170명)·`MidBossCatalog`(6명)의 모든 번호가 `CharacterArtRegistry`에 battle/casual/date 3비주얼로 등록되어 있는지, 등록 이름이 `char_{번호}_{상태}.jpg` 규칙과 1:1 대응하는지, 실제 `res/drawable-nodpi/` 파일이 존재하며 0바이트·손상·고아 파일이 없는지, 인트로 4장이 등록되어 있는지, 소스의 모든 `R.drawable.*` 참조가 실제 리소스를 가리키는지 전수 검사합니다. 문제가 있으면 종료 코드 1.
    - 결과(2026-11-16): 플레이 170명 × 3 + 중간 보스 6명 × 3 = **528장 1:1 일치**, 누락·오타·고아·0폴백 **0건**.
+   - 7번 항목(캐릭터 등장 영상): `assets/character_videos/{번호}.mp4` 이름 규약 · 카탈로그에 있는 번호인지 · 편당 1.5MB 상한 · MP4(`ftyp`) 시그니처 · `noCompress mp4` 설정까지 검사합니다(2026-11-16 추가).
 
 ### 핵심 루프
 1. **현실 봉인 팩 습득 프롤로그 & 스타팅 3인방 계약**

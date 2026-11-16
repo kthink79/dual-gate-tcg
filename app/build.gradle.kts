@@ -37,6 +37,12 @@ android {
     buildFeatures {
         compose = true
     }
+
+    androidResources {
+        // 캐릭터 등장 영상(mp4)은 assets 에 **무압축**으로 둔다 —
+        // MediaPlayer 가 assets.openFd() 로 바로 읽어 재생할 수 있어야 한다.
+        noCompress += listOf("mp4")
+    }
 }
 
 dependencies {

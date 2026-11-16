@@ -16,6 +16,8 @@ class AudioManager(
     private var settings: AudioSettings = prefs.load().sanitized()
     private var lastScene: AudioScene = AudioScene.NONE
     private var bgmPausedByLifecycle: Boolean = false
+    /** 캐릭터 등장 영상 재생 중 — 영상이 끝날 때까지 BGM 을 멈춰 둔다 */
+    private var bgmPausedByVideo: Boolean = false
 
     init {
         applySettingsToPlayer()
@@ -29,7 +31,7 @@ class AudioManager(
     fun updateScene(scene: AudioScene) {
         if (scene == lastScene) return
         lastScene = scene
-        if (bgmPausedByLifecycle) return  // 백그라운드에서는 복귀 시 반영된다
+        if (bgmPausedByLifecycle || bgmPausedByVideo) return  // 백그라운드·영상 재생 중에는 복귀 시 반영된다
         if (!settings.bgmEnabled) return
         player.playScene(scene)
     }
@@ -37,7 +39,7 @@ class AudioManager(
     /** 마지막 장면을 다시 적용 (음소거 해제 · 볼륨 변경 후 재시작) */
     fun refresh() {
         applySettingsToPlayer()
-        if (!settings.bgmEnabled || bgmPausedByLifecycle) return
+        if (!settings.bgmEnabled || bgmPausedByLifecycle || bgmPausedByVideo) return
         player.playScene(lastScene)
     }
 
@@ -115,13 +117,40 @@ class AudioManager(
     /** ON_RESUME — 멈췄던 BGM 을 이어 재생한다 */
     fun onAppResume() {
         bgmPausedByLifecycle = false
-        if (!settings.bgmEnabled) return
+        if (!settings.bgmEnabled || bgmPausedByVideo) return
         player.resumeBgm()
         // 복귀해도 재생기가 확보되지 않았으면(이전 오류·해제) 장면을 다시 요청한다
         if (player.currentTrack() == null && lastScene != AudioScene.NONE) {
             player.playScene(lastScene)
         }
     }
+
+    // ──────────────────────────────────────────────────────────────
+    // 캐릭터 등장 영상 (카드팩 개봉 · 도감 다시 보기)
+    // ──────────────────────────────────────────────────────────────
+
+    /** 영상 재생 시작 — 영상 소리와 겹치지 않게 BGM 만 잠시 멈춘다(SFX 는 유지) */
+    fun suspendBgmForVideo() {
+        if (bgmPausedByVideo) return
+        bgmPausedByVideo = true
+        player.pauseBgm()
+    }
+
+    /** 영상 종료·건너뛰기·화면 이탈 — 멈췄던 BGM 을 같은 트랙에서 복구 */
+    fun resumeBgmAfterVideo() {
+        if (!bgmPausedByVideo) return
+        bgmPausedByVideo = false
+        if (!settings.bgmEnabled || bgmPausedByLifecycle) return
+        player.resumeBgm()
+        // 영상 재생 중 화면 장면이 바뀌었으면 그 장면의 트랙으로 맞춘다(아니면 멈춘 트랙 그대로)
+        val sceneTrack = lastScene.track
+        if (sceneTrack != null && player.currentTrack() != sceneTrack) {
+            player.playScene(lastScene)
+        }
+    }
+
+    /** 영상 때문에 BGM 이 멈춰 있는지 (테스트·디버그) */
+    fun isBgmSuspendedByVideo(): Boolean = bgmPausedByVideo
 
     /** Activity 종료 — 리소스 해제 */
     fun release() {

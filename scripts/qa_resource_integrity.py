@@ -176,6 +176,47 @@ for kt in sorted(SRC.rglob("*.kt")):
     if "getIdentifier(" in txt:
         warnings.append(f"이름 기반 동적 리소스 조회(getIdentifier) 사용: {kt.relative_to(ROOT)}")
 
+# ── 7. 캐릭터 등장 영상 (assets/character_videos/{번호}.mp4) ───────────────
+# 앱은 이 폴더를 런타임에 스캔한다(CharacterVideoRegistry). 파일만 추가하면 자동 반영되므로
+# 이름 규약·용량·MP4 시그니처를 여기서 전수 검사해 "넣었는데 안 나오는" 상황을 막는다.
+VIDEO_DIR = ROOT / "app/src/main/assets/character_videos"
+VIDEO_NAME_RE = re.compile(r"^(\d{1,3})(?:[-_ ].*)?\.mp4$", re.IGNORECASE)
+VIDEO_SIZE_LIMIT = int(1.5 * 1024 * 1024)  # 편당 1.5MB 권장 상한
+video_ids: dict[int, str] = {}
+
+if VIDEO_DIR.is_dir():
+    for p in sorted(VIDEO_DIR.iterdir()):
+        if not p.is_file():
+            continue
+        m = VIDEO_NAME_RE.match(p.name)
+        if not m:
+            errors.append(f"등장 영상 파일명이 {{번호}}.mp4 규약이 아님: {p.name}")
+            continue
+        cid = int(m.group(1))
+        if cid not in expected_ids:
+            errors.append(f"등장 영상 {p.name} → 카탈로그에 없는 번호 {cid}")
+            continue
+        if cid in video_ids:
+            errors.append(f"등장 영상 번호 {cid} 중복: {video_ids[cid]} / {p.name}")
+        video_ids[cid] = p.name
+        size = p.stat().st_size
+        if size == 0:
+            errors.append(f"등장 영상 0바이트: {p.name}")
+        elif size > VIDEO_SIZE_LIMIT:
+            errors.append(
+                f"등장 영상 용량 초과 {size / 1024 / 1024:.2f}MB: {p.name} "
+                f"(scripts/compress_character_videos.py 로 다시 압축)"
+            )
+        head = p.open("rb").read(12)
+        if len(head) < 12 or head[4:8] != b"ftyp":
+            errors.append(f"MP4 시그니처가 아님: {p.name}")
+    # 영상 재생은 assets.openFd() 를 쓰므로 mp4 는 무압축 저장이어야 한다
+    gradle_src = read(ROOT / "app/build.gradle.kts")
+    if "noCompress" not in gradle_src or '"mp4"' not in gradle_src:
+        warnings.append("app/build.gradle.kts 에 noCompress(mp4) 설정이 없음 — assets.openFd 재생이 실패할 수 있음")
+else:
+    warnings.append("assets/character_videos 폴더가 없음 — 등장 영상 미탑재 상태")
+
 # ── 리포트 ───────────────────────────────────────────────────────────────
 print("== 리소스·아트 무결성 전수 검사 ==")
 print(f"플레이 로스터: {len(roster_ids)}명  (No.{min(roster_ids)}~{max(roster_ids)})")
@@ -183,6 +224,7 @@ print(f"중간 보스   : {len(midboss_ids)}명  {midboss_ids}")
 print(f"아트 레지스트리: {len(registry)}명 × 3비주얼 = {len(registry) * 3}장")
 print(f"drawable-nodpi char_*.jpg: {len(files)}장")
 print(f"인트로 장면: 4장")
+print(f"캐릭터 등장 영상: {len(video_ids)}편 {sorted(video_ids)}")
 print()
 if warnings:
     print(f"[경고] {len(warnings)}건")
