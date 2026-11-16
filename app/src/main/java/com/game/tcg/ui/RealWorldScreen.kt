@@ -97,7 +97,7 @@ fun RealWorldScreen(
                     Text(
                         "차원 균열 에너지 ${SummonEngine.ENERGY_COST}로 소환 → 친밀도 +${SummonEngine.BOND_GAIN}",
                         color = TcgColors.Text.copy(alpha = 0.9f),
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         lineHeight = 15.sp
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -136,14 +136,14 @@ fun RealWorldScreen(
                     Text(
                         "🔒 $partnerName — 일상 사복 미해금",
                         color = TcgColors.Danger,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         "친밀도 ${AffinityRules.CASUAL_UNLOCK_BOND} 이상에서 현실 소환이 열립니다. " +
                             "(현재 $bond/100 · ${(AffinityRules.CASUAL_UNLOCK_BOND - bond).coerceAtLeast(0)} 더 필요)",
                         color = TcgColors.Text.copy(alpha = 0.85f),
-                        fontSize = 9.sp,
+                        fontSize = 12.sp,
                         lineHeight = 14.sp
                     )
                     StatBar(ratio = casualProgress, color = TcgColors.Danger, height = 8)
@@ -151,7 +151,7 @@ fun RealWorldScreen(
                         "가장 빠른 길은 이계 전투 출전 — 출전 1회 +${AffinityRules.BATTLE_DEPLOY_GAIN}, " +
                             "승리하면 +${AffinityRules.BATTLE_WIN_GAIN} (출전 $bond/100)",
                         color = TcgColors.Muted,
-                        fontSize = 9.sp,
+                        fontSize = 12.sp,
                         lineHeight = 14.sp
                     )
                 }
@@ -175,12 +175,12 @@ fun RealWorldScreen(
                 )
             }
             if (state.summonMessage != null) {
-                Text(state.summonMessage, color = TcgColors.Text.copy(alpha = 0.85f), fontSize = 10.sp, lineHeight = 15.sp)
+                Text(state.summonMessage, color = TcgColors.Text.copy(alpha = 0.85f), fontSize = 12.sp, lineHeight = 15.sp)
             }
             Text(
                 "소환 ${state.summonCount}회 · 교감은 아래 「오늘의 교감」에서 이어집니다.",
                 color = TcgColors.Muted,
-                fontSize = 9.sp
+                fontSize = 12.sp
             )
         }
 
@@ -217,7 +217,7 @@ fun RealWorldScreen(
                 "친밀도 ${AffinityRules.CASUAL_UNLOCK_BOND}에서 일상 사복·현실 소환, " +
                     "${AffinityRules.DATE_UNLOCK_BOND}에서 데이트 룩, 100에서 페어 얼티밋 오의(+25%)가 열립니다.",
                 color = TcgColors.Muted,
-                fontSize = 9.sp,
+                fontSize = 12.sp,
                 lineHeight = 14.sp
             )
         }
@@ -272,7 +272,7 @@ fun RealWorldScreen(
                 Text(
                     "「이 옷, 당신이 좋아할까 싶어서…」 — 데이트 룩이 개방되었습니다. 도감 ②③ 탭에서도 확인할 수 있습니다.",
                     color = TcgColors.Heal,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     lineHeight = 15.sp
                 )
             }
@@ -280,7 +280,7 @@ fun RealWorldScreen(
                 Text(
                     "페어 얼티밋 오의 개방 — $partnerName 와(과)의 서약이 완성되었습니다. (전투 데미지 +25%)",
                     color = TcgColors.Gold,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     lineHeight = 15.sp
                 )
             }
@@ -397,7 +397,7 @@ private fun BondPortraitCard(
                 Text(
                     RealWorldDecor.heartLabel(bond),
                     color = TcgColors.Gold,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.width(6.dp))
@@ -418,12 +418,12 @@ private fun BondPortraitCard(
                     Text(
                         RealWorldDecor.reactionLine(bond),
                         color = TcgColors.Text.copy(alpha = 0.92f),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         lineHeight = 16.sp
                     )
                     if (lastLog != null) {
                         Spacer(Modifier.height(3.dp))
-                        Text(lastLog, color = TcgColors.Muted, fontSize = 8.sp, lineHeight = 12.sp)
+                        Text(lastLog, color = TcgColors.Muted, fontSize = 11.sp, lineHeight = 12.sp)
                     }
                 }
             }
@@ -463,11 +463,11 @@ private fun BondActionCard(
         ) {
             Text(icon, fontSize = 16.sp)
         }
-        Text(title, color = TcgColors.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text(title, color = TcgColors.Text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Text(
             hint,
             color = TcgColors.Muted,
-            fontSize = 8.sp,
+            fontSize = 11.sp,
             lineHeight = 11.sp,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
@@ -518,7 +518,7 @@ private fun MemoryRecallSection(
                     "「저… 계약자님이 맞으시죠? 이상하게, 이 문양을 보면 가슴이 아파요.」\n" +
                         "${partner.name}은(는) 죽음을 넘어 돌아왔지만, 당신과의 기억을 전부 잃었습니다.",
                     color = TcgColors.Text.copy(alpha = 0.88f),
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     lineHeight = 16.sp
                 )
             }
@@ -531,7 +531,7 @@ private fun MemoryRecallSection(
         Text(
             "기억 파편 ${partner.memoryFragments}/$target · 친밀도 ${partner.bondLevel}/100",
             color = TcgColors.Muted,
-            fontSize = 9.sp
+            fontSize = 12.sp
         )
         ActionTile(
             label = "기억의 잔향 교감 — ${partner.name}",
@@ -544,7 +544,7 @@ private fun MemoryRecallSection(
             Text(
                 "기억 파편이 모두 모였습니다 — 도감·서약 탭에서 「기억의 조각 회상」을 열어 기억을 복원하세요.",
                 color = TcgColors.Gold,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 lineHeight = 15.sp
             )
         }
@@ -559,7 +559,7 @@ private fun MemoryRecallSection(
                 Text(
                     state.memoryRecallMessage,
                     color = TcgColors.Text.copy(alpha = 0.9f),
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     lineHeight = 15.sp
                 )
             }

@@ -154,7 +154,7 @@ fun PackOpeningOverlay(
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.weight(1f))
-            Text(opening.stepLabel, color = TcgColors.Muted, fontSize = 10.sp)
+            Text(opening.stepLabel, color = TcgColors.Muted, fontSize = 12.sp)
             Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
@@ -164,7 +164,7 @@ fun PackOpeningOverlay(
                     .clickable { onSfx(SfxEffect.CLICK); onClose() }
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
-                Text("닫기 ✕", color = TcgColors.Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text("닫기 ✕", color = TcgColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -272,7 +272,7 @@ private fun SealedPackStage(
                     Text(
                         "SEALED",
                         color = TcgColors.Gold.copy(alpha = 0.9f),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 3.sp
                     )
@@ -313,7 +313,7 @@ private fun SealedPackStage(
             Text(
                 "빛이 새어 나오는 봉인 카드팩입니다",
                 color = TcgColors.Muted,
-                fontSize = 10.sp
+                fontSize = 12.sp
             )
         }
     }
@@ -405,7 +405,7 @@ private fun RevealStage(
                     )
                 }
                 Spacer(Modifier.width(6.dp))
-                Text(opening.stepLabel, color = TcgColors.Muted, fontSize = 10.sp)
+                Text(opening.stepLabel, color = TcgColors.Muted, fontSize = 12.sp)
             }
 
             Spacer(Modifier.height(16.dp))
@@ -475,7 +475,7 @@ private fun PackRevealCard(
             Text(
                 if (draw.isNew) "★ NEW · 신규" else "중복 🧩 +${draw.shards}",
                 color = Color(0xFF120E1C),
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.ExtraBold
             )
         }
@@ -488,7 +488,7 @@ private fun PackRevealCard(
                 .background(Color(0xCC120E1C))
                 .padding(horizontal = 6.dp, vertical = 2.dp)
         ) {
-            Text(draw.rarity.displayName, color = rarityColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text(draw.rarity.displayName, color = rarityColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
         // 하단 이름 · 속성
         Row(
@@ -502,10 +502,10 @@ private fun PackRevealCard(
             Spacer(Modifier.width(6.dp))
             Column {
                 Text(draw.name, color = TcgColors.Text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text("NO.${draw.cardId} · 코스트 ${card.baseCost}", color = TcgColors.Muted, fontSize = 8.sp)
+                Text("NO.${draw.cardId} · 코스트 ${card.baseCost}", color = TcgColors.Muted, fontSize = 11.sp)
             }
             Spacer(Modifier.weight(1f))
-            Text("⚔ ${card.atk}  🛡 ${card.def}", color = TcgColors.Gold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("⚔ ${card.atk}  🛡 ${card.def}", color = TcgColors.Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -581,7 +581,7 @@ private fun SummaryStage(
                                 Text(
                                     draw.name,
                                     color = TcgColors.Text,
-                                    fontSize = 9.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     textAlign = TextAlign.Center

@@ -104,6 +104,7 @@ fun TcgGameState.toGameSave(): GameSave = GameSave(
     vowedDemonLords = DemonLordRegistry.ALL.filter { it.isVowedCompanion }.map { it.id },
     lobbyHeroId = lobbyHeroId,
     lobbyVisual = lobbyVisual.name,
+    lobbyOutfits = lobbyOutfits.mapValues { (_, visual) -> visual.name },
     growthCardId = growthCardId,
     summonCardId = summonCardId,
     selectedCardId = selectedCardId,
@@ -245,6 +246,20 @@ fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
         sfxVolume = sfxVolume
     ).sanitized()
 
+    // ── 로비 대표 캐릭터 · 캐릭터별 복장 복원 ──
+    //  2026-11-16: 저장된 대표 캐릭터가 없으면 첫 카드로 대체하고,
+    //  그 **대표 캐릭터의 친밀도**로 복장 상한을 판정한다(예전엔 엉뚱한 번호로 계산해
+    //  일상복·데이트복이 전투복으로 되돌아갈 수 있었다).
+    val restoredHeroId = if (cardById.containsKey(lobbyHeroId)) lobbyHeroId else restoredCards.first().id
+    val restoredOutfits: Map<Int, VisualState> = lobbyOutfits
+        .mapNotNull { (cardId, visualName) ->
+            if (!cardById.containsKey(cardId)) return@mapNotNull null
+            cardId to capVisual(visualOf(visualName), bondOfId(cardId))
+        }
+        .toMap()
+    val savedLobbyVisualName = lobbyOutfits[restoredHeroId] ?: lobbyVisual
+    val restoredLobbyVisual = capVisual(visualOf(savedLobbyVisualName), bondOfId(restoredHeroId))
+
     return base.copy(
         gold = gold.coerceAtLeast(0),
         gems = gems.coerceAtLeast(0),
@@ -289,9 +304,10 @@ fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
         stageCleared = cleared,
         selectedStage = stage,
         activeStage = null,
-        lobbyHeroId = if (cardById.containsKey(lobbyHeroId)) lobbyHeroId
-        else restoredCards.first().id,
-        lobbyVisual = capVisual(visualOf(lobbyVisual), bondOfId(lobbyHeroId)),        growthCardId = if (cardById.containsKey(growthCardId)) growthCardId
+        lobbyHeroId = restoredHeroId,
+        lobbyVisual = restoredLobbyVisual,
+        lobbyOutfits = restoredOutfits,
+        growthCardId = if (cardById.containsKey(growthCardId)) growthCardId
         else restoredCards.first().id,
         summonCardId = if (cardById.containsKey(summonCardId)) summonCardId
         else restoredCards.first().id,

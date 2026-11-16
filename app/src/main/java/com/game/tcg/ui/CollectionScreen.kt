@@ -112,7 +112,7 @@ fun CollectionScreen(
                     "도감 번호를 누르면 카드 상세와 3단 비주얼이 열립니다. (170명 × 3 = JPG 510장, 1캐릭터 = 1장 유일성)"
                 },
                 color = TcgColors.Muted,
-                fontSize = 9.sp,
+                fontSize = 12.sp,
                 lineHeight = 14.sp
             )
             Box(
@@ -152,7 +152,7 @@ fun CollectionScreen(
             Text(
                 "목록 ${shownProfiles.size}명 전원 스크롤 가능 · 자물쇠 표시는 아직 계약하지 않은 카드입니다.",
                 color = TcgColors.Muted,
-                fontSize = 9.sp
+                fontSize = 12.sp
             )
         }
 
@@ -255,7 +255,7 @@ fun CollectionScreen(
                     "🔒 미해금 비주얼 — 일상 ${AffinityRules.CASUAL_UNLOCK_BOND} · 데이트 ${AffinityRules.DATE_UNLOCK_BOND} " +
                         "(현재 친밀도 $bond/100 · 전투 출전 ${selected.battleCount}회)",
                     color = TcgColors.Muted,
-                    fontSize = 9.sp,
+                    fontSize = 12.sp,
                     lineHeight = 14.sp
                 )
                 StatBar(ratio = AffinityRules.casualProgress(bond), color = TcgColors.Danger, height = 7)
@@ -264,7 +264,7 @@ fun CollectionScreen(
                 Text(
                     state.visualLockMessage,
                     color = TcgColors.Danger,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     lineHeight = 15.sp
                 )
             }
@@ -288,7 +288,7 @@ fun CollectionScreen(
                     "전투 편성: 현재 미배치 — 슬롯을 눌러 소환하세요. (${state.party.size}/${state.unlockedDeckSize}장)"
                 },
                 color = if (currentSlot != null) TcgColors.Heal else TcgColors.Muted,
-                fontSize = 10.sp
+                fontSize = 12.sp
             )
             (0 until state.unlockedDeckSize).chunked(4).forEach { rowSlots ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -334,13 +334,13 @@ fun CollectionScreen(
                 StatColumn("친밀도", "${selected.bondLevel}", TcgColors.Heal)
                 StatColumn("출전", "${selected.battleCount}회", TcgColors.Violet)
             }
-            Text("스킬 · ${selected.skillText}", color = TcgColors.Text.copy(alpha = 0.85f), fontSize = 11.sp, lineHeight = 16.sp)
+            Text("스킬 · ${selected.skillText}", color = TcgColors.Text.copy(alpha = 0.85f), fontSize = 12.sp, lineHeight = 16.sp)
             if (!isOwned) {
                 Text(
                     "아직 계약하지 않은 카드입니다. 도감 열람과 3단 비주얼 감상은 가능하며, " +
                             "계약은 2웨이 합성의 '신규 연성'에서 할 수 있습니다.",
                     color = TcgColors.Muted,
-                    fontSize = 9.sp,
+                    fontSize = 12.sp,
                     lineHeight = 14.sp
                 )
             }
@@ -359,7 +359,7 @@ fun CollectionScreen(
                     "마왕의 사진을 확대해 10초 이상 응시하면 [홀림] 스택이 쌓입니다. " +
                             "이 스택은 마왕전에서 아군 공격력 저하·피격 피해 증가로 은밀히 적용됩니다.",
                     color = TcgColors.Muted,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     lineHeight = 15.sp
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -368,7 +368,7 @@ fun CollectionScreen(
                         TcgColors.Danger
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text("누적 ${state.temptationState.totalTemptationStacks}/10", color = TcgColors.Danger, fontSize = 10.sp)
+                    Text("누적 ${state.temptationState.totalTemptationStacks}/10", color = TcgColors.Danger, fontSize = 12.sp)
                 }
                 StatBar(
                     ratio = state.temptationState.visualMistIntensity,
@@ -378,7 +378,7 @@ fun CollectionScreen(
                 Text(
                     "심장 박동 ${state.temptationState.heartbeatBpm} BPM · 응시 누적 ${state.temptationState.gazeDurationSeconds}초 · 줌 ${state.temptationState.gazeZoomCount}회",
                     color = TcgColors.Muted,
-                    fontSize = 9.sp
+                    fontSize = 12.sp
                 )
                 ActionTile(
                     label = "🔍 자세히 응시하기 (핀치 줌 체험)",
@@ -401,10 +401,10 @@ fun CollectionScreen(
                             .background(TcgColors.Danger.copy(alpha = 0.12f))
                             .padding(10.dp)
                     ) {
-                        Text(state.gazeMessage, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = 10.sp, lineHeight = 15.sp)
+                        Text(state.gazeMessage, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = 12.sp, lineHeight = 15.sp)
                     }
                 }
-                Text(state.combatPenalty.debuffDescription, color = TcgColors.Danger, fontSize = 10.sp)
+                Text(state.combatPenalty.debuffDescription, color = TcgColors.Danger, fontSize = 12.sp)
             }
         }
 
@@ -428,7 +428,7 @@ fun CollectionScreen(
                             "현실 교감과 이계 전투 승리로 기억 파편을 모으면 「기억의 조각 회상」 이벤트로 " +
                             "스탯 보너스와 기억을 되찾을 수 있습니다.",
                     color = TcgColors.Muted,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     lineHeight = 15.sp
                 )
                 StatBar(ratio = fragments.toFloat() / target, color = TcgColors.Abyss, height = 10)
@@ -436,12 +436,12 @@ fun CollectionScreen(
                     "기억 파편 게이지 $fragments/$target" +
                             (if (fragments >= target) " — 회상 이벤트 개방!" else " — ${target - fragments}개 더 필요"),
                     color = if (fragments >= target) TcgColors.Gold else TcgColors.Muted,
-                    fontSize = 10.sp
+                    fontSize = 12.sp
                 )
                 Text(
                     "파편 수집 경로: 현실 교감 탭의 「기억의 잔향」 교감(파편 +1) · 이계 전투 승리(파편 +1)",
                     color = TcgColors.Muted,
-                    fontSize = 9.sp
+                    fontSize = 12.sp
                 )
                 ActionTile(
                     label = "🌙 기억의 조각 회상 이벤트 열기",
@@ -462,7 +462,7 @@ fun CollectionScreen(
                         Text(
                             state.memoryRecallMessage,
                             color = TcgColors.Text.copy(alpha = 0.9f),
-                            fontSize = 10.sp,
+                            fontSize = 12.sp,
                             lineHeight = 15.sp
                         )
                     }
@@ -489,7 +489,7 @@ fun CollectionScreen(
                         Text(
                             line,
                             color = TcgColors.Text.copy(alpha = 0.9f),
-                            fontSize = 11.sp,
+                            fontSize = 12.sp,
                             lineHeight = 17.sp
                         )
                     }
@@ -497,7 +497,7 @@ fun CollectionScreen(
                 Text(
                     recallDialogue.closingLine,
                     color = TcgColors.Gold,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -518,7 +518,7 @@ fun CollectionScreen(
                         Text(
                             "잡카드 3장 + 수수료 300G\n→ 미보유 캐릭터 1종과 계약",
                             color = TcgColors.Muted,
-                            fontSize = 9.sp,
+                            fontSize = 12.sp,
                             lineHeight = 14.sp
                         )
                         Spacer(Modifier.height(6.dp))
@@ -543,7 +543,7 @@ fun CollectionScreen(
                         Text(
                             "동일 카드 흡수\n→ 성급 +1 (ATK/DEF +20%, 최대 5★)",
                             color = TcgColors.Muted,
-                            fontSize = 9.sp,
+                            fontSize = 12.sp,
                             lineHeight = 14.sp
                         )
                         Spacer(Modifier.height(6.dp))
@@ -565,13 +565,13 @@ fun CollectionScreen(
                         .background(TcgColors.Gold.copy(alpha = 0.12f))
                         .padding(10.dp)
                 ) {
-                    Text(state.synthesisMessage, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = 10.sp, lineHeight = 15.sp)
+                    Text(state.synthesisMessage, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = 12.sp, lineHeight = 15.sp)
                 }
             }
             Text(
                 "한계 돌파는 도감·서약의 카드 상세에서 대상 카드를 먼저 선택하세요.",
                 color = TcgColors.Muted,
-                fontSize = 9.sp
+                fontSize = 12.sp
             )
         }
     }
@@ -601,7 +601,7 @@ private fun StatColumn(label: String, value: String, color: Color) {
             .background(TcgColors.SurfaceAlt)
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
-        Text(label, color = TcgColors.Muted, fontSize = 8.sp)
+        Text(label, color = TcgColors.Muted, fontSize = 11.sp)
         Text(value, color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }

@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,13 +39,13 @@ import com.game.tcg.core.model.VisualState
 /**
  * 비주얼 전투(VS) 화면과 덱 편성(DECK) 화면이 함께 쓰는 카드 타일.
  *
- * 레퍼런스(타 TCG `FIGHT`/`DECK` 화면)의 구성을 그대로 따른다.
- *  - 좌상단: 카드 전투력 (ATK+DEF)/100
- *  - 우상단: 등급(★) + 속성 배지
- *  - 좌하단: NO.{도감번호}
- *  - 우하단: 속성 원형 아이콘
- *  - 하단: HP 바(있을 때) · 장착/잠금/선택 표시
- * 모든 일러스트는 [CardArtImage]가 화면 크기에 맞춰 축소 디코딩하므로 12칸 그리드에서도 OOM이 없다.
+ * 2026-11-16 사용자 요청 반영 (실기기 스크린샷 25048 · 25054):
+ *  - **카드 비율 2:3** — 일러스트 원본(540×810)과 같은 세로 카드. 호출부가
+ *    `Modifier.aspectRatio(CardLayoutRules.TILE_ASPECT)` 를 준다
+ *  - **아트는 잘라내지 않는다** — 기본 [artScale] 이 `ContentScale.Fit` 이라
+ *    캐릭터 얼굴·몸통이 잘리지 않고 타일 안에 꼭 맞는다
+ *  - **글씨 확대** — 전투력 15sp · 등급/NO./상태 11sp (이전 6~9sp)
+ *  - 정보 오버레이는 위·아래 모서리에만 두어 얼굴을 가리지 않는다
  */
 @Composable
 fun DuelCardTile(
@@ -62,8 +63,9 @@ fun DuelCardTile(
     statusBadge: String? = null,
     statusBadgeColor: Color = TcgColors.Danger,
     artAlignment: Alignment = Alignment.Center,
-    cornerRadius: Dp = 10.dp,
-    targetWidthPx: Int = 300,
+    cornerRadius: Dp = 12.dp,
+    targetWidthPx: Int = 380,
+    artScale: ContentScale = if (CardLayoutRules.ART_FIT) ContentScale.Fit else ContentScale.Crop,
     onClick: (() -> Unit)? = null
 ) {
     val shape = RoundedCornerShape(cornerRadius)
@@ -75,9 +77,9 @@ fun DuelCardTile(
         else -> Color(0xFF8C86A6)
     }
     val borderWidth = when {
-        highlighted -> 2.5.dp
+        highlighted -> 3.dp
         equipped -> 2.dp
-        else -> 1.dp
+        else -> 1.5.dp
     }
     Box(
         modifier = modifier
@@ -86,113 +88,123 @@ fun DuelCardTile(
             .border(borderWidth, borderColor, shape)
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
     ) {
+        // 카드 원본 비율 그대로 — Fit 이므로 좌우가 비면 카드 배경색이 받쳐 준다
         CardArtImage(
             cardId = cardId,
             visual = visual,
             contentDescription = null,
-            contentScale = ContentScale.Crop,
+            contentScale = artScale,
             alignment = artAlignment,
             modifier = Modifier.fillMaxSize(),
             targetWidthPx = targetWidthPx
         )
 
-        // 하단 가독성 스크림
+        // 위·아래 가독성 스크림 (얼굴을 가리지 않도록 22%만)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.45f)
+                .fillMaxHeight(0.22f)
+                .align(Alignment.TopCenter)
+                .background(Brush.verticalGradient(listOf(Color(0xB30A0714), Color.Transparent)))
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.30f)
                 .align(Alignment.BottomCenter)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xD90A0714))))
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE00A0714))))
         )
 
         // 좌상단 전투력
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(3.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color(0xCC120E1C))
-                .padding(horizontal = 5.dp, vertical = 1.dp)
+                .padding(4.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .background(Color(0xD9120E1C))
+                .padding(horizontal = 6.dp, vertical = 2.dp)
         ) {
             Text(
                 "$power",
                 color = if (starLevel >= 5) Color(0xFFFFD54F) else TcgColors.Text,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.ExtraBold
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1
             )
         }
 
-        // 우상단 등급·속성 배지
-        Row(
+        // 우상단 등급 배지
+        Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                .padding(4.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color(0xD9120E1C))
+                .padding(horizontal = 5.dp, vertical = 2.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(Color(0xCC120E1C))
-                    .padding(horizontal = 4.dp, vertical = 1.dp)
-            ) {
-                Text(
-                    when {
-                        starLevel >= 5 -> "LEGEND"
-                        starLevel >= 4 -> "RARE"
-                        starLevel >= 3 -> "UNCOMMON"
-                        else -> "COMMON"
-                    },
-                    color = borderColor,
-                    fontSize = 6.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1
-                )
-            }
+            Text(
+                when {
+                    starLevel >= 5 -> "★5"
+                    starLevel >= 4 -> "★4"
+                    starLevel >= 3 -> "★3"
+                    else -> "★2"
+                },
+                color = borderColor,
+                fontSize = TcgType.TILE_MARK.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
         }
 
         // 우하단 속성 아이콘
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(3.dp)
-                .size(20.dp)
+                .padding(5.dp)
+                .size(26.dp)
                 .clip(CircleShape)
-                .background(elementColor(element).copy(alpha = 0.92f))
-                .border(1.dp, Color.White.copy(alpha = 0.7f), CircleShape),
+                .background(elementColor(element).copy(alpha = 0.95f))
+                .border(1.5.dp, Color.White.copy(alpha = 0.8f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(elementGlyph(element), fontSize = 9.sp)
+            Text(elementGlyph(element), fontSize = 13.sp)
         }
 
-        // 좌하단 NO. 라벨 + 상태 배지
+        // 좌하단 상태 배지 + NO. + HP 바
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 3.dp, bottom = 3.dp, end = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+                .padding(start = 5.dp, bottom = 5.dp, end = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             if (statusBadge != null) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(statusBadgeColor.copy(alpha = 0.92f))
-                        .padding(horizontal = 4.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(statusBadgeColor.copy(alpha = 0.95f))
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
                 ) {
-                    Text(statusBadge, color = Color(0xFF120E1C), fontSize = 7.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        statusBadge,
+                        color = Color(0xFF120E1C),
+                        fontSize = TcgType.TILE_MARK.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1
+                    )
                 }
             }
             Text(
                 "NO.$cardId",
                 color = Color(0xFFEDE7F6),
-                fontSize = 7.sp,
-                fontWeight = FontWeight.SemiBold
+                fontSize = TcgType.TILE_MARK.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
             )
             if (hpRatio != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(4.dp)
+                        .height(6.dp)
                         .clip(RoundedCornerShape(50))
                         .background(Color(0xFF2B2340))
                 ) {
@@ -211,28 +223,33 @@ fun DuelCardTile(
                     )
                 }
             }
-        }
-        if (hpText != null) {
-            Text(
-                hpText,
-                color = Color(0xFFEFE9F7),
-                fontSize = 6.sp,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 7.dp)
-            )
+            if (hpText != null) {
+                Text(
+                    "HP $hpText",
+                    color = Color(0xFFEFE9F7),
+                    fontSize = TcgType.TILE_MARK.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
         }
 
-        // 장착 체크 (컬렉션 장착중 표시)
+        // 장착 표시 — 얼굴이 아니라 하단 띠에 둔다
         if (equipped) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .clip(RoundedCornerShape(50))
-                    .background(TcgColors.Violet.copy(alpha = 0.85f))
-                    .padding(horizontal = 7.dp, vertical = 3.dp)
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(TcgColors.Violet.copy(alpha = 0.82f)),
+                contentAlignment = Alignment.Center
             ) {
-                Text("장착중 ✓", color = Color(0xFF120E1C), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    "장착중 ✓",
+                    color = Color(0xFF120E1C),
+                    fontSize = TcgType.TILE_MARK.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.padding(vertical = 2.dp)
+                )
             }
         }
 
@@ -246,7 +263,7 @@ fun DuelCardTile(
             Text(
                 "전투불능",
                 color = TcgColors.Danger,
-                fontSize = 9.sp,
+                fontSize = TcgType.BODY_SMALL.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.align(Alignment.Center)
             )
@@ -262,20 +279,20 @@ fun EmptySlotTile(
     hint: String = "탭하여 장착",
     onClick: (() -> Unit)? = null
 ) {
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(12.dp)
     Column(
         modifier = modifier
             .clip(shape)
             .background(Color(0x33FFFFFF))
-            .border(1.dp, Color(0x66FFFFFF), shape)
+            .border(1.5.dp, Color(0x66FFFFFF), shape)
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(4.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("＋", color = Color(0xCCFFFFFF), fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Text(label, color = Color(0xCCFFFFFF), fontSize = 8.sp, fontWeight = FontWeight.SemiBold)
-        Text(hint, color = Color(0x99FFFFFF), fontSize = 6.sp, maxLines = 1)
+        Text("＋", color = Color(0xCCFFFFFF), fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = Color(0xE6FFFFFF), fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.SemiBold)
+        Text(hint, color = Color(0x99FFFFFF), fontSize = TcgType.TILE_MARK.sp, maxLines = 1)
     }
 }
 
@@ -286,7 +303,7 @@ fun LockedSlotTile(
     label: String,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(12.dp)
     Column(
         modifier = modifier
             .clip(shape)
@@ -296,15 +313,15 @@ fun LockedSlotTile(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("🔒", fontSize = 13.sp)
-        Text("Lv.$unlockLevel", color = Color(0xFFE6DDF7), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-        Text(label, color = Color(0x99FFFFFF), fontSize = 6.sp)
+        Text("🔒", fontSize = 24.sp)
+        Text("Lv.$unlockLevel", color = Color(0xFFE6DDF7), fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = Color(0x99FFFFFF), fontSize = TcgType.TILE_MARK.sp, textAlign = TextAlign.Center)
     }
 }
 
 /** 속성 원형 아이콘 (카드 타일 밖에서 쓰는 큰 배지) */
 @Composable
-fun ElementBadge(element: Element, size: Dp = 16.dp) {
+fun ElementBadge(element: Element, size: Dp = 22.dp) {
     Box(
         modifier = Modifier
             .size(size)
@@ -313,7 +330,7 @@ fun ElementBadge(element: Element, size: Dp = 16.dp) {
             .border(1.dp, Color.White.copy(alpha = 0.65f), CircleShape),
         contentAlignment = Alignment.Center
     ) {
-        Text(elementGlyph(element), fontSize = (size.value * 0.45f).sp)
+        Text(elementGlyph(element), fontSize = (size.value * 0.5f).sp)
     }
 }
 
@@ -337,7 +354,7 @@ fun DuelCardTileFor(
     hpText: String? = null,
     statusBadge: String? = null,
     statusBadgeColor: Color = TcgColors.Danger,
-    targetWidthPx: Int = 300,
+    targetWidthPx: Int = 380,
     onClick: (() -> Unit)? = null
 ) {
     DuelCardTile(
@@ -381,6 +398,6 @@ fun Modifier.dotPattern(color: Color = Color.White.copy(alpha = 0.07f), step: Fl
 fun CardNameLabel(name: String, modifier: Modifier = Modifier, color: Color = Color(0xFFEDE7F6)) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Spacer(Modifier.width(2.dp))
-        Text(name, color = color, fontSize = 8.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(name, color = color, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }

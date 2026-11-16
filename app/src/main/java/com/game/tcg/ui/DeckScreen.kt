@@ -45,7 +45,7 @@ fun DeckScreen(
                 Text(
                     "${state.party.count { it.isFrontRow }}/3",
                     color = TcgColors.Text,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.width(10.dp))
@@ -54,7 +54,7 @@ fun DeckScreen(
                 Text(
                     "${state.party.count { !it.isFrontRow }}/${deckSize - 3}",
                     color = TcgColors.Text,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.width(10.dp))
@@ -65,7 +65,7 @@ fun DeckScreen(
                 "기본 9장 편성 · Lv.5에서 10장 · Lv.10에서 11장 · Lv.15에서 12장까지 열립니다. " +
                         "같은 캐릭터는 단 1장만 편성할 수 있습니다(1캐릭터 1장 원칙).",
                 color = TcgColors.Muted,
-                fontSize = 9.sp,
+                fontSize = 12.sp,
                 lineHeight = 14.sp
             )
 
@@ -82,7 +82,7 @@ fun DeckScreen(
                         Text(
                             "${card.element.displayName} · ${card.starLevel}★ · ATK ${card.atk} / DEF ${card.def} · 친밀도 ${card.bondLevel}",
                             color = TcgColors.Muted,
-                            fontSize = 9.sp
+                            fontSize = 12.sp
                         )
                     }
                     Pill("1인 1장 ✓", TcgColors.Heal)
@@ -92,7 +92,7 @@ fun DeckScreen(
                 Text(
                     "아직 편성된 카드가 없습니다 — 「덱 편성」 탭에서 자동 편성 또는 카드 탭으로 채우세요.",
                     color = TcgColors.Muted,
-                    fontSize = 9.sp
+                    fontSize = 12.sp
                 )
             }
             ActionTile(
@@ -114,10 +114,10 @@ fun DeckScreen(
                     TcgColors.Danger
                 )
                 Spacer(Modifier.width(6.dp))
-                Text("누적 ${state.temptationState.totalTemptationStacks}/10", color = TcgColors.Danger, fontSize = 10.sp)
+                Text("누적 ${state.temptationState.totalTemptationStacks}/10", color = TcgColors.Danger, fontSize = 12.sp)
             }
             StatBar(ratio = state.temptationState.visualMistIntensity, color = TcgColors.Abyss, height = 8)
-            Text(state.combatPenalty.debuffDescription, color = TcgColors.Danger, fontSize = 10.sp, lineHeight = 15.sp)
+            Text(state.combatPenalty.debuffDescription, color = TcgColors.Danger, fontSize = 12.sp, lineHeight = 15.sp)
             ActionTile(
                 label = "🔍 마왕 카드 자세히 응시하기",
                 hint = "[홀림] 스택 +1 · 마왕전 디버프 누적",
@@ -132,7 +132,7 @@ fun DeckScreen(
                 onClick = onPurify
             )
             if (state.gazeMessage != null) {
-                Text(state.gazeMessage, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = 10.sp, lineHeight = 15.sp)
+                Text(state.gazeMessage, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = 12.sp, lineHeight = 15.sp)
             }
         }
 
@@ -141,7 +141,7 @@ fun DeckScreen(
                 "메인 화면 중앙에 크게 세울 캐릭터를 고릅니다. 좌우 레일의 어느 화면에서든 " +
                         "「← 메인 로비」로 돌아오면 이 캐릭터가 맞이합니다.",
                 color = TcgColors.Muted,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 lineHeight = 15.sp
             )
             state.lobbyRoster.forEach { id ->

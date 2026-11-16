@@ -235,7 +235,7 @@ fun IntroStoryScreen(
             Text(
                 state.stepLabel,
                 color = TcgColors.Muted,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(Modifier.width(10.dp))
@@ -250,7 +250,7 @@ fun IntroStoryScreen(
                 Text(
                     "SKIP ▸",
                     color = TcgColors.Text,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.6.sp
                 )
@@ -269,7 +269,7 @@ fun IntroStoryScreen(
             Text(
                 "— ${scene.act} · ${scene.id.label} —",
                 color = accent,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.6.sp,
                 modifier = Modifier
@@ -337,7 +337,7 @@ fun IntroStoryScreen(
                 Text(
                     "장면 ${state.sceneIndex + 1} / ${IntroScript.sceneCount}",
                     color = TcgColors.Muted,
-                    fontSize = 9.sp
+                    fontSize = 12.sp
                 )
             }
 
@@ -387,7 +387,7 @@ fun IntroStoryScreen(
                     Text(
                         IntroAdvancePolicy.sceneCounter(state),
                         color = accent,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }

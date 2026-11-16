@@ -69,6 +69,12 @@ data class GameSave(
     // ── 화면 선택 상태 ──
     val lobbyHeroId: Int = 3,
     val lobbyVisual: String = "BATTLE",
+    /**
+     * 캐릭터별 마지막 복장 (카드 번호 → VisualState 이름).
+     * 2026-11-16 사용자 요청 — 메인 화면에서 고른 일상복/데이트복이 앱을 껐다 켜도 유지된다.
+     * 목록 행(`outfit=번호|이름`)으로 저장되며, 없으면 빈 맵(구버전 저장 호환).
+     */
+    val lobbyOutfits: Map<Int, String> = emptyMap(),
     val growthCardId: Int = 0,
     val summonCardId: Int = 0,
     val selectedCardId: Int = 3,

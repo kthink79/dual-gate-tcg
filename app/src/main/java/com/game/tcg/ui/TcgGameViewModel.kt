@@ -463,6 +463,15 @@ data class TcgGameState(
     val currentScreen: LobbyDestination = LobbyDestination.LOBBY,
     val lobbyHeroId: Int = TcgGameViewModel.DEFAULT_LOBBY_HERO_ID,
     val lobbyVisual: VisualState = VisualState.BATTLE,
+    /**
+     * 캐릭터별로 마지막에 고른 복장 — 2026-11-16 사용자 요청
+     * 「메인 화면에서 일상이나 데이트 복장을 선택한 캐릭터는 유지가 되게 해줘」.
+     *
+     * 대표 캐릭터를 바꿔도 각 캐릭터가 골라 둔 복장이 그대로 돌아오고,
+     * 이 값은 [com.game.tcg.persistence.GameSave]에 함께 저장되어 앱을 껐다 켜도 유지된다.
+     * (해금되지 않은 복장은 기존 규칙대로 친밀도 단계까지만 허용)
+     */
+    val lobbyOutfits: Map<Int, VisualState> = emptyMap(),
     val gateEnergy: Int = TcgGameViewModel.GATE_ENERGY_START,
     val explorationCount: Int = 0,
     val lastExploration: ExplorationResult? = null,
@@ -1111,10 +1120,10 @@ class TcgGameViewModel(
                 )
             }
             val heroName = heroDisplayName(cardId)
-            val bond = bondOf(s, cardId)
             s.copy(
                 lobbyHeroId = cardId,
-                lobbyVisual = capVisual(s.lobbyVisual, bond),
+                lobbyVisual = outfitFor(s, cardId),
+                lobbyOutfits = s.lobbyOutfits + (s.lobbyHeroId to s.lobbyVisual),
                 statusMessage = "[대표 캐릭터] $heroName — 메인 화면에 소환되었습니다."
             )
         }
@@ -1131,18 +1140,31 @@ class TcgGameViewModel(
             val nextIndex = ((currentIndex + direction) % roster.size + roster.size) % roster.size
             val nextId = roster[nextIndex]
             val heroName = heroDisplayName(nextId)
-            val bond = bondOf(s, nextId)
             s.copy(
                 lobbyHeroId = nextId,
-                lobbyVisual = capVisual(s.lobbyVisual, bond),
+                lobbyVisual = outfitFor(s, nextId),
+                lobbyOutfits = s.lobbyOutfits + (s.lobbyHeroId to s.lobbyVisual),
                 statusMessage = "[대표 캐릭터] $heroName (${nextIndex + 1}/${roster.size})"
             )
         }
     }
 
     /**
+     * 그 캐릭터가 마지막에 고른 복장 — 없으면 지금 복장에서 친밀도 상한까지만 맞춘다.
+     * (해금되지 않은 복장으로는 되돌아가지 않는다 — 기존 잠금 규칙 유지)
+     */
+    private fun outfitFor(s: TcgGameState, cardId: Int): VisualState {
+        val bond = bondOf(s, cardId)
+        val remembered = s.lobbyOutfits[cardId] ?: s.lobbyVisual
+        return capVisual(remembered, bond)
+    }
+
+    /**
      * 메인 화면 3단 비주얼(전투 · 일상 · 데이트) 전환.
      * ② 일상은 친밀도 30, ③ 데이트는 70부터 열린다(2026-11-16 개편).
+     *
+     * 고른 복장은 **캐릭터별로 기억**해([TcgGameState.lobbyOutfits]) 다른 캐릭터를 보고
+     * 돌아오거나 앱을 껐다 켜도 그대로 유지된다.
      */
     fun selectLobbyVisual(visual: VisualState) {
         updateState { s ->
@@ -1158,6 +1180,7 @@ class TcgGameViewModel(
             }
             s.copy(
                 lobbyVisual = visual,
+                lobbyOutfits = s.lobbyOutfits + (s.lobbyHeroId to visual),
                 visualLockMessage = null,
                 statusMessage = "[연출] $heroName — ${visual.displayName}"
             )

@@ -64,7 +64,7 @@ fun ExplorationScreen(
                 "탐색 1회당 에너지 ${ExplorationMode.RIFT.energyCost} 소모 · 이계 전투 승리 시 +${TcgGameViewModel.GATE_ENERGY_RECOVERY} 회복 " +
                     "(최대 ${state.gateEnergyMax}) · 누적 탐색 ${state.explorationCount}회",
                 color = TcgColors.Muted,
-                fontSize = 9.sp,
+                fontSize = 12.sp,
                 lineHeight = 14.sp
             )
         }
@@ -82,7 +82,7 @@ fun ExplorationScreen(
                 Text(
                     "차원 균열 에너지가 모두 소진되었습니다. 이계 전투에서 승리하면 회복됩니다.",
                     color = TcgColors.Danger,
-                    fontSize = 9.sp,
+                    fontSize = 12.sp,
                     lineHeight = 14.sp
                 )
             }
@@ -145,7 +145,7 @@ fun ExplorationScreen(
                     Text(
                         result.narrative,
                         color = TcgColors.Text.copy(alpha = 0.9f),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         lineHeight = 18.sp
                     )
                 }
@@ -165,7 +165,7 @@ fun ExplorationScreen(
                             "${result.enemyName} · HP ${result.enemyMaxHp} · 공격력 ${result.enemyAtk} " +
                                 "(${result.enemyElement.displayName})",
                             color = TcgColors.Danger,
-                            fontSize = 10.sp
+                            fontSize = 12.sp
                         )
                     }
                     ActionTile(
@@ -187,7 +187,7 @@ fun ExplorationScreen(
                         "이계 전투에서 동료가 쓰러졌다가 환생 재획득하면 '기억이 지워진 동료'가 되어 " +
                         "파편 수색이 의미를 갖습니다.",
                     color = TcgColors.Muted,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     lineHeight = 15.sp
                 )
             } else {
@@ -212,11 +212,11 @@ fun ExplorationScreen(
                         }
                         Spacer(Modifier.width(7.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(card.name, color = TcgColors.Text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Text(card.name, color = TcgColors.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             Text(
                                 "기억 파편 ${card.memoryFragments}/${TcgCard.MEMORY_FRAGMENT_TARGET} · 친밀도 ${card.bondLevel}/100",
                                 color = TcgColors.Muted,
-                                fontSize = 9.sp
+                                fontSize = 12.sp
                             )
                         }
                     }
@@ -254,7 +254,7 @@ private fun PartyPortraitStrip(state: TcgGameState) {
     val ids = ExplorationDecor.partyStrip(state)
     val frontIds = state.party.filter { it.isFrontRow }.sortedBy { it.slotIndex }.map { it.card.id }
     if (ids.isEmpty()) {
-        Text("출전 덱이 비어 있습니다 — 「서약·덱」에서 편성하세요.", color = TcgColors.Muted, fontSize = 10.sp)
+        Text("출전 덱이 비어 있습니다 — 「서약·덱」에서 편성하세요.", color = TcgColors.Muted, fontSize = 12.sp)
         return
     }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -291,7 +291,7 @@ private fun PartyPortraitStrip(state: TcgGameState) {
                                 .background(TcgColors.Gold)
                                 .padding(horizontal = 3.dp)
                         ) {
-                            Text("전", color = Color(0xFF120E1C), fontSize = 6.sp, fontWeight = FontWeight.Bold)
+                            Text("전", color = Color(0xFF120E1C), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -299,7 +299,7 @@ private fun PartyPortraitStrip(state: TcgGameState) {
                 Text(
                     card.name.take(4),
                     color = TcgColors.Muted,
-                    fontSize = 8.sp,
+                    fontSize = 11.sp,
                     maxLines = 1
                 )
             }
@@ -364,7 +364,7 @@ private fun ExplorationZoneCard(
                 Text(
                     zone.mode.description,
                     color = TcgColors.Muted,
-                    fontSize = 9.sp,
+                    fontSize = 12.sp,
                     lineHeight = 13.sp
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -383,7 +383,7 @@ private fun ExplorationZoneCard(
                 Text(
                     if (enabled) "탐색 ▶" else "⚡ 부족",
                     color = Color(0xFF120E1C),
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
             }

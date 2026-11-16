@@ -4,8 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,24 +17,32 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.game.tcg.audio.SfxEffect
 import com.game.tcg.core.model.PackCatalog
 import com.game.tcg.core.model.PackDefinition
+import com.game.tcg.core.model.PackKind
 import com.game.tcg.core.model.PackOpenResult
 
 /**
- * 🛒 카드팩 상점 — 메인 루프의 "카드팩 확보 → 캐릭터 추가 확보" 단계.
+ * 🛒 카드팩 상점 — 2026-11-16 사용자 요청(실기기 스크린샷 25052) 개편.
  *
- * · 스테이지 보상으로 받은 **🎟 카드팩 티켓**이 있으면 티켓을 먼저 쓰고, 없으면 골드로 산다.
- * · 개봉하면 [PackOpeningOverlay]가 **단계별 비주얼 연출**로 결과를 보여 준다
- *   (봉인 카드팩 → 터치 개봉 플래시 → 실제 카드 일러스트 1장씩 → 전체 그리드).
- * · 연출을 닫아도 아래 「개봉 결과」 카드에 신규 계약 / 중복 조각이 남는다.
+ * 이전 화면은 카드팩 4종이 **텍스트 박스 4개**로만 나열돼 게임처럼 보이지 않았다.
+ * 이제
+ *  - 카드팩마다 **봉인 카드팩 그래픽**(Canvas) — 속성 오라·금속 테두리·인장·구성 장수 배지
+ *  - 탭(일반 / 고급 / 속성팩)으로 진열을 갈라 한 화면에 다 담는다
+ *  - 본문 12sp·제목 18sp 로 키워 읽기 쉽게
  */
 @Composable
 fun PackShopScreen(
@@ -48,33 +59,50 @@ fun PackShopScreen(
     onVideoStart: () -> Unit = {},
     onVideoEnd: () -> Unit = {}
 ) {
+    var tabIndex by remember { mutableIntStateOf(PACK_TAB_STANDARD) }
+
+    val packs = remember(tabIndex) {
+        when (tabIndex) {
+            PACK_TAB_PREMIUM -> listOf(PackCatalog.PREMIUM)
+            PACK_TAB_ELEMENT -> PackCatalog.ALL.filter { it.kind == PackKind.ELEMENTAL }
+            else -> listOf(PackCatalog.STANDARD)
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         ScreenFrame {
-            SectionCard(
-                title = "카드팩 상점",
-                badge = "🪙 ${state.gold}G · 🎟 ${state.packTickets}",
-                accent = TcgColors.Gold
-            ) {
-                Text(
-                    "카드팩에서 나온 동료로 덱을 채우고, 중복은 조각으로 바뀌어 강화·연성 재료가 됩니다. " +
-                        "티켓이 있으면 티켓을 먼저 사용합니다.",
-                    color = TcgColors.Muted,
-                    fontSize = 9.sp,
-                    lineHeight = 14.sp
+            // ── 헤더 ──
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("카드팩", color = TcgColors.Text, fontSize = TcgType.TITLE.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.width(8.dp))
+                Pill("🪙 ${state.gold}G", TcgColors.Gold)
+                Spacer(Modifier.width(5.dp))
+                Pill("🎟 ${state.packTickets}", TcgColors.Mana)
+            }
+            Text(
+                "카드팩에서 나온 동료로 덱을 채우고, 중복은 조각이 되어 강화·연성 재료가 됩니다. " +
+                    "티켓이 있으면 티켓을 먼저 사용합니다.",
+                color = TcgColors.Muted,
+                fontSize = TcgType.BODY_SMALL.sp,
+                lineHeight = 19.sp
+            )
+            PackResourceRow(state)
+
+            // ── 진열 탭 ──
+            TcgTabBar(
+                tabs = listOf("일반팩", "고급팩", "속성팩"),
+                selectedIndex = tabIndex,
+                accent = TcgColors.Gold,
+                onSelect = { tabIndex = it }
+            )
+
+            packs.forEach { pack ->
+                PackTile(
+                    pack = pack,
+                    gold = state.gold,
+                    tickets = state.packTickets,
+                    onBuy = { onOpenPack(pack.id) }
                 )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Pill("보유 동료 ${state.ownedCards.size}명", TcgColors.Violet)
-                    Pill("🧩 조각 ${state.shardTotal}", TcgColors.Abyss)
-                    Pill("🎟 ${state.packTickets}", TcgColors.Mana)
-                }
-                PackCatalog.ALL.forEach { pack ->
-                    PackTile(
-                        pack = pack,
-                        gold = state.gold,
-                        tickets = state.packTickets,
-                        onBuy = { onOpenPack(pack.id) }
-                    )
-                }
             }
 
             val opened: PackOpenResult? = state.lastPackOpen
@@ -84,51 +112,8 @@ fun PackShopScreen(
                     badge = if (opened.hasNewCard) "신규 ${opened.newCardCount}명" else "중복 ${opened.draws.size}장",
                     accent = if (opened.hasNewCard) TcgColors.Heal else TcgColors.Muted
                 ) {
-                    // 카드 1장씩 — 작은 일러스트 타일 + 신규/중복 표시
-                    opened.draws.chunked(3).forEach { row ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            row.forEach { draw ->
-                                val card = TcgGameViewModel.characterCard(draw.cardId)
-                                Box(modifier = Modifier.weight(1f)) {
-                                    DuelCardTile(
-                                        cardId = draw.cardId,
-                                        visual = com.game.tcg.core.model.VisualState.BATTLE,
-                                        element = card.element,
-                                        starLevel = card.starLevel,
-                                        power = (card.atk + card.def) / 100,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(112.dp),
-                                        statusBadge = if (draw.isNew) "NEW" else "🧩 +${draw.shards}",
-                                        statusBadgeColor = if (draw.isNew) TcgColors.Heal else TcgColors.Gold,
-                                        targetWidthPx = 300
-                                    )
-                                }
-                            }
-                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            row.forEach { draw ->
-                                Box(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        draw.name,
-                                        color = TcgColors.Text,
-                                        fontSize = 8.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1
-                                    )
-                                }
-                            }
-                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    PackOpenGrid(opened)
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Pill("획득 조각 +${opened.totalShards}", TcgColors.Abyss)
                         if (opened.totalGold > 0) Pill("중복 환급 ${opened.totalGold}G", TcgColors.Gold)
                         Pill(
@@ -169,11 +154,10 @@ fun PackShopScreen(
                         "· 고급팩: 영웅(7코스트) 이상 1장 확정 5장\n" +
                         "· 속성팩: 지정 속성만 3장\n" +
                         "· 중복 카드는 조각 +10 · 50G로 자동 변환\n" +
-                        "· 마왕(112~114)·중간 보스(170~175)는 카드팩에 등장하지 않습니다. " +
-                        "마왕은 토벌 후 서약, 중간 보스는 「심연 연성」으로 합류합니다.",
+                        "· 마왕(112~114)·중간 보스(170~175)는 카드팩에 등장하지 않습니다.",
                     color = TcgColors.Muted,
-                    fontSize = 9.sp,
-                    lineHeight = 15.sp
+                    fontSize = TcgType.BODY_SMALL.sp,
+                    lineHeight = 20.sp
                 )
             }
         }
@@ -196,7 +180,66 @@ fun PackShopScreen(
     }
 }
 
-/** 카드팩 1종 진열 */
+private const val PACK_TAB_STANDARD = 0
+private const val PACK_TAB_PREMIUM = 1
+private const val PACK_TAB_ELEMENT = 2
+
+/** 보유 현황 배지 — 좁은 화면에서는 두 줄로 흐른다 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PackResourceRow(state: TcgGameState) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Pill("보유 동료 ${state.ownedCards.size}명", TcgColors.Violet)
+        Pill("🧩 조각 ${state.shardTotal}", TcgColors.Abyss)
+        Pill("🎟 티켓 ${state.packTickets}", TcgColors.Mana)
+    }
+}
+
+/** 개봉 결과 카드 — 2:3 비율 유지 + 이름 라벨을 카드 아래로 */
+@Composable
+private fun PackOpenGrid(opened: PackOpenResult) {
+    opened.draws.chunked(3).forEach { row ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            row.forEach { draw ->
+                val card = TcgGameViewModel.characterCard(draw.cardId)
+                Column(modifier = Modifier.weight(1f)) {
+                    DuelCardTile(
+                        cardId = draw.cardId,
+                        visual = com.game.tcg.core.model.VisualState.BATTLE,
+                        element = card.element,
+                        starLevel = card.starLevel,
+                        power = (card.atk + card.def) / 100,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(CardLayoutRules.TILE_ASPECT),
+                        statusBadge = if (draw.isNew) "NEW" else "🧩+${draw.shards}",
+                        statusBadgeColor = if (draw.isNew) TcgColors.Heal else TcgColors.Gold,
+                        targetWidthPx = 300
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        draw.name,
+                        color = TcgColors.Text,
+                        fontSize = TcgType.LABEL.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                }
+            }
+            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+/** 카드팩 1종 진열 — 봉인 카드팩 그래픽 + 이름·구성·가격 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PackTile(
     pack: PackDefinition,
@@ -206,35 +249,76 @@ private fun PackTile(
 ) {
     val useTicket = pack.ticketCost > 0 && tickets >= pack.ticketCost
     val affordable = useTicket || gold >= pack.goldCost
-    val accent = when {
-        pack.element != null -> elementColor(pack.element)
-        pack.kind == com.game.tcg.core.model.PackKind.PREMIUM -> TcgColors.Gold
-        else -> TcgColors.Violet
-    }
-    Column(
+    val accent = packAccent(pack)
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(TcgColors.SurfaceAlt)
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                Brush.horizontalGradient(
+                    listOf(accent.copy(alpha = 0.22f), TcgColors.Surface, TcgColors.SurfaceAlt)
+                )
+            )
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(pack.kind.icon, fontSize = 16.sp)
-            Spacer(Modifier.width(6.dp))
-            Text(pack.name, color = TcgColors.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(6.dp))
-            Pill("${pack.cardCount}장", accent)
-            Spacer(Modifier.weight(1f))
-            Pill(pack.priceLabel, TcgColors.Gold)
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PackArtwork(
+                    pack = pack,
+                    modifier = Modifier
+                        .width(92.dp)
+                        .aspectRatio(0.74f)
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text(
+                        pack.name,
+                        color = TcgColors.Text,
+                        fontSize = TcgType.SECTION.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        lineHeight = 22.sp
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Pill("${pack.kind.icon} ${pack.kind.displayName}", accent)
+                        Pill("${pack.cardCount}장", TcgColors.Mana)
+                        pack.guaranteedRarity?.let { rarity ->
+                            Pill("${rarity.displayName} 이상 확정", Color(rarity.color))
+                        }
+                    }
+                    Text(
+                        pack.description,
+                        color = TcgColors.Muted,
+                        fontSize = TcgType.BODY_SMALL.sp,
+                        lineHeight = 19.sp
+                    )
+                    Text(
+                        pack.priceLabel,
+                        color = TcgColors.Gold,
+                        fontSize = TcgType.NUMBER.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+            }
+            ActionTile(
+                label = when {
+                    !affordable -> "재화 부족"
+                    useTicket -> "🎟 ${pack.ticketCost} 로 개봉"
+                    else -> "${pack.goldCost}G 로 개봉"
+                },
+                hint = if (!affordable) {
+                    "🪙 ${gold}G · 🎟 ${tickets} — 조금 더 모아 오세요"
+                } else {
+                    "개봉 연출과 함께 카드가 등장합니다"
+                },
+                accent = accent,
+                enabled = affordable,
+                onClick = onBuy
+            )
         }
-        Text(pack.description, color = TcgColors.Muted, fontSize = 9.sp, lineHeight = 14.sp)
-        ActionTile(
-            label = if (!affordable) "재화 부족" else if (useTicket) "🎟 ${pack.ticketCost} 로 개봉" else "${pack.goldCost}G 로 개봉",
-            hint = if (!affordable) "🪙 ${gold}G · 🎟 ${tickets}" else "개봉 연출과 함께 카드가 등장합니다",
-            accent = accent,
-            enabled = affordable,
-            onClick = onBuy
-        )
     }
 }

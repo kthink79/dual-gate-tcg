@@ -126,6 +126,11 @@ object SaveCodec {
 
         appendLine("hero=${save.lobbyHeroId}")
         appendLine("lVisual=${save.lobbyVisual}")
+        // 캐릭터별 복장 — 2026-11-16: 고른 일상복/데이트복을 앱을 껐다 켜도 유지
+        save.lobbyOutfits.entries
+            .filter { (cardId, visual) -> cardId > 0 && visual.isNotBlank() }
+            .sortedBy { it.key }
+            .forEach { (cardId, visual) -> appendLine("outfit=$cardId$FIELD$visual") }
         appendLine("growthCard=${save.growthCardId}")
         appendLine("summonCard=${save.summonCardId}")
         appendLine("selCard=${save.selectedCardId}")
@@ -331,6 +336,14 @@ object SaveCodec {
             vowedDemonLords = intList("vow").filter { it > 0 }.distinct(),
             lobbyHeroId = int("hero", defaults.lobbyHeroId, 1),
             lobbyVisual = raw("lVisual") ?: defaults.lobbyVisual,
+            lobbyOutfits = rows("outfit")
+                .mapNotNull { f ->
+                    if (f.size < 2) return@mapNotNull null
+                    val cardId = f[0].toIntOrNull() ?: return@mapNotNull null
+                    val visual = f[1].trim()
+                    if (cardId <= 0 || visual.isEmpty()) null else cardId to visual
+                }
+                .toMap(),
             growthCardId = int("growthCard", defaults.growthCardId, 0),
             summonCardId = int("summonCard", defaults.summonCardId, 0),
             selectedCardId = int("selCard", defaults.selectedCardId, 1),

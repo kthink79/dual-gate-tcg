@@ -82,7 +82,7 @@ fun StageScreen(
             Text(
                 "앞 스테이지를 깨면 다음 스테이지가 열립니다. 보스 관문을 넘으면 조각·티켓·장비가 쏟아집니다.",
                 color = TcgColors.Muted,
-                fontSize = 9.sp,
+                fontSize = 12.sp,
                 lineHeight = 14.sp
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -169,12 +169,12 @@ fun StageScreen(
                         Text(
                             selected.bossRecord?.skill ?: "",
                             color = TcgColors.Muted,
-                            fontSize = 9.sp
+                            fontSize = 12.sp
                         )
                     }
                 }
             }
-            Text(selected.story, color = TcgColors.Muted, fontSize = 10.sp, lineHeight = 15.sp)
+            Text(selected.story, color = TcgColors.Muted, fontSize = 12.sp, lineHeight = 15.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Pill("${selected.chapter}장 ${selected.chapterName}", chapterAccent(selected.chapter))
                 Pill("적 HP ${selected.enemyHp}", TcgColors.Hp)
@@ -183,9 +183,9 @@ fun StageScreen(
 
             // 권장 전투력 대비 내 덱
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("권장 ${selected.recommendedPower}", color = TcgColors.Muted, fontSize = 10.sp)
+                Text("권장 ${selected.recommendedPower}", color = TcgColors.Muted, fontSize = 12.sp)
                 Spacer(Modifier.width(8.dp))
-                Text("내 덱 ${state.deckTotalPower}", color = readinessColor(readiness), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("내 덱 ${state.deckTotalPower}", color = readinessColor(readiness), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.weight(1f))
                 Pill("${readiness.label} · 승률 ${winChance}%", readinessColor(readiness))
             }
@@ -194,14 +194,14 @@ fun StageScreen(
                 color = readinessColor(readiness),
                 height = 8
             )
-            Text(readiness.advice, color = TcgColors.Muted, fontSize = 9.sp, lineHeight = 14.sp)
+            Text(readiness.advice, color = TcgColors.Muted, fontSize = 12.sp, lineHeight = 14.sp)
 
-            Text("클리어 보상 · ${selected.reward.preview}", color = TcgColors.Gold, fontSize = 10.sp, lineHeight = 15.sp)
+            Text("클리어 보상 · ${selected.reward.preview}", color = TcgColors.Gold, fontSize = 12.sp, lineHeight = 15.sp)
             if (selected.number in state.stageCleared) {
                 Text(
                     "재도전 보상은 ${StageEngine.REPEAT_REWARD_PERCENT}%만 지급됩니다. (파밍용)",
                     color = TcgColors.Muted,
-                    fontSize = 9.sp
+                    fontSize = 12.sp
                 )
             }
 
@@ -241,7 +241,7 @@ fun StageScreen(
                 onClick = onOpenShop
             )
             if (state.stageMessage != null) {
-                Text(state.stageMessage, color = TcgColors.Text.copy(alpha = 0.85f), fontSize = 9.sp, lineHeight = 14.sp)
+                Text(state.stageMessage, color = TcgColors.Text.copy(alpha = 0.85f), fontSize = 12.sp, lineHeight = 14.sp)
             }
         }
     }
@@ -270,7 +270,7 @@ private fun RescuePanel(
             Text(
                 offer.reason.ifBlank { "보유 카드가 3장 미만입니다. 카드팩·연성으로 덱을 채우세요." },
                 color = TcgColors.Muted,
-                fontSize = 9.sp,
+                fontSize = 12.sp,
                 lineHeight = 14.sp
             )
         }
@@ -286,7 +286,7 @@ private fun RescuePanel(
             "쓰러진 동료는 영구 상실되지만, 환생 풀에서 **비용 없이** 되찾을 수 있습니다. " +
                 "보유 카드가 3장 미만이고 팩·티켓·조각 연성까지 모두 불가능해지면 무료 지원 카드를 지급합니다.",
             color = TcgColors.Muted,
-            fontSize = 9.sp,
+            fontSize = 12.sp,
             lineHeight = 14.sp
         )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -299,7 +299,7 @@ private fun RescuePanel(
                 Text(
                     "· ${lost.name} (${lost.reincarnationCount}회차 · 잃은 강화 Lv.${lost.lostUpgradeLevel})",
                     color = TcgColors.Text.copy(alpha = 0.85f),
-                    fontSize = 9.sp
+                    fontSize = 12.sp
                 )
             }
             ActionTile(
@@ -329,7 +329,7 @@ private fun RescuePanel(
             Text(
                 state.supplyMessage!!,
                 color = TcgColors.Text.copy(alpha = 0.85f),
-                fontSize = 9.sp,
+                fontSize = 12.sp,
                 lineHeight = 14.sp
             )
         }
@@ -387,7 +387,7 @@ private fun StageRow(
             Text(
                 "${stage.enemyName} · 권장 ${stage.recommendedPower}",
                 color = TcgColors.Muted,
-                fontSize = 9.sp
+                fontSize = 12.sp
             )
         }
         Pill("${stage.enemyElement.displayName}", elementColor(stage.enemyElement))
