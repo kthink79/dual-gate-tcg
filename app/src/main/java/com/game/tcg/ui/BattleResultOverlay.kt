@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -89,6 +90,12 @@ fun BattleResultOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // 결과 화면 아래의 전투 버튼(FIGHT·턴 진행)이 탭을 받지 않도록 입력을 막는다
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {}
+            )
             .background(
                 Brush.radialGradient(
                     colors = listOf(
