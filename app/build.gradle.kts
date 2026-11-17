@@ -18,7 +18,24 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // ── 서명 ────────────────────────────────────────────────────────────
+    // 2026-11-17: CI(GitHub Actions)가 러너마다 **새 디버그 키**를 만들어 서명하면
+    // 이전에 설치한 APK 위에 업데이트 설치가 되지 않는다(서명 불일치).
+    // 그래서 이 프로젝트의 디버그 키(keystore/debug.keystore · androiddebugkey)를
+    // 저장소에 함께 두고 모든 빌드(로컬·CI)가 같은 키로 서명하게 고정한다.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
