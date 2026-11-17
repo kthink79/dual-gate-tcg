@@ -63,7 +63,7 @@ fun elementColor(element: Element): Color = when (element) {
 }
 
 /**
- * 카드 도감 번호 + 3단 비주얼 상태 → 실제 드로어블 리소스.
+ * 카드 도감 번호 + 4종 비주얼 상태 → 실제 드로어블 리소스.
  * 매핑은 [CharacterArtRegistry]가 단일 관리하며, 미등록 번호는 null을 돌려준다.
  * 화면에서는 [CardArtImage]를 사용해 화면 크기에 맞춰 축소 디코딩한다.
  */

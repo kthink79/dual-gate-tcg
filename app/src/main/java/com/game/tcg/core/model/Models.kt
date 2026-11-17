@@ -2,8 +2,17 @@ package com.game.tcg.core.model
 
 /**
  * 속성 및 상성 시스템
- * - 3원소 삼각 순환: 화염(FIRE) -> 바람(WIND) -> 빙결(ICE) -> 화염 (유리 시 데미지 +30%, 피격 시 -20%)
- * - 2극원소 상호 카운터: 빛(LIGHT) <-> 어둠(DARK) (서로에게 +50% 극딜)
+ *
+ * 2026-11-17 밸런스 개편 — *"강화·합성을 어느 정도 하고 상성을 잘 조합해야 클리어"*
+ * 사용자 요청에 따라 **상성의 영향력을 키웠다**(이전 1.30 / 0.80 / 1.50).
+ *
+ * - 3원소 삼각 순환: 화염(FIRE) → 바람(WIND) → 빙결(ICE) → 화염
+ *   · 유리 상성 피해 **+45%** ([ADVANTAGE_MULTIPLIER])
+ *   · 불리 상성 피해 **-28%** ([DISADVANTAGE_MULTIPLIER])
+ * - 2극원소 상호 카운터: 빛(LIGHT) ↔ 어둠(DARK) — 서로에게 **+70%** ([OPPOSITE_MULTIPLIER])
+ *
+ * 즉 상성만 맞춰도 피해량이 1.45/0.72 = **2배** 차이 나므로, 덱의 속성 조합이
+ * 강화·합성과 같은 비중의 승패 요인이 된다.
  */
 enum class Element(val displayName: String) {
     FIRE("화염"),
@@ -14,38 +23,67 @@ enum class Element(val displayName: String) {
 
     fun getDamageMultiplier(target: Element): Double = when (this) {
         FIRE -> when (target) {
-            WIND -> 1.30
-            ICE -> 0.80
+            WIND -> ADVANTAGE_MULTIPLIER
+            ICE -> DISADVANTAGE_MULTIPLIER
             else -> 1.00
         }
         WIND -> when (target) {
-            ICE -> 1.30
-            FIRE -> 0.80
+            ICE -> ADVANTAGE_MULTIPLIER
+            FIRE -> DISADVANTAGE_MULTIPLIER
             else -> 1.00
         }
         ICE -> when (target) {
-            FIRE -> 1.30
-            WIND -> 0.80
+            FIRE -> ADVANTAGE_MULTIPLIER
+            WIND -> DISADVANTAGE_MULTIPLIER
             else -> 1.00
         }
         LIGHT -> when (target) {
-            DARK -> 1.50
+            DARK -> OPPOSITE_MULTIPLIER
             else -> 1.00
         }
         DARK -> when (target) {
-            LIGHT -> 1.50
+            LIGHT -> OPPOSITE_MULTIPLIER
             else -> 1.00
         }
+    }
+
+    /** 이 속성이 상대로 유리한가 (피해 +) */
+    fun isAdvantageAgainst(target: Element): Boolean = getDamageMultiplier(target) > 1.0
+
+    /** 이 속성이 상대로 불리한가 (피해 -) */
+    fun isDisadvantageAgainst(target: Element): Boolean = getDamageMultiplier(target) < 1.0
+
+    /** 상성 표시용 한 글자 배지 (`▲` 유리 / `▼` 불리 / `=` 동등) */
+    fun matchupBadge(target: Element): String = when {
+        isAdvantageAgainst(target) -> "▲"
+        isDisadvantageAgainst(target) -> "▼"
+        else -> "="
+    }
+
+    companion object {
+        /** 유리 상성 피해 배율 */
+        const val ADVANTAGE_MULTIPLIER: Double = 1.45
+
+        /** 불리 상성 피해 배율 */
+        const val DISADVANTAGE_MULTIPLIER: Double = 0.72
+
+        /** 빛↔어둠 상호 카운터 배율 */
+        const val OPPOSITE_MULTIPLIER: Double = 1.70
     }
 }
 
 /**
- * 3단 비주얼 상태 (전투 / 사복 큐트 / 로맨틱 데이트 룩)
+ * 4종 비주얼 상태 (전투 / 사복 큐트 / 로맨틱 데이트 룩 / 미니어처 SD)
+ *
+ * 2026-11-17: 사용자 요청으로 4번째 페어 **미니어처(SD/Chibi)** 를 추가했다.
+ * 미니어처는 친밀도 해금 없이 **전 캐릭터 기본 개방**이며(수집 요소가 아니라 감상용 SD 버전),
+ * 176명 전원이 `char_{번호}_miniature.jpg` 를 가진다.
  */
 enum class VisualState(val displayName: String) {
     BATTLE("전투 TCG 아머"),
     CASUAL_CUTE("일상 사복 큐트"),
-    ROMANTIC_DATE("매혹적인 데이트 룩")
+    ROMANTIC_DATE("매혹적인 데이트 룩"),
+    MINIATURE("미니어처 SD")
 }
 
 /**

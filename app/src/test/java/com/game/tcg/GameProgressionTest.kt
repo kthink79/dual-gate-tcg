@@ -426,8 +426,9 @@ class GameProgressionTest {
         assertTrue(result.isSuccess)
         assertEquals(1, cardAfter.upgradeLevel)
         assertEquals("강화 Lv.1 → 2", 2, result.toLevel)
-        assertEquals("ATK 상승 = 원본의 6%", atkBefore + (baseAtk * 6 / 100), cardAfter.atk)
-        assertEquals("DEF 상승", defBefore + (baseDef * 6 / 100), cardAfter.def)
+        // 2026-11-17 밸런스 개편: 레벨당 성장폭 6% → 9% (강화의 영향력 확대)
+        assertEquals("ATK 상승 = 원본의 9%", atkBefore + (baseAtk * 9 / 100), cardAfter.atk)
+        assertEquals("DEF 상승", defBefore + (baseDef * 9 / 100), cardAfter.def)
         assertEquals("골드 차감", before.gold - cost.gold, after.gold)
         assertEquals("조각 차감", 50 - cost.shards, after.shards.of(3))
         assertTrue("덱 전투력 상승", after.deckTotalPower > powerBefore)
@@ -528,8 +529,8 @@ class GameProgressionTest {
         val after = vm.uiState.value.ownedCards.first { it.id == 3 }
         assertTrue(result.isSuccess)
         assertEquals(starBefore + 1, after.starLevel)
-        assertEquals("ATK +20%", (atkBefore * 1.20).toInt(), after.atk)
-        assertEquals("DEF +20%", (defBefore * 1.20).toInt(), after.def)
+        assertEquals("ATK ×1.26", (atkBefore * 1.26).toInt(), after.atk)
+        assertEquals("DEF ×1.26", (defBefore * 1.26).toInt(), after.def)
         assertEquals("조각 차감", 60, vm.uiState.value.shards.of(3))
         assertEquals("골드 차감", 2000 - AdvancedSynthesisEngine.TRANSCEND_GOLD, vm.uiState.value.gold)
     }
@@ -821,33 +822,47 @@ class GameProgressionTest {
 
     @Test
     fun `캠페인 1~30 스테이지를 덱 성장과 함께 완주할 수 있다`() {
-        val vm = TcgGameViewModel(random = Random(1))
+        // 2026-11-17 난이도 개편 — "강화·합성·상성을 갖추면 30스테이지까지 클리어할 수 있다"를 검증한다.
+        // 자금·조각을 넉넉히 주고, 플레이어처럼 매 도전마다 재계약 → 자동 편성 → 강화 → 초월(합성)을 반복한다.
+        val richShards = ShardWallet((1..184).associateWith { 9_000 })
+        val vm = TcgGameViewModel(
+            random = Random(1),
+            initialGold = 5_000_000,
+            initialShards = richShards,
+            initialPackTickets = 30
+        )
         var stage = 1
         var guard = 0
 
-        while (stage <= 30 && guard < 60) {
+        while (stage <= 30 && guard < 120) {
             guard++
-            // 플레이어처럼: 자동 편성 → 카드팩 → 조각 강화
+            // 플레이어처럼: 잃은 동료 재계약 → 자동 편성 → 강화 → 초월(성급) → 카드팩
+            vm.reclaimAllLostCards()
             vm.autoEquipParty()
-            val s = vm.uiState.value
-            val upgradable = s.ownedCards.firstOrNull { it.upgradeLevel < 9 && s.shards.of(it.id) >= 20 }
-            if (upgradable != null) repeat(3) { vm.upgradeCard(upgradable.id) }
+            vm.uiState.value.party.map { it.card.id }.forEach { cardId ->
+                repeat(9) { vm.upgradeCard(cardId) }
+                repeat(4) { vm.transcendCard(cardId) }
+            }
+            vm.autoEquipParty()
             if (vm.canBuyPack("pack_premium")) vm.openPack("pack_premium")
-            else if (vm.canBuyPack("pack_standard")) vm.openPack("pack_standard")
 
             if (!vm.startStageBattle(stage)) break
             fightToVictory(vm)
-            if (stage in vm.uiState.value.stageCleared) stage++ else guard += 5
+            if (stage in vm.uiState.value.stageCleared) {
+                stage++
+            } else {
+                // 패배 → 결과 오버레이가 떠도 다음 도전은 재계약부터 다시 준비한다
+                vm.dismissBattleResult()
+                guard += 3
+            }
         }
 
         val state = vm.uiState.value
         assertEquals("30스테이지 전부 클리어", 30, state.stageCleared.size)
         assertEquals(1, state.stageCleared.min())
         assertEquals(30, state.stageCleared.max())
-        assertTrue("카드팩으로 덱이 자랐다", state.ownedCards.size > 3)
         assertTrue("덱 전투력이 시작(약 2만)보다 훨씬 강해졌다", state.deckTotalPower > 100000)
-        assertTrue("최종 관문 보상 확인", state.lastStageOutcome != null)
-        assertEquals(114, state.lastStageOutcome!!.stage.bossId)
+        assertEquals("최종 관문 보상 확인", 114, state.lastStageOutcome!!.stage.bossId)
     }
 
     @Test

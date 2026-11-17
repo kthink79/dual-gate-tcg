@@ -114,16 +114,27 @@ class SynthesisEngine : ISynthesisEngine {
 
     /**
      * 동일 카드 합성을 통한 성급 상승 (최대 5성 한계 돌파)
-     * 성급당 공격력/방어력 +20% 영구 스케일링
+     *
+     * 2026-11-17 밸런스 개편: 성급당 +20% → **×[STAR_GROWTH_MULTIPLIER] (1.26)**.
+     * 5성까지 올리면 스탯이 약 2.5배가 되어, 무강화 덱과 확실히 갈린다.
+     * (DEF 가 오르면 전장 HP([com.game.tcg.core.model.CharacterRecord.maxHp])도 함께 오른다)
      */
     override fun synthesizeCard(baseCard: TcgCard, materialCard: TcgCard): Boolean {
         if (baseCard.id != materialCard.id) return false
-        if (baseCard.starLevel >= 5) return false
+        if (baseCard.starLevel >= MAX_STAR_LEVEL) return false
 
         baseCard.starLevel += 1
-        baseCard.atk = (baseCard.atk * 1.20).toInt()
-        baseCard.def = (baseCard.def * 1.20).toInt()
+        baseCard.atk = (baseCard.atk * STAR_GROWTH_MULTIPLIER).toInt()
+        baseCard.def = (baseCard.def * STAR_GROWTH_MULTIPLIER).toInt()
         return true
+    }
+
+    companion object {
+        /** 성급 상한 (5성 한계 돌파) */
+        const val MAX_STAR_LEVEL: Int = 5
+
+        /** 합성 1회(성급 +1)당 스탯 배율 */
+        const val STAR_GROWTH_MULTIPLIER: Double = 1.26
     }
 }
 

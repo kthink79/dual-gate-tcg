@@ -3,6 +3,8 @@ package com.game.tcg.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,7 +42,7 @@ import com.game.tcg.core.model.VisualState
  *  - 상단은 **1줄**만 — 차원 에너지 · 재화 3종 · 음소거 아이콘 · 「📊 정보」 버튼.
  *    (스테이지·덱 전투력·보유 인원·정신 상태·자동 저장·인트로 다시보기·새 게임은
  *     [LobbyInfoOverlay] 패널로 옮겨 캐릭터 얼굴/상반신을 가리지 않게 했다.)
- *  - 하단 캐릭터 정보도 이름·칭호·호감도·3단 비주얼·캐릭터 전환만 남겨 컴팩트하게 정돈.
+ *  - 하단 캐릭터 정보도 이름·칭호·호감도·4종 비주얼(전투·일상·데이트·미니어처)·캐릭터 전환만 남겨 컴팩트하게 정돈.
  *  - 좌·우 측면 레일의 서브메뉴 6종은 그대로.
  */
 @Composable
@@ -242,8 +244,12 @@ fun MainLobbyScreen(
                 StatBar(ratio = state.lobbyHeroBond / 100f, color = TcgColors.Gold, height = 5)
             }
 
-            // 3단 비주얼 전환
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            // 4종 비주얼 전환 (전투 · 일상 · 데이트 · 미니어처)
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 ChipButton("① 전투", state.lobbyVisual == VisualState.BATTLE) {
                     onSelectVisual(VisualState.BATTLE)
                 }
@@ -260,6 +266,13 @@ fun MainLobbyScreen(
                     TcgColors.Gold
                 ) {
                     onSelectVisual(VisualState.ROMANTIC_DATE)
+                }
+                ChipButton(
+                    "④ 미니어처",
+                    state.lobbyVisual == VisualState.MINIATURE,
+                    TcgColors.Abyss
+                ) {
+                    onSelectVisual(VisualState.MINIATURE)
                 }
             }
 

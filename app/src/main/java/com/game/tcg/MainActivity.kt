@@ -216,6 +216,20 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                             onAutoStep = { viewModel.autoBattleStep() },
                             onToggleAutoBattle = { audio.click(); viewModel.toggleAutoBattle() },
                             onToggleSpeed = { audio.click(); viewModel.toggleBattleSpeed() },
+                            // ⚔ VICTORY / DEFEAT 결과 오버레이 버튼
+                            onResultPrimary = {
+                                audio.click()
+                                val panel = viewModel.uiState.value.battleResult
+                                if (panel?.isVictory == true) viewModel.battleResultNextStage() else viewModel.retryStageFromResult()
+                            },
+                            onResultSecondary = {
+                                audio.click()
+                                val panel = viewModel.uiState.value.battleResult
+                                if (panel?.isVictory == true) viewModel.battleResultToLobby() else viewModel.battleResultToDeck()
+                            },
+                            onResultGrowth = { audio.click(); viewModel.battleResultToGrowth() },
+                            onResultDeck = { audio.click(); viewModel.battleResultToDeck() },
+                            onResultLobby = { audio.click(); viewModel.battleResultToLobby() },
                             audioManager = audio
                         )
                         LobbyDestination.EXPLORATION -> ExplorationScreen(

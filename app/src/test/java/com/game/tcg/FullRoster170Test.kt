@@ -21,7 +21,7 @@ import org.junit.Test
  *
  * - 도감 카탈로그 170명 데이터(이름·칭호·ATK·DEF·속성·코스트·스킬) 완비
  * - 중간 보스 6명(170~175) 기록·아트(3페어 18장) 등록
- * - 3단 비주얼 리소스 매핑 누락 0건 (176 × 3 = 528장)
+ * - 4종 비주얼 리소스 매핑 누락 0건 (176 × 4 = 704장)
  * - 전체 로스터를 지정한 상태에서 로비 순환 · 도감 필터 · 서약 덱 · 전투 편성 · 탐색 조우
  *
  * (게임 시작은 2026-11-16 사용자 확정으로 **저코스트 3장**만 보유한다 —
@@ -154,11 +154,12 @@ class FullRoster170Test {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 2. 3단 비주얼 리소스 매핑 누락 0건 (176명 × 3 = 528장)
+    // 2. 4종 비주얼 리소스 매핑 누락 0건 (176명 × 4 = 704장)
+    //    (2026-11-17: 4번째 페어 '미니어처(SD)' 탑재)
     // ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `176명의 3단 비주얼 528장이 모두 리소스로 연결되어 있다`() {
+    fun `176명의 4종 비주얼 704장이 모두 리소스로 연결되어 있다`() {
         val allIds = CardCatalog.ALL.map { it.id } + MidBossCatalog.ALL.map { it.id }
         var mapped = 0
         allIds.forEach { id ->
@@ -170,18 +171,18 @@ class FullRoster170Test {
                 mapped++
             }
         }
-        assertEquals("176명 × 3비주얼 = 528장", 528, mapped)
+        assertEquals("176명 × 4비주얼 = 704장", 704, mapped)
         assertEquals(176, CharacterArtRegistry.registeredCardCount)
         assertEquals(allIds.toSet(), CharacterArtRegistry.registeredCardIds)
         assertNull("등록되지 않은 번호는 null", CharacterArtRegistry.resId(999, VisualState.BATTLE))
     }
 
     @Test
-    fun `한 캐릭터의 세 비주얼은 서로 다른 리소스를 가리킨다`() {
+    fun `한 캐릭터의 네 비주얼은 서로 다른 리소스를 가리킨다`() {
         val allIds = CardCatalog.ALL.map { it.id } + MidBossCatalog.ALL.map { it.id }
         allIds.forEach { id ->
             val ids = VisualState.values().map { CharacterArtRegistry.resId(id, it) }
-            assertEquals("#$id 3단 비주얼이 모두 같은 그림이다", 3, ids.toSet().size)
+            assertEquals("#$id 4종 비주얼이 모두 같은 그림이다", 4, ids.toSet().size)
         }
     }
 

@@ -23,65 +23,65 @@ class TcgEngineTest {
 
     @Test
     fun testThreeWayElementAffinityCycleAdvantage() {
-        // FIRE -> WIND -> ICE -> FIRE (+30% bonus)
+        // FIRE -> WIND -> ICE -> FIRE (+45% — 2026-11-17 밸런스 개편)
         val fireCard = TcgCard(11, "이그니아", Element.FIRE, 8, 1000, 1000, skillText = "")
         val windCard = TcgCard(21, "실바나", Element.WIND, 8, 1000, 1000, skillText = "")
         val iceCard = TcgCard(16, "엘바라", Element.ICE, 8, 1000, 1000, skillText = "")
 
         val fireToWind = battleEngine.calculateDamage(fireCard, windCard)
-        assertEquals(1.30, fireToWind.multiplier, 0.001)
-        assertEquals(1300, fireToWind.finalDamage)
+        assertEquals(1.45, fireToWind.multiplier, 0.001)
+        assertEquals(1450, fireToWind.finalDamage)
         assertTrue(fireToWind.isCriticalElement)
 
         val windToIce = battleEngine.calculateDamage(windCard, iceCard)
-        assertEquals(1.30, windToIce.multiplier, 0.001)
-        assertEquals(1300, windToIce.finalDamage)
+        assertEquals(1.45, windToIce.multiplier, 0.001)
+        assertEquals(1450, windToIce.finalDamage)
         assertTrue(windToIce.isCriticalElement)
 
         val iceToFire = battleEngine.calculateDamage(iceCard, fireCard)
-        assertEquals(1.30, iceToFire.multiplier, 0.001)
-        assertEquals(1300, iceToFire.finalDamage)
+        assertEquals(1.45, iceToFire.multiplier, 0.001)
+        assertEquals(1450, iceToFire.finalDamage)
         assertTrue(iceToFire.isCriticalElement)
     }
 
     @Test
     fun testThreeWayElementAffinityCycleDisadvantage() {
-        // Reverse cycle: FIRE -> ICE (-20%), ICE -> WIND (-20%), WIND -> FIRE (-20%)
+        // Reverse cycle: FIRE -> ICE (-28%), ICE -> WIND (-28%), WIND -> FIRE (-28%)
         val fireCard = TcgCard(11, "이그니아", Element.FIRE, 8, 1000, 1000, skillText = "")
         val windCard = TcgCard(21, "실바나", Element.WIND, 8, 1000, 1000, skillText = "")
         val iceCard = TcgCard(16, "엘바라", Element.ICE, 8, 1000, 1000, skillText = "")
 
         val fireToIce = battleEngine.calculateDamage(fireCard, iceCard)
-        assertEquals(0.80, fireToIce.multiplier, 0.001)
-        assertEquals(800, fireToIce.finalDamage)
+        assertEquals(0.72, fireToIce.multiplier, 0.001)
+        assertEquals(720, fireToIce.finalDamage)
         assertFalse(fireToIce.isCriticalElement)
 
         val iceToWind = battleEngine.calculateDamage(iceCard, windCard)
-        assertEquals(0.80, iceToWind.multiplier, 0.001)
-        assertEquals(800, iceToWind.finalDamage)
+        assertEquals(0.72, iceToWind.multiplier, 0.001)
+        assertEquals(720, iceToWind.finalDamage)
         assertFalse(iceToWind.isCriticalElement)
 
         val windToFire = battleEngine.calculateDamage(windCard, fireCard)
-        assertEquals(0.80, windToFire.multiplier, 0.001)
-        assertEquals(800, windToFire.finalDamage)
+        assertEquals(0.72, windToFire.multiplier, 0.001)
+        assertEquals(720, windToFire.finalDamage)
         assertFalse(windToFire.isCriticalElement)
     }
 
     @Test
     fun testLightDarkMutualCounter() {
-        // LIGHT <-> DARK (both deal +50% counter damage)
+        // LIGHT <-> DARK (both deal +70% counter damage — 2026-11-17)
         val lightCard = TcgCard(1, "세라피엘", Element.LIGHT, 8, 1000, 1000, bondLevel = 0, skillText = "")
         val darkCard = TcgCard(6, "카밀라", Element.DARK, 8, 1000, 1000, bondLevel = 0, skillText = "")
 
         val lightToDark = battleEngine.calculateDamage(lightCard, darkCard)
-        assertEquals(1.50, lightToDark.multiplier, 0.001)
-        assertEquals(1500, lightToDark.finalDamage)
+        assertEquals(1.70, lightToDark.multiplier, 0.001)
+        assertEquals(1700, lightToDark.finalDamage)
         assertTrue(lightToDark.isCriticalElement)
         assertFalse(lightToDark.isUltimateTriggered)
 
         val darkToLight = battleEngine.calculateDamage(darkCard, lightCard)
-        assertEquals(1.50, darkToLight.multiplier, 0.001)
-        assertEquals(1500, darkToLight.finalDamage)
+        assertEquals(1.70, darkToLight.multiplier, 0.001)
+        assertEquals(1700, darkToLight.finalDamage)
         assertTrue(darkToLight.isCriticalElement)
         assertFalse(darkToLight.isUltimateTriggered)
     }
@@ -125,9 +125,9 @@ class TcgEngineTest {
         val windCard = TcgCard(21, "실바나", Element.WIND, 8, 1000, 1000, bondLevel = 0, skillText = "")
         val iceCard = TcgCard(16, "엘바라", Element.ICE, 8, 1000, 1000, bondLevel = 0, skillText = "")
 
-        // LIGHT awakened vs DARK: 1000 * 1.50 * 1.25 = 1875
+        // LIGHT awakened vs DARK: 1000 * 1.70 * 1.25 = 2125
         val lightDarkResult = battleEngine.calculateDamage(lightAwakened, darkCard)
-        assertEquals(1875, lightDarkResult.finalDamage)
+        assertEquals(2125, lightDarkResult.finalDamage)
         assertTrue(lightDarkResult.isUltimateTriggered)
 
         // LIGHT awakened vs FIRE (neutral): 1000 * 1.00 * 1.25 = 1250
@@ -135,22 +135,22 @@ class TcgEngineTest {
         assertEquals(1250, neutralAwakenedResult.finalDamage)
         assertTrue(neutralAwakenedResult.isUltimateTriggered)
 
-        // FIRE awakened vs WIND (advantage + ultimate): 1000 * 1.30 * 1.25 = 1625
+        // FIRE awakened vs WIND (advantage + ultimate): 1000 * 1.45 * 1.25 = 1812
         val fireAwakened = TcgCard(11, "이그니아", Element.FIRE, 8, 1000, 1000, bondLevel = 100, skillText = "")
         val advantageAwakenedResult = battleEngine.calculateDamage(fireAwakened, windCard)
-        assertEquals(1625, advantageAwakenedResult.finalDamage)
+        assertEquals(1812, advantageAwakenedResult.finalDamage)
         assertTrue(advantageAwakenedResult.isUltimateTriggered)
 
-        // FIRE awakened vs ICE (disadvantage + ultimate): 1000 * 0.80 * 1.25 = 1000
+        // FIRE awakened vs ICE (disadvantage + ultimate): 1000 * 0.72 * 1.25 = 900
         val disadvantageAwakenedResult = battleEngine.calculateDamage(fireAwakened, iceCard)
-        assertEquals(1000, disadvantageAwakenedResult.finalDamage)
+        assertEquals(900, disadvantageAwakenedResult.finalDamage)
         assertTrue(disadvantageAwakenedResult.isUltimateTriggered)
 
         // Unawakened bondLevel = 99 -> no ultimate
         val nearAwakened = TcgCard(11, "이그니아", Element.FIRE, 8, 1000, 1000, bondLevel = 99, skillText = "")
         assertFalse(nearAwakened.isUltimateUnlocked)
         val unawakenedResult = battleEngine.calculateDamage(nearAwakened, windCard)
-        assertEquals(1300, unawakenedResult.finalDamage)
+        assertEquals(1450, unawakenedResult.finalDamage)
         assertFalse(unawakenedResult.isUltimateTriggered)
     }
 
@@ -171,40 +171,40 @@ class TcgEngineTest {
             skillText = ""
         )
 
-        // 1성 -> 2성: 1000 * 1.20 = 1200
+        // 1성 -> 2성: 1000 * 1.26 = 1260 (2026-11-17 성장폭 상향)
         val mat1 = TcgCard(1, "세라피엘 재료1", Element.LIGHT, 8, 1000, 1000, starLevel = 1, skillText = "")
         assertTrue(synthesisEngine.synthesizeCard(baseCard, mat1))
         assertEquals(2, baseCard.starLevel)
-        assertEquals(1200, baseCard.atk)
-        assertEquals(1200, baseCard.def)
+        assertEquals(1260, baseCard.atk)
+        assertEquals(1260, baseCard.def)
 
-        // 2성 -> 3성: 1200 * 1.20 = 1440
+        // 2성 -> 3성: 1260 * 1.26 = 1587
         val mat2 = TcgCard(1, "세라피엘 재료2", Element.LIGHT, 8, 1000, 1000, starLevel = 1, skillText = "")
         assertTrue(synthesisEngine.synthesizeCard(baseCard, mat2))
         assertEquals(3, baseCard.starLevel)
-        assertEquals(1440, baseCard.atk)
-        assertEquals(1440, baseCard.def)
+        assertEquals(1587, baseCard.atk)
+        assertEquals(1587, baseCard.def)
 
-        // 3성 -> 4성: 1440 * 1.20 = 1728
+        // 3성 -> 4성: 1587 * 1.26 = 1999
         val mat3 = TcgCard(1, "세라피엘 재료3", Element.LIGHT, 8, 1000, 1000, starLevel = 1, skillText = "")
         assertTrue(synthesisEngine.synthesizeCard(baseCard, mat3))
         assertEquals(4, baseCard.starLevel)
-        assertEquals(1728, baseCard.atk)
-        assertEquals(1728, baseCard.def)
+        assertEquals(1999, baseCard.atk)
+        assertEquals(1999, baseCard.def)
 
-        // 4성 -> 5성 한계 돌파: 1728 * 1.20 = 2073
+        // 4성 -> 5성 한계 돌파: 1999 * 1.26 = 2518
         val mat4 = TcgCard(1, "세라피엘 재료4", Element.LIGHT, 8, 1000, 1000, starLevel = 1, skillText = "")
         assertTrue(synthesisEngine.synthesizeCard(baseCard, mat4))
         assertEquals(5, baseCard.starLevel)
-        assertEquals(2073, baseCard.atk)
-        assertEquals(2073, baseCard.def)
+        assertEquals(2518, baseCard.atk)
+        assertEquals(2518, baseCard.def)
 
         // 5성 도달 후 추가 합성 시도 -> 실패 (한계 돌파 상한 5성 유지)
         val mat5 = TcgCard(1, "세라피엘 재료5", Element.LIGHT, 8, 1000, 1000, starLevel = 1, skillText = "")
         assertFalse(synthesisEngine.synthesizeCard(baseCard, mat5))
         assertEquals(5, baseCard.starLevel)
-        assertEquals(2073, baseCard.atk)
-        assertEquals(2073, baseCard.def)
+        assertEquals(2518, baseCard.atk)
+        assertEquals(2518, baseCard.def)
     }
 
     @Test

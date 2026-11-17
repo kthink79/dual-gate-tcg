@@ -28,7 +28,8 @@ data class UpgradeResult(
  * 카드 강화(업그레이드) 엔진 — 2026-11-16 사용자 요청 "카드 업그레이드" 서브 플로우.
  *
  * - **골드 + 그 카드의 조각**을 소모해 Lv.1 → Lv.10까지 올린다 (최대 [MAX_LEVEL]).
- * - 1레벨마다 **원본(기본) ATK·DEF의 6%** 씩 영구 상승 → 덱 총 전투력·전장 HP에 즉시 반영.
+ * - 1레벨마다 **원본(기본) ATK·DEF의 9%** 씩 영구 상승 → 덱 총 전투력·전장 HP에 즉시 반영.
+ *   (2026-11-17 밸런스 개편: 6% → 9% — 강화를 해야 중반 스테이지가 뚫리도록 성장폭을 키웠다)
  * - 레벨이 오를수록 비용이 비싸진다 (골드 150 + 120×Lv · 조각 3 + 2×Lv).
  *
  * 카드의 [TcgCard.upgradeLevel] 은 v0.3 로그라이크 규칙에 따라 사망 시 0으로 초기화된다.
@@ -107,7 +108,7 @@ class CardUpgradeEngine : ICardUpgradeEngine {
         const val MAX_LEVEL: Int = 10
 
         /** 레벨업 1회당 기본 스탯 상승률 (%) */
-        const val GROWTH_PERCENT: Int = 6
+        const val GROWTH_PERCENT: Int = 9
 
         const val GOLD_BASE: Int = 150
         const val GOLD_PER_LEVEL: Int = 120

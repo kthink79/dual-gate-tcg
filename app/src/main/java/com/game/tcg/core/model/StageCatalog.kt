@@ -84,14 +84,26 @@ data class StageDefinition(
  * 6장 심연의 옥좌  26 [마왕 릴리스]  27  28 [중간보스 닉사리아]  29 [마왕 카밀라]  30 [최종 마왕 모르가나]
  * ```
  *
- * 권장 전투력은 18,000(1스테이지)에서 250,000(최종)까지 오른다.
- * 시작 덱(저코스트 3장)의 전투력이 약 19,000~26,000이므로 1~2스테이지가 첫 관문이다.
+ * 권장 전투력은 18,000(1스테이지)에서 230,000(최종)까지 오르고,
+ * 2026-11-17 난이도 개편으로 **5스테이지부터 스테이지당 +2.5%** 적 스탯이 추가로 올라간다.
+ * 기본 1성/무강화 덱(전투력 6~7만)은 4~5스테이지가 한계이고, 중반 이후는
+ * **강화(레벨)·합성(성급)과 속성 상성 조합**을 갖춰야 뚫린다.
  */
 object StageCatalog {
 
     const val CHAPTER_COUNT: Int = 6
     const val STAGES_PER_CHAPTER: Int = 5
     const val TOTAL_STAGES: Int = CHAPTER_COUNT * STAGES_PER_CHAPTER
+
+    /**
+     * 5스테이지 이후 스테이지마다 적 스탯이 추가로 오르는 비율.
+     * 6스테이지 +2.5% … 30스테이지 +62.5% (권장 전투력 곡선 위에 한 번 더 얹힌다)
+     */
+    const val DIFFICULTY_RAMP_PER_STAGE: Double = 0.025
+
+    /** 스테이지 번호 → 추가 난이도 배율 (1~5스테이지 = 1.0) */
+    fun difficultyScale(stageNumber: Int): Double =
+        1.0 + (stageNumber - STAGES_PER_CHAPTER).coerceAtLeast(0) * DIFFICULTY_RAMP_PER_STAGE
 
     /** 챕터 이름 (1~6) */
     val CHAPTER_NAMES: List<String> = listOf(
@@ -144,11 +156,25 @@ object StageCatalog {
         bossId: Int? = null,
         bossKind: BossKind = BossKind.NONE
     ): StageDefinition {
-        val boss = bossKind != BossKind.NONE
-        // 적 HP = 권장 전투력 비례, 적 공격력은 아군 HP(DEF×0.85)가 몇 대 버티는지로 역산한다.
-        // (12칸 덱·전열 3 교대 기준으로 10~20턴 싸움이 되도록 잡은 값)
-        val hpFactor = if (bossKind == BossKind.DEMON_LORD) 0.62 else if (boss) 0.5 else 0.45
-        val atkDivisor = if (bossKind == BossKind.DEMON_LORD) 85.0 else if (boss) 95.0 else 110.0
+        // ── 적 스탯 (2026-11-17 난이도 상향) ─────────────────────────
+        // 사용자: "난이도가 너무 쉬운 듯하다. 강화·합성을 어느 정도 하고 상성을 잘 조합해야 클리어".
+        //
+        // 권장 전투력 R 을 기준으로
+        //   적 HP   = R × [hpFactor]         (9장 덱이 8~12회 공격으로 잡는 두께)
+        //   적 ATK  = R ÷ [attackDivisor]    (내 카드 HP의 1/3~1/4 을 한 번에 깎는 위협)
+        // 로 잡고, 5스테이지부터 [DIFFICULTY_RAMP_PER_STAGE] 씩 추가로 올린다.
+        // (기존: 0.45/0.5/0.62 · 110/95/85 → 적 공격력이 너무 낮아 전투가 늘 일방적이었다)
+        val hpFactor = when (bossKind) {
+            BossKind.DEMON_LORD -> 0.78
+            BossKind.MID_BOSS -> 0.62
+            else -> 0.55
+        }
+        val attackDivisor = when (bossKind) {
+            BossKind.DEMON_LORD -> 55.0
+            BossKind.MID_BOSS -> 62.0
+            else -> 72.0
+        }
+        val scale = difficultyScale(number)
         return StageDefinition(
             number = number,
             chapter = (number - 1) / STAGES_PER_CHAPTER + 1,
@@ -158,8 +184,8 @@ object StageCatalog {
             recommendedPower = power,
             enemyName = enemyName,
             enemyElement = element,
-            enemyHp = (power * hpFactor).toInt(),
-            enemyAtk = (power / atkDivisor).toInt(),
+            enemyHp = (power * hpFactor * scale).toInt(),
+            enemyAtk = (power / attackDivisor * scale).toInt(),
             reward = StageReward(
                 gold = gold,
                 exp = exp,

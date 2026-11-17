@@ -2,7 +2,10 @@ package com.game.tcg.ui
 
 import androidx.lifecycle.ViewModel
 import com.game.tcg.core.engine.AffinityRules
+import com.game.tcg.core.engine.BalanceRules
 import com.game.tcg.core.engine.BattleEngine
+import com.game.tcg.core.engine.BattleResultEngine
+import com.game.tcg.core.engine.BattleResultPanel
 import com.game.tcg.core.engine.ChapterTwoScript
 import com.game.tcg.core.engine.DualWorldEngine
 import com.game.tcg.core.engine.ExplorationContext
@@ -432,6 +435,11 @@ data class TcgGameState(
     /** 지금 VS 전투 화면에서 싸우고 있는 스테이지 번호 (null = 자유 원정·마왕전) */
     val activeStage: Int? = null,
     val lastStageOutcome: StageClearOutcome? = null,
+    /** 승리·패배 결과 오버레이 — null 이면 표시하지 않는다 (2026-11-17 신규) */
+    /** 승리·패배 결과 오버레이 — null 이면 표시하지 않는다 (2026-11-17 신규) */
+    val battleResult: BattleResultPanel? = null,
+    /** 직전 전투에서 잃은 동료 수 (패배 오버레이 표시용) */
+    val lastBattleLostCards: Int = 0,
     val stageMessage: String? = null,
     // ── 소프트락 안전장치: 무료 긴급 보급 (2026-11-16 QA) ──
     val supplyClaims: Int = 0,
@@ -555,6 +563,19 @@ data class TcgGameState(
 
     /** 덱 총 전투력 (ATK + DEF 합계) — 스테이지 권장 전투력과 비교하는 값 */
     val deckTotalPower: Int get() = equippedCards.sumOf { it.atk + it.def }
+
+    /** 전열(앞 3칸) 살아 있는 카드의 속성 — 상성 표시·피해 보정에 쓴다 */
+    val frontRowElements: List<Element>
+        get() = party.filter { it.isAlive && it.isFrontRow }.ifEmpty { party.filter { it.isAlive } }
+            .map { it.card.element }
+
+    /** 적 속성 대비 상성 우열 한 줄 (`상성 우세 — 받는 피해 -12%`) */
+    val elementEdgeLabel: String
+        get() = BalanceRules.edgeLabel(frontRowElements, enemyElement)
+
+    /** 이 덱으로 이 스테이지를 뚫을 상성 준비도 (0.0~1.0) */
+    fun advantageShareAgainst(stage: StageDefinition): Double =
+        BalanceRules.advantageShare(equippedCards.map { it.element }, stage.enemyElement)
 
     /** 지금 도전할 앞 스테이지 번호 */
     val frontStageNumber: Int get() = StageEngine.frontStage(stageCleared)
@@ -1160,8 +1181,9 @@ class TcgGameViewModel(
     }
 
     /**
-     * 메인 화면 3단 비주얼(전투 · 일상 · 데이트) 전환.
+     * 메인 화면 복장 전환 (전투 · 일상 · 데이트 · 미니어처).
      * ② 일상은 친밀도 30, ③ 데이트는 70부터 열린다(2026-11-16 개편).
+     * ④ 미니어처(SD)는 2026-11-17 추가 — 친밀도 조건 없이 항상 고를 수 있다.
      *
      * 고른 복장은 **캐릭터별로 기억**해([TcgGameState.lobbyOutfits]) 다른 캐릭터를 보고
      * 돌아오거나 앱을 껐다 켜도 그대로 유지된다.
@@ -1187,10 +1209,10 @@ class TcgGameViewModel(
         }
     }
 
-    /** 친밀도에 맞는 단계까지만 비주얼을 유지한다 */
+    /** 친밀도에 맞는 단계까지만 비주얼을 유지한다 (미니어처는 친밀도와 무관하게 유지) */
     private fun capVisual(visual: VisualState, bond: Int): VisualState {
-        val cap = AffinityRules.visualFor(bond)
-        return if (visual.ordinal > cap.ordinal) cap else visual
+        if (AffinityRules.isVisualUnlocked(visual, bond)) return visual
+        return AffinityRules.visualFor(bond)
     }
 
     private fun heroDisplayName(cardId: Int): String =
@@ -1761,8 +1783,88 @@ class TcgGameViewModel(
         return action
     }
 
+    /** 결과 오버레이 닫기 (로비로 돌아가거나 다음 스테이지로 갈 때) */
+    fun dismissBattleResult() {
+        updateState { s -> if (s.battleResult == null) s else s.copy(battleResult = null) }
+    }
+
+    /** 승리 오버레이 → 다음 스테이지 바로 도전 */
+    fun battleResultNextStage() {
+        val next = _uiState.value.battleResult?.nextStageNumber
+        updateState { s -> s.copy(battleResult = null) }
+        if (next != null) startStageBattle(next)
+    }
+
+    /** 패배 오버레이 → 같은 스테이지 재도전 (잃은 동료는 무료 재계약) */
+    fun retryStageFromResult() {
+        val number = _uiState.value.battleResult?.stageNumber
+        reclaimAllLostCards()
+        updateState { s -> s.copy(battleResult = null) }
+        if (number != null) startStageBattle(number)
+    }
+
+    /** 결과 오버레이 → 성장(강화·합성) 화면 */
+    fun battleResultToGrowth() {
+        updateState { s ->
+            s.copy(
+                battleResult = null,
+                currentScreen = LobbyDestination.GROWTH,
+                audioScene = AudioScene.LOBBY,
+                statusMessage = "[성장] 강화·합성으로 덱 전투력을 올린 뒤 재도전하세요."
+            )
+        }
+    }
+
+    /** 결과 오버레이 → 덱 편성 화면 */
+    fun battleResultToDeck() {
+        updateState { s ->
+            s.copy(
+                battleResult = null,
+                currentScreen = LobbyDestination.DECK,
+                audioScene = AudioScene.LOBBY,
+                statusMessage = "[덱 편성] 적 속성에 유리한 카드로 조합을 바꿔 보세요."
+            )
+        }
+    }
+
+    /** 결과 오버레이 → 메인 로비 */
+    fun battleResultToLobby() {
+        updateState { s ->
+            s.copy(
+                battleResult = null,
+                currentScreen = LobbyDestination.LOBBY,
+                audioScene = AudioScene.LOBBY,
+                statusMessage = "[메인 로비] ${s.lobbyHeroProfile?.displayName ?: "파트너"}이(가) 다음 출전을 기다립니다."
+            )
+        }
+    }
+
+    /**
+     * 전투 패배 — 출전 덱이 전멸했을 때 결과 오버레이를 띄운다.
+     * (로그라이크 규칙상 쓰러진 카드는 이미 영구 상실 처리되어 있다)
+     */
+    private fun applyDefeat(s: TcgGameState, lostCards: Int): TcgGameState {
+        val stage = s.activeStage?.let { StageCatalog.find(it) }
+        val panel = if (stage != null) {
+            BattleResultEngine.defeat(
+                stage = stage,
+                hero = s.party.firstOrNull()?.card ?: s.lobbyHero,
+                deckPower = s.deckTotalPower,
+                deckCards = s.equippedCards,
+                lostCards = lostCards
+            )
+        } else null
+        return s.copy(
+            battleResult = panel,
+            lastBattleLostCards = lostCards,
+            isAutoBattle = false,
+            statusMessage = "[전투 패배] ${s.enemyName}에게 밀렸습니다. — 잃은 동료는 무료 재계약으로 되찾을 수 있습니다."
+        )
+    }
+
     /**
      * 전투 승리 정산 — 전리품·마왕 토벌·기억 파편·오의 상태 초기화·제2장 전초전 진행
+     * (스테이지 전투면 VICTORY 결과 오버레이 패널도 함께 만든다)
      */
     private fun applyVictory(
         s: TcgGameState,
@@ -1863,6 +1965,14 @@ class TcgGameViewModel(
                     battleLog = state.battleLog + outcome.message + extraLogs + dropLogs,
                     statusMessage = outcome.message + if (extraLogs.isNotEmpty()) " " + extraLogs.first() else ""
                 )
+                // ── VICTORY 결과 오버레이 (2026-11-17) ──
+                val heroCard = state.party.firstOrNull()?.card
+                    ?: state.ownedCards.firstOrNull()
+                state = state.copy(
+                    battleResult = BattleResultEngine.victory(stage, outcome, heroCard),
+                    lastBattleLostCards = 0,
+                    isAutoBattle = false
+                )
             }
         }
 
@@ -1917,7 +2027,11 @@ class TcgGameViewModel(
             val raw = s.enemyAtk
             val taken = temptationEngine.applyDamageTakenPenalty(raw, s.combatPenalty)
             val frontPenalty = if (victim.isFrontRow) s.frontRowDefensePenaltyPercent else 0
-            val mitigated = (taken * (100 - s.defenseBonusPercent + frontPenalty) / 100.0).toInt()
+            // ── 상성(방어) — 전열 다수가 적 속성에 유리하면 덜 맞는다 (2026-11-17 밸런스) ──
+            val edgeElements = s.party.filter { it.isAlive && it.isFrontRow }.ifEmpty { s.party.filter { it.isAlive } }
+                .map { it.card.element }
+            val edgeModifier = BalanceRules.damageTakenModifier(edgeElements, s.enemyElement)
+            val mitigated = (taken * (100 - s.defenseBonusPercent + frontPenalty) / 100.0 * edgeModifier).toInt()
             val newHp = (victim.hp - mitigated).coerceAtLeast(0)
 
             var post = s.copy(
@@ -1932,12 +2046,17 @@ class TcgGameViewModel(
                 party = s.party.map { if (it.slotIndex == victim.slotIndex) it.copy(hp = newHp) else it },
                 battleLog = s.battleLog + ("[턴 $nextTurnNo] ${s.enemyName}의 반격 → ${victim.card.name} ${mitigated} 피해 " +
                         "(받는 피해 +${s.combatPenalty.damageTakenIncreasePercent}%, 방어 보너스 -${s.defenseBonusPercent}%" +
-                        (if (frontPenalty > 0) ", 전열 결손 방어 -$frontPenalty%" else "") + ") · 잔여 HP $newHp/${victim.maxHp}"),
+                        (if (frontPenalty > 0) ", 전열 결손 방어 -$frontPenalty%" else "") +
+                        (if (edgeModifier < 1.0) ", 상성 우세 -${((1 - edgeModifier) * 100).toInt()}%" else "") +
+                        (if (edgeModifier > 1.0) ", 상성 열세 +${((edgeModifier - 1) * 100).toInt()}%" else "") +
+                        ") · 잔여 HP $newHp/${victim.maxHp}"),
                 statusMessage = "[턴 $nextTurnNo] 마나 ${mana.currentMana}/${mana.maxMana} 회복 · ${victim.card.name} 피해 ${mitigated}"
             )
 
             if (newHp <= 0 && post.reincarnationPool.none { it.templateId == victim.card.id }) {
                 post = applyDeath(post, victim)
+                // 전멸이면 DEFEAT 오버레이 (2026-11-17)
+                if (post.party.isEmpty()) post = applyDefeat(post, post.lastBattleLostCards)
             }
             post
         }
@@ -1965,6 +2084,7 @@ class TcgGameViewModel(
                 battleReserve = s.battleReserve.filterNot { it.id == victim.card.id },
                 equipment = s.equipment.toList(),
                 battleLog = s.battleLog + result.message.split("\n"),
+                lastBattleLostCards = s.lastBattleLostCards + 1,
                 statusMessage = "[영구 상실] ${victim.card.name}이(가) 쓰러졌습니다. 기억·강화 초기화 — 재획득 필요."
             )
         } else {
@@ -2384,6 +2504,8 @@ class TcgGameViewModel(
                 party = freshParty(base),
                 retreatInfo = BattleRetreatInfo(turn = 1),
                 isAutoBattle = true,
+                battleResult = null,
+                lastBattleLostCards = 0,
                 lastCutIn = null,
                 pairUltimateUsedThisBattle = false,
                 pairUltimateBanner = null,
@@ -2837,7 +2959,7 @@ class TcgGameViewModel(
             val original = s.ownedCards.firstOrNull { it.id == s.selectedCardId }
                 ?: return@updateState s.copy(synthesisMessage = "[한계 돌파 불가] 보유하지 않은 카드입니다.")
             if (original.starLevel >= 5) {
-                return@updateState s.copy(synthesisMessage = "[한계 돌파] 이미 5성 최대치입니다. 3단 비주얼도 모두 개방되었습니다.")
+                return@updateState s.copy(synthesisMessage = "[한계 돌파] 이미 5성 최대치입니다. 4종 비주얼(전투·일상·데이트·미니어처)이 모두 개방되었습니다.")
             }
             val base = original.copy()
             val material = original.copy()
@@ -2850,7 +2972,7 @@ class TcgGameViewModel(
             s.copy(
                 ownedCards = s.ownedCards.map { if (it.id == base.id) base else it },
                 synthesisMessage = "[한계 돌파] ${base.name} ${base.starLevel}성 달성! ATK $prevAtk → ${base.atk} (+20%), DEF $prevDef → ${base.def} (+20%)\n" +
-                        "다음 성급에서 3단 비주얼(일상·데이트 룩)이 진화합니다.",
+                        "다음 성급에서 스탯이 ×1.26 오르고 일상·데이트 룩이 진화합니다.",
                 statusMessage = "[한계 돌파] ${base.name} ${base.starLevel}성"
             )
         }
@@ -3169,6 +3291,8 @@ class TcgGameViewModel(
                 party = freshParty(base),
                 retreatInfo = BattleRetreatInfo(turn = 1),
                 isAutoBattle = true,
+                battleResult = null,
+                lastBattleLostCards = 0,
                 lastCutIn = null,
                 pairUltimateUsedThisBattle = false,
                 pairUltimateBanner = null,

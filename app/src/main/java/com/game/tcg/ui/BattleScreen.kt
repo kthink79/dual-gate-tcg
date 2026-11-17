@@ -92,6 +92,12 @@ fun BattleScreen(
     onAutoStep: () -> Unit = {},
     onToggleAutoBattle: () -> Unit = {},
     onToggleSpeed: () -> Unit = {},
+    // ── ⚔ 전투 결과(VICTORY/DEFEAT) 오버레이 (2026-11-17) ──
+    onResultPrimary: () -> Unit = {},
+    onResultSecondary: () -> Unit = {},
+    onResultGrowth: () -> Unit = {},
+    onResultDeck: () -> Unit = {},
+    onResultLobby: () -> Unit = {},
     audioManager: com.game.tcg.audio.AudioManager? = null
 ) {
     val deckSize = state.unlockedDeckSize
@@ -505,6 +511,18 @@ fun BattleScreen(
         // ── 상세 로그 시트 ──
         if (showLog) {
             LogSheet(state = state, onDismiss = { showLog = false })
+        }
+
+        // ── ⚔ VICTORY / DEFEAT 결과 오버레이 (2026-11-17) ──
+        state.battleResult?.let { panel ->
+            BattleResultOverlay(
+                panel = panel,
+                onPrimary = onResultPrimary,
+                onSecondary = onResultSecondary,
+                onGrowth = onResultGrowth,
+                onDeck = onResultDeck,
+                onLobby = onResultLobby
+            )
         }
     }
 }

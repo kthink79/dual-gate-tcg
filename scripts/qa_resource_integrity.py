@@ -3,7 +3,8 @@
 
 검사 항목
   1) CardCatalog(플레이 170명) · MidBossCatalog(중간 보스 6명)의 모든 캐릭터 번호가
-     CharacterArtRegistry에 battle/casual/date 3비주얼 모두 등록되어 있는지
+     CharacterArtRegistry에 battle/casual/date/miniature 4비주얼 모두 등록되어 있는지
+     (miniature = 2026-11-17 추가된 4번째 페어 '미니어처(SD/Chibi)')
   2) 등록된 모든 드로어블 이름이 res/drawable-nodpi/char_{번호}_{상태}.jpg 실제 파일과 1:1인지
   3) drawable-nodpi 안의 char_*.jpg 중 레지스트리에 없는 고아 파일이 있는지
   4) intro_scene_{1..4}.jpg 존재 + IntroArtRegistry 등록 여부
@@ -74,14 +75,16 @@ expected_ids = set(roster_ids) | set(midboss_ids)
 # "170 to intArrayOf(R.drawable.char_170_battle, R.drawable.char_170_casual, R.drawable.char_170_date),"
 entry_re = re.compile(
     r"(\d+)\s+to\s+intArrayOf\(\s*R\.drawable\.(char_\d+_battle)\s*,\s*"
-    r"R\.drawable\.(char_\d+_casual)\s*,\s*R\.drawable\.(char_\d+_date)\s*\)"
+    r"R\.drawable\.(char_\d+_casual)\s*,\s*R\.drawable\.(char_\d+_date)\s*,\s*"
+    r"R\.drawable\.(char_\d+_miniature)\s*\)"
 )
-registry: dict[int, tuple[str, str, str]] = {}
-for num, battle, casual, date in entry_re.findall(registry_src):
-    n = int(num)
+VISUAL_STATES = ("battle", "casual", "date", "miniature")
+registry: dict[int, tuple[str, ...]] = {}
+for entry in entry_re.findall(registry_src):
+    n = int(entry[0])
     if n in registry:
         errors.append(f"CharacterArtRegistry에 번호 {n} 중복 등록")
-    registry[n] = (battle, casual, date)
+    registry[n] = tuple(entry[1:])
 
 # registry 표에 잡히지 않은 R.drawable.char_ 참조가 남아 있는지(파싱 누락 감지)
 all_char_refs = re.findall(r"R\.drawable\.(char_\d+_\w+)", registry_src)
@@ -103,8 +106,8 @@ if extra_registry:
 files = {p.name for p in RES.glob("char_*.jpg")}
 used_files: set[str] = set()
 
-for card_id, trio in sorted(registry.items()):
-    for state, name in zip(("battle", "casual", "date"), trio):
+for card_id, visuals in sorted(registry.items()):
+    for state, name in zip(VISUAL_STATES, visuals):
         fname = f"{name}.jpg"
         used_files.add(fname)
         # 번호·상태 이름 규칙 검증 (예: 7번 카드 battle → char_7_battle)
@@ -132,8 +135,10 @@ if orphans:
 # 같은 파일을 두 번호가 공유하면 1:1 매칭 위반
 if len(used_files) != len(set(used_files)):
     errors.append("같은 아트 파일이 두 캐릭터에 중복 등록됨")
-if len(used_files) != len(registry) * 3:
-    errors.append(f"등록 캐릭터 {len(registry)}명 × 3 ≠ 사용 파일 {len(used_files)}장")
+if len(used_files) != len(registry) * len(VISUAL_STATES):
+    errors.append(
+        f"등록 캐릭터 {len(registry)}명 × {len(VISUAL_STATES)} ≠ 사용 파일 {len(used_files)}장"
+    )
 
 # ── 4. 인트로 아트 ───────────────────────────────────────────────────────
 intro_screen = read(SRC / "ui/IntroStoryScreen.kt")
@@ -221,7 +226,7 @@ else:
 print("== 리소스·아트 무결성 전수 검사 ==")
 print(f"플레이 로스터: {len(roster_ids)}명  (No.{min(roster_ids)}~{max(roster_ids)})")
 print(f"중간 보스   : {len(midboss_ids)}명  {midboss_ids}")
-print(f"아트 레지스트리: {len(registry)}명 × 3비주얼 = {len(registry) * 3}장")
+print(f"아트 레지스트리: {len(registry)}명 × {len(VISUAL_STATES)}비주얼 = {len(registry) * len(VISUAL_STATES)}장")
 print(f"drawable-nodpi char_*.jpg: {len(files)}장")
 print(f"인트로 장면: 4장")
 print(f"캐릭터 등장 영상: {len(video_ids)}편 {sorted(video_ids)}")

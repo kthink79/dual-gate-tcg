@@ -1,6 +1,7 @@
 package com.game.tcg.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
@@ -40,7 +41,7 @@ import com.game.tcg.core.model.TcgCard
 import com.game.tcg.core.model.VisualState
 
 /**
- * 탭 3 — 🃏 도감 · 서약 (3단 비주얼)
+ * 탭 3 — 🃏 도감 · 서약 (4종 비주얼)
  */
 @Composable
 fun CollectionScreen(
@@ -105,11 +106,11 @@ fun CollectionScreen(
                 if (catalogFilter == CatalogFilter.NEW_WAVE) {
                     "No.155~169 신규 15인 — 매력 유지 + 얼굴형·포즈 다양화로 다시 그린 세트입니다."
                 } else if (catalogFilter == CatalogFilter.ORIGINAL) {
-                    "No.1~154 · No.184 아메넷 — 기존 155인. 전원 3단 비주얼(전투·일상·데이트)이 들어 있습니다."
+                    "No.1~154 · No.184 아메넷 — 기존 155인. 전원 4종 비주얼(전투·일상·데이트·미니어처)이 들어 있습니다."
                 } else if (catalogFilter == CatalogFilter.BOSS) {
                     "No.170~175 중간 보스 6인 — 챕터 마일스톤 관문. 격파 후 「심연 연성」으로 계약하면 아군이 됩니다."
                 } else {
-                    "도감 번호를 누르면 카드 상세와 3단 비주얼이 열립니다. (170명 × 3 = JPG 510장, 1캐릭터 = 1장 유일성)"
+                    "도감 번호를 누르면 카드 상세와 4종 비주얼이 열립니다. (176명 × 4 = JPG 704장, 1캐릭터 = 1장 유일성)"
                 },
                 color = TcgColors.Muted,
                 fontSize = 12.sp,
@@ -156,7 +157,7 @@ fun CollectionScreen(
             )
         }
 
-        // ── 3단 비주얼 + 카드 상세 ──
+        // ── 4종 비주얼 + 카드 상세 ──
         SectionCard(
             title = "${selected.name}",
             badge = if (isOwned) "${selected.starLevel}★" else "미계약",
@@ -226,11 +227,15 @@ fun CollectionScreen(
                 }
             }
 
-            // 3단 비주얼 전환 — ② 일상은 친밀도 30, ③ 데이트는 70부터 (미해금은 자물쇠)
+            // 4종 비주얼 전환 — ② 일상은 친밀도 30, ③ 데이트는 70부터 (미해금은 자물쇠)
+            // ④ 미니어처(SD)는 친밀도와 무관하게 항상 고를 수 있다
             val bond = state.selectedCardBond
             val casualOpen = AffinityRules.isCasualUnlocked(bond)
             val dateOpen = AffinityRules.isDateUnlocked(bond)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 ChipButton("① 전투", state.selectedVisual == VisualState.BATTLE) {
                     onSelectVisual(VisualState.BATTLE)
                 }
@@ -247,6 +252,13 @@ fun CollectionScreen(
                     if (dateOpen) TcgColors.Gold else TcgColors.Muted
                 ) {
                     onSelectVisual(VisualState.ROMANTIC_DATE)
+                }
+                ChipButton(
+                    "④ 미니어처",
+                    state.selectedVisual == VisualState.MINIATURE,
+                    TcgColors.Abyss
+                ) {
+                    onSelectVisual(VisualState.MINIATURE)
                 }
             }
             if (!casualOpen) {
@@ -337,7 +349,7 @@ fun CollectionScreen(
             Text("스킬 · ${selected.skillText}", color = TcgColors.Text.copy(alpha = 0.85f), fontSize = 12.sp, lineHeight = 16.sp)
             if (!isOwned) {
                 Text(
-                    "아직 계약하지 않은 카드입니다. 도감 열람과 3단 비주얼 감상은 가능하며, " +
+                    "아직 계약하지 않은 카드입니다. 도감 열람과 4종 비주얼 감상은 가능하며, " +
                             "계약은 2웨이 합성의 '신규 연성'에서 할 수 있습니다.",
                     color = TcgColors.Muted,
                     fontSize = 12.sp,

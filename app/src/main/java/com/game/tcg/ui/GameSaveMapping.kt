@@ -144,8 +144,9 @@ private fun TcgCard.toSavedCard(): SavedCard = SavedCard(
 fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
     /** 친밀도 단계보다 높은 비주얼은 잠금 단계로 내린다 (2026-11-16 개편) */
     fun capVisual(visual: VisualState, bond: Int): VisualState {
-        val limit = AffinityRules.visualFor(bond)
-        return if (visual.ordinal > limit.ordinal) limit else visual
+        // 미니어처(SD)는 친밀도와 무관하게 처음부터 열려 있으므로 복원에서도 유지한다
+        if (AffinityRules.isVisualUnlocked(visual, bond)) return visual
+        return AffinityRules.visualFor(bond)
     }
 
     val restoredCards: List<TcgCard> = cards.mapNotNull { row ->

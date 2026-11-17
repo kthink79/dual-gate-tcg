@@ -174,10 +174,11 @@ object AdvancedSynthesisEngine {
 
     /**
      * 초월(성급 승급) — 그 카드의 조각을 써서 성급을 올린다.
-     * 이미 5성이면 실패. ATK/DEF +20% (한계 돌파와 같은 계수).
+     * 이미 5성이면 실패. ATK/DEF 는 [SynthesisEngine.STAR_GROWTH_MULTIPLIER] (×1.26) —
+     * 2026-11-17 밸런스 개편으로 한계 돌파와 같은 성장폭을 쓴다.
      */
     fun transcend(card: TcgCard, wallet: ShardWallet, gold: Int): TranscendResult {
-        if (card.starLevel >= 5) {
+        if (card.starLevel >= SynthesisEngine.MAX_STAR_LEVEL) {
             return TranscendResult(
                 isSuccess = false,
                 cardId = card.id,
@@ -206,8 +207,8 @@ object AdvancedSynthesisEngine {
             )
         val fromStar = card.starLevel
         card.starLevel += 1
-        card.atk = (card.atk * 1.20).toInt()
-        card.def = (card.def * 1.20).toInt()
+        card.atk = (card.atk * SynthesisEngine.STAR_GROWTH_MULTIPLIER).toInt()
+        card.def = (card.def * SynthesisEngine.STAR_GROWTH_MULTIPLIER).toInt()
         return TranscendResult(
             isSuccess = true,
             cardId = card.id,

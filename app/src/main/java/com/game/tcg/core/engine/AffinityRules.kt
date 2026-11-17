@@ -16,6 +16,8 @@ import com.game.tcg.core.model.VisualState
  * | **70** | ③ 매혹적인 데이트 룩(ROMANTIC_DATE) |
  * | **100** | 페어 얼티밋 오의 (+25%) |
  *
+ * **미니어처(SD)** 는 친밀도와 무관하게 **처음부터 열려 있다** (수집·감상용 SD 버전).
+ *
  * ── 상승 폭 ───────────────────────────────────────────────
  * - **전투 출전 = 주 경로**: 출전 1회당 +[BATTLE_DEPLOY_GAIN](4).
  *   이겨서 정산하면 승리 보너스 +[BATTLE_VICTORY_BONUS](2)가 더 붙어 **한 전투 +6**.
@@ -104,6 +106,8 @@ object AffinityRules {
         VisualState.BATTLE -> true
         VisualState.CASUAL_CUTE -> isCasualUnlocked(bond)
         VisualState.ROMANTIC_DATE -> isDateUnlocked(bond)
+        // 미니어처(SD)는 친밀도 조건 없이 항상 고를 수 있다
+        VisualState.MINIATURE -> true
     }
 
     /** 잠긴 비주얼의 안내 문구 (`🔒 일상 사복 — 친밀도 30 필요 (현재 12)`) */
@@ -118,6 +122,7 @@ object AffinityRules {
         VisualState.BATTLE -> MIN_BOND
         VisualState.CASUAL_CUTE -> CASUAL_UNLOCK_BOND
         VisualState.ROMANTIC_DATE -> DATE_UNLOCK_BOND
+        VisualState.MINIATURE -> MIN_BOND
     }
 
     /** 다음 해금까지 남은 친밀도 (모두 열렸으면 null) */

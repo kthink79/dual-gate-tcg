@@ -87,9 +87,10 @@ class AffinityProgressionTest {
         assertEquals(VisualState.ROMANTIC_DATE, AffinityRules.visualFor(70))
         assertEquals(VisualState.ROMANTIC_DATE, AffinityRules.visualFor(100))
 
-        assertEquals(listOf(VisualState.BATTLE), AffinityRules.unlockedVisuals(0))
+        // 미니어처(SD)는 친밀도와 무관하게 처음부터 열려 있다 (2026-11-17)
+        assertEquals(listOf(VisualState.BATTLE, VisualState.MINIATURE), AffinityRules.unlockedVisuals(0))
         assertEquals(
-            listOf(VisualState.BATTLE, VisualState.CASUAL_CUTE),
+            listOf(VisualState.BATTLE, VisualState.CASUAL_CUTE, VisualState.MINIATURE),
             AffinityRules.unlockedVisuals(30)
         )
         assertEquals(VisualState.entries.toList(), AffinityRules.unlockedVisuals(100))

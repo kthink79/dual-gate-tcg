@@ -37,6 +37,7 @@
   --audio-bitrate B    AAC 비트레이트 (기본 64k)
   --no-audio           오디오 트랙 제거 (-an)
   --limit-mb M         편당 목표 상한 (기본 1.5MB, 넘으면 경고만)
+  --delogo X:Y:W:H     모서리 워터마크 제거 영역 (ffmpeg delogo 필터). 원본 좌표로 지정
   --dry-run            압축 결과만 표로 보여 주고 파일을 배치하지 않음
 
 ffmpeg 는 시스템에 없어도 된다 — `imageio_ffmpeg` 번들 바이너리를 쓴다.
@@ -114,10 +115,25 @@ def card_id_from_name(name: str) -> int | None:
     return cid if MIN_CARD_ID <= cid <= MAX_CARD_ID else None
 
 
+def delogo_expr(spec: str | None) -> str | None:
+    """`X:Y:W:H` → ffmpeg delogo 필터 문자열. 형식이 틀리면 즉시 실패한다."""
+    if not spec:
+        return None
+    parts = spec.split(":")
+    if len(parts) != 4 or not all(p.strip().lstrip("-").isdigit() for p in parts):
+        die(f"--delogo 형식이 잘못되었습니다: {spec} (예: 1120:556:72:82)")
+    x, y, w, h = (int(p) for p in parts)
+    if w <= 0 or h <= 0:
+        die(f"--delogo 폭·높이는 1 이상이어야 합니다: {spec}")
+    return f"delogo=x={x}:y={y}:w={w}:h={h}"
+
+
 def compress(src: Path, dst: Path, args: argparse.Namespace) -> dict:
     """1개 파일을 모바일 MP4 로 압축하고 결과 통계를 돌려준다."""
     before = probe(src)
-    vf = f"scale='min({args.max_width},iw)':-2"
+    filters = [f for f in (delogo_expr(args.delogo),) if f]
+    filters.append(f"scale='min({args.max_width},iw)':-2")
+    vf = ",".join(filters)
     # 홀수 폭/높이를 피해야 libx264(yuv420p)가 실패하지 않는다 — scale 필터가 -2 로 짝수를 보장.
     cmd = [
         FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
@@ -162,6 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--audio-bitrate", default="64k", help="AAC 비트레이트 (기본 64k)")
     ap.add_argument("--no-audio", action="store_true", help="오디오 제거")
     ap.add_argument("--limit-mb", type=float, default=1.5, help="편당 목표 상한 MB (기본 1.5)")
+    ap.add_argument("--delogo", default=None, help="워터마크 제거 영역 X:Y:W:H (원본 좌표)")
     ap.add_argument("--dry-run", action="store_true", help="배치하지 않고 결과만 확인")
     args = ap.parse_args(argv)
 
