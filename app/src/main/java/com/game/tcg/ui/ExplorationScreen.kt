@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -328,7 +330,8 @@ private fun ExplorationProgressOverlay(
         modifier = Modifier
             .fillMaxSize()
             .background(TcgColors.Background.copy(alpha = 0.96f))
-            .clickable(enabled = false) { }
+            // 연출 중 아래 화면(스크롤·버튼)으로 탭이 새지 않도록 입력을 소비한다
+            .pointerInput(Unit) { detectTapGestures { } }
     ) {
         ResourceArtImage(
             resId = backdropResId,
