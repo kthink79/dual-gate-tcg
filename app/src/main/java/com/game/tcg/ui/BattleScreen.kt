@@ -55,6 +55,7 @@ import com.game.tcg.core.engine.DeckAutoBuilder
 import com.game.tcg.core.model.BattleLineup
 import com.game.tcg.core.model.DeckRules
 import com.game.tcg.core.model.Element
+import com.game.tcg.core.model.EnemyUnit
 import com.game.tcg.core.model.LineupUnit
 import com.game.tcg.core.model.VisualState
 import kotlinx.coroutines.delay
@@ -104,15 +105,13 @@ fun BattleScreen(
 
     // 스테이지 보스전이면 그 보스(중간 보스 170~175 · 대마왕 112~114)의 아트를 적 진영에 세운다
     val stageBossId = state.activeStage?.let { com.game.tcg.core.model.StageCatalog.find(it)?.bossId }
-    val enemyUnits = remember(state.enemyName, state.enemyElement, deckSize, state.isDemonLordBattle, stageBossId) {
-        BattleLineup.enemyLineup(
-            enemyElement = state.enemyElement,
-            enemyName = state.enemyName,
-            size = deckSize,
-            isDemonLordBattle = state.isDemonLordBattle,
-            bossCardId = stageBossId
-        )
-    }
+    /**
+     * 적 진영 — 2026-11-18 다중 적 개편.
+     *
+     * 이제 [com.game.tcg.core.model.EnemyUnit] 이 실제 전투 단위다(개별 HP·공격력).
+     * 예전처럼 화면만 보기용으로 편성하지 않고 상태의 적 카드를 그대로 그린다.
+     */
+    val enemyUnits = state.enemyUnits
     val allyCards = remember(state.party, deckSize) { state.party.sortedBy { it.slotIndex } }
 
     // ── 전투 연출 상태: 중앙 컷인 · 피격 타격 이펙트 ──
@@ -197,8 +196,7 @@ fun BattleScreen(
         }
     }
 
-    val enemyHpRatio = if (state.enemyMaxHp <= 0) 0f else state.enemyHp.toFloat() / state.enemyMaxHp
-    val battleOver = state.enemyHp <= 0
+    val battleOver = state.enemyHp <= 0 || state.isEnemyWipedOut
     val canFight = !battleOver && state.mana.currentMana >= 1 && state.party.any { it.isAlive && it.isFrontRow }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -250,10 +248,24 @@ fun BattleScreen(
             // ── 중앙 VS 바 (고정) ──
             VsBar(
                 enemyName = state.enemyName,
-                enemyAvatarId = enemyUnits.first().cardId,
-                enemyPower = BattleLineup.totalDisplayPower(enemyUnits),
+                enemyAvatarId = enemyUnits.firstOrNull()?.cardId ?: state.enemyCutInCardId,
+                enemyPower = BattleLineup.totalDisplayPower(
+                    enemyUnits.map {
+                        LineupUnit(
+                            cardId = it.cardId,
+                            name = it.name,
+                            element = it.element,
+                            atk = it.atk,
+                            def = it.maxHp,
+                            isBoss = it.isBoss
+                        )
+                    }
+                ),
                 enemyHp = state.enemyHp,
                 enemyMaxHp = state.enemyMaxHp,
+                enemyAlive = state.enemyAliveCount,
+                enemyTotal = state.enemyUnitCount,
+                enemyThreat = state.enemyThreatPerTurn,
                 myAvatarId = state.lobbyHeroId,
                 myName = state.lobbyHeroProfile?.displayName ?: state.lobbyHero.name,
                 myPower = state.deckDisplayPower,
@@ -264,7 +276,7 @@ fun BattleScreen(
             // ── 진영 탭 ──
             TcgTabBar(
                 tabs = listOf(
-                    "적 진영 ${enemyUnits.size}장",
+                    "적 진영 ${state.enemyAliveCount}/${state.enemyUnitCount}장",
                     "내 진영 ${allyCards.size}/${deckSize}장"
                 ),
                 selectedIndex = gridTab,
@@ -286,13 +298,14 @@ fun BattleScreen(
                     verticalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
                     itemsIndexed(items = enemyUnits, key = { index, unit -> "enemy_${index}_${unit.cardId}" }) { index, unit ->
-                        val hit = if (index == 0) enemyHit else null
+                        val hit = if (index == state.enemyTarget?.slot) enemyHit else null
                         val golden = hit?.let { BattleAutoDecor.isGoldenHit(it) } ?: false
+                        val isTarget = unit.isAlive && state.enemyTarget?.slot == index
                         Box(
                             modifier = Modifier
                                 .aspectRatio(CardLayoutRules.TILE_ASPECT)
                                 .graphicsLayer {
-                                    if (index == 0) {
+                                    if (index == state.enemyTarget?.slot) {
                                         translationX = BattleAutoDecor.shakeOffset(enemyImpact.value) * 10.dp.toPx()
                                         rotationZ = BattleAutoDecor.shakeOffset(enemyImpact.value) * 2.2f
                                     }
@@ -300,12 +313,10 @@ fun BattleScreen(
                         ) {
                             EnemyTile(
                                 unit = unit,
-                                hpRatio = enemyHpRatio,
-                                isBoss = index == 0,
-                                defeated = battleOver,
+                                isTarget = isTarget,
                                 onClick = onAttackFront
                             )
-                            if (index == 0) {
+                            if (index == state.enemyTarget?.slot) {
                                 HitFlashLayer(
                                     decay = enemyImpact.value,
                                     golden = golden,
@@ -578,28 +589,56 @@ private fun ArenaBackdrop() {
 
 /* ───────────────────────────── 진영 카드 ───────────────────────────── */
 
+/**
+ * 적 진영 카드 1장 — 2026-11-18 다중 적 개편.
+ *
+ * 카드마다 **자기 HP 게지**를 들고 있고, HP 0 이면 격파 표시로 흐려진다.
+ * 아군이 지금 때릴 카드([isTarget])에는 「표적」 배지를 붙인다.
+ */
 @Composable
 private fun EnemyTile(
-    unit: LineupUnit,
-    hpRatio: Float,
-    isBoss: Boolean,
-    defeated: Boolean,
+    unit: EnemyUnit,
+    isTarget: Boolean,
     onClick: () -> Unit
 ) {
-    DuelCardTile(
-        cardId = unit.cardId,
-        visual = VisualState.BATTLE,
-        element = unit.element,
-        starLevel = if (isBoss) 5 else 2,
-        power = unit.displayPower,
-        modifier = Modifier.fillMaxSize(),
-        hpRatio = hpRatio,
-        dimmed = defeated,
-        statusBadge = if (isBoss) "BOSS" else null,
-        statusBadgeColor = Color(0xFFFF5252),
-        targetWidthPx = 320,
-        onClick = onClick
-    )
+    val defeated = !unit.isAlive
+    Box(modifier = Modifier.fillMaxSize()) {
+        DuelCardTile(
+            cardId = unit.cardId,
+            visual = VisualState.BATTLE,
+            element = unit.element,
+            starLevel = if (unit.isBoss) 5 else 2,
+            power = (unit.atk + unit.maxHp) / 100,
+            modifier = Modifier.fillMaxSize(),
+            hpRatio = unit.hpRatio,
+            dimmed = defeated,
+            statusBadge = when {
+                defeated -> "격파"
+                unit.isBoss -> "BOSS"
+                isTarget -> "표적"
+                else -> null
+            },
+            statusBadgeColor = when {
+                defeated -> Color(0xFF9E9E9E)
+                unit.isBoss -> Color(0xFFFF5252)
+                else -> Color(0xFF00E5FF)
+            },
+            targetWidthPx = 320,
+            onClick = onClick
+        )
+        if (isTarget) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(3.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(Color(0xCC00E5FF))
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
+            ) {
+                Text("⚔", color = Color(0xFF120E1C), fontSize = 9.sp, fontWeight = FontWeight.Black)
+            }
+        }
+    }
 }
 
 /* ───────────────────────────── VS 바 ───────────────────────────── */
@@ -611,6 +650,9 @@ private fun VsBar(
     enemyPower: Int,
     enemyHp: Int,
     enemyMaxHp: Int,
+    enemyAlive: Int,
+    enemyTotal: Int,
+    enemyThreat: Int,
     myAvatarId: Int,
     myName: String,
     myPower: Int,
@@ -662,8 +704,14 @@ private fun VsBar(
                     )
                 }
                 Text(
-                    "HP $enemyHp/$enemyMaxHp",
+                    "적 ${enemyAlive}/${enemyTotal}장 · HP $enemyHp/$enemyMaxHp",
                     color = Color(0xE6FFFFFF),
+                    fontSize = TcgType.TILE_MARK.sp,
+                    maxLines = 1
+                )
+                Text(
+                    "반격 위협 ${enemyThreat}/턴",
+                    color = Color(0xFFFF8A80),
                     fontSize = TcgType.TILE_MARK.sp,
                     maxLines = 1
                 )
@@ -1083,7 +1131,8 @@ private fun TacticsSheet(
             }
 
             Text(
-                "적 속성 ${state.enemyElement.displayName} · 공격력 ${state.enemyAtk} · " +
+                "적 진영 ${state.enemyUnitCount}장 — 전열부터 한 장씩 격파해야 승리 · 카드 공격력 ${state.enemyAtk} · " +
+                    "적 속성 ${state.enemyElement.displayName}\n" +
                     "아군 보정 방어 +${state.defenseBonusPercent}% / 급소 +${state.intelBonusPercent}%",
                 color = TcgColors.Muted,
                 fontSize = TcgType.LABEL.sp,

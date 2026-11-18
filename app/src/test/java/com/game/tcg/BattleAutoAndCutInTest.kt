@@ -221,19 +221,22 @@ class BattleAutoAndCutInTest {
     }
 
     @Test
-    fun `적 반격 컷인은 적 보스 카드 아트와 피해 슬롯을 담는다`() {
+    fun `적 반격 컷인은 반격한 적 카드와 피해 슬롯을 담는다`() {
         val vm = newGame()
         vm.startFieldBattle()
         val beforeTick = vm.uiState.value.lastCutIn?.tick ?: 0
+        val expectedAttacker = vm.uiState.value.enemyAttackers.lastOrNull()
+        assertNotNull("전열 적 카드가 반격한다", expectedAttacker)
         vm.nextTurn()
         val s = vm.uiState.value
         val cut = s.lastCutIn!!
 
         assertTrue(cut.fromEnemy)
         assertEquals(BattleAttackKind.ENEMY_COUNTER, cut.kind)
-        assertEquals(s.enemyCutInCardId, cut.attackerCardId)
-        assertEquals(s.enemyName, cut.attackerName)
-        assertEquals(s.enemyElement, cut.element)
+        // 2026-11-18 다중 적 개편 — 반격은 "그 턴에 실제로 때린 적 카드"의 아트·이름·속성
+        assertEquals(expectedAttacker!!.cardId, cut.attackerCardId)
+        assertEquals(expectedAttacker.name, cut.attackerName)
+        assertEquals(expectedAttacker.element, cut.element)
         assertEquals("반격 후 컷인 틱이 증가", beforeTick + 1, cut.tick)
         assertEquals("피해 슬롯이 흔들림 대상", s.lastAllyHitSlot, cut.targetSlot)
         assertEquals(s.lastAllyHitDamage, cut.damage)

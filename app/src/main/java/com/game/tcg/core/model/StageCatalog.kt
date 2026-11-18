@@ -84,10 +84,11 @@ data class StageDefinition(
  * 6장 심연의 옥좌  26 [마왕 릴리스]  27  28 [중간보스 닉사리아]  29 [마왕 카밀라]  30 [최종 마왕 모르가나]
  * ```
  *
- * 권장 전투력은 18,000(1스테이지)에서 230,000(최종)까지 오르고,
+ * 권장 전투력은 34,000(1스테이지)에서 230,000(최종)까지 오르고,
  * 2026-11-17 난이도 개편으로 **5스테이지부터 스테이지당 +2.5%** 적 스탯이 추가로 올라간다.
- * 기본 1성/무강화 덱(전투력 6~7만)은 4~5스테이지가 한계이고, 중반 이후는
- * **강화(레벨)·합성(성급)과 속성 상성 조합**을 갖춰야 뚫린다.
+ * 2026-11-18 다중 적 개편으로 적은 9~12장의 개별 HP·공격력을 가진 카드가 되었고,
+ * 1~5스테이지 권장 전투력도 34,000~64,000 으로 올려 **기본 1성/무강화 3장 덱은 3스테이지가 한계**,
+ * 5스테이지 중간 보스부터는 덱을 더 채우고 강화해야 뚫린다.
  */
 object StageCatalog {
 
@@ -156,23 +157,26 @@ object StageCatalog {
         bossId: Int? = null,
         bossKind: BossKind = BossKind.NONE
     ): StageDefinition {
-        // ── 적 스탯 (2026-11-17 난이도 상향) ─────────────────────────
-        // 사용자: "난이도가 너무 쉬운 듯하다. 강화·합성을 어느 정도 하고 상성을 잘 조합해야 클리어".
+        // ── 적 스탯 (2026-11-18 다중 적 개편) ─────────────────────────
+        // 사용자: "적 진영 카드들이 개별 HP·공격력을 가진 다수 카드로 순차/동시 교전하고,
+        //          1~4스테이지부터 적 스탯·권장 전투력을 상향해 달라".
         //
         // 권장 전투력 R 을 기준으로
-        //   적 HP   = R × [hpFactor]         (9장 덱이 8~12회 공격으로 잡는 두께)
-        //   적 ATK  = R ÷ [attackDivisor]    (내 카드 HP의 1/3~1/4 을 한 번에 깎는 위협)
-        // 로 잡고, 5스테이지부터 [DIFFICULTY_RAMP_PER_STAGE] 씩 추가로 올린다.
-        // (기존: 0.45/0.5/0.62 · 110/95/85 → 적 공격력이 너무 낮아 전투가 늘 일방적이었다)
+        //   적 진영 **총** HP = R × [hpFactor]   → 카드 9~12장에 나눠 담는다([com.game.tcg.core.model.EnemySquad])
+        //   적 **카드 1장** 공격력 = R ÷ [attackDivisor]  (한 턴에 전열 최대 3장이 각자 반격)
+        // 를 잡고, 5스테이지부터 [DIFFICULTY_RAMP_PER_STAGE] 씩 추가로 올린다.
+        // (2026-11-17 까지는 단일 HP 풀 + 한 턴 1회 반격이었기 때문에 분모가 72/62/55 로 작았다.
+        //  다중 적으로 바꾸면서 반격이 최대 3회가 되었으므로 분모를 160/150/140 로 키워
+        //  한 턴 총 위협은 이전과 비슷한 수준으로 유지한다 — 대신 1~4스테이지 권장 전투력을 올렸다.)
         val hpFactor = when (bossKind) {
             BossKind.DEMON_LORD -> 0.78
             BossKind.MID_BOSS -> 0.62
             else -> 0.55
         }
         val attackDivisor = when (bossKind) {
-            BossKind.DEMON_LORD -> 55.0
-            BossKind.MID_BOSS -> 62.0
-            else -> 72.0
+            BossKind.DEMON_LORD -> 140.0
+            BossKind.MID_BOSS -> 150.0
+            else -> 160.0
         }
         val scale = difficultyScale(number)
         return StageDefinition(
@@ -204,15 +208,15 @@ object StageCatalog {
     /** 30스테이지 전체 */
     val STAGES: List<StageDefinition> = listOf(
         // ── 1장 · 균열의 시작 ──
-        stage(1, "젖은 골목의 첫 균열", "카드팩을 주운 골목에 손톱만 한 균열이 벌어졌다.", 22000,
+        stage(1, "젖은 골목의 첫 균열", "카드팩을 주운 골목에 손톱만 한 균열이 벌어졌다.", 34000,
             "균열의 슬라임", Element.WIND, gold = 85, exp = 44, shardCardId = 24, shardCount = 5),
-        stage(2, "편의점 앞 그림자", "가로등 밑 그림자가 주인을 잃고 움직인다.", 48000,
+        stage(2, "편의점 앞 그림자", "가로등 밑 그림자가 주인을 잃고 움직인다.", 42000,
             "그림자 들개", Element.DARK, gold = 110, exp = 48, shardCardId = 91, shardCount = 5),
-        stage(3, "옥상의 비늘", "아파트 옥상, 비늘 달린 앞발이 난간을 쥐었다.", 66000,
+        stage(3, "옥상의 비늘", "아파트 옥상, 비늘 달린 앞발이 난간을 쥐었다.", 50000,
             "비늘 마수", Element.ICE, gold = 135, exp = 52, equipmentId = "weapon_training_dagger", equipmentChance = 0.6),
-        stage(4, "지하철 4번 출구", "유리벽에 비친 문 너머에서 무언가 손을 내민다.", 82000,
+        stage(4, "지하철 4번 출구", "유리벽에 비친 문 너머에서 무언가 손을 내민다.", 56000,
             "차원 잠복자", Element.LIGHT, gold = 160, exp = 56, tickets = 1, shardCardId = 164, shardCount = 5),
-        stage(5, "홍장미의 계단", "계단을 오르자 검붉은 장미 향이 목을 조인다.", 96000,
+        stage(5, "홍장미의 계단", "계단을 오르자 검붉은 장미 향이 목을 조인다.", 64000,
             "심연의 홍장미 여제 로잘린드", Element.DARK, gold = 260, exp = 90, tickets = 2, gems = 5,
             shardCardId = 170, shardCount = 10, equipmentId = "armor_leather_vest", equipmentChance = 1.0,
             bossId = 170, bossKind = BossKind.MID_BOSS),

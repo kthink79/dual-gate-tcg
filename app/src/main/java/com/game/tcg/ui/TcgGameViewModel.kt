@@ -60,6 +60,7 @@ import com.game.tcg.core.engine.SummonEngine
 import com.game.tcg.core.engine.SummonResult
 import com.game.tcg.core.engine.TranscendResult
 import com.game.tcg.core.engine.UpgradeResult
+import com.game.tcg.core.engine.SquadBattleEngine
 import com.game.tcg.core.model.CardRarity
 import com.game.tcg.core.model.EquipmentCatalog
 import com.game.tcg.core.model.EquipmentItem
@@ -86,6 +87,8 @@ import com.game.tcg.core.model.CombatPenalty
 import com.game.tcg.core.model.DeckRules
 import com.game.tcg.core.model.DemonLordRegistry
 import com.game.tcg.core.model.Element
+import com.game.tcg.core.model.EnemySquad
+import com.game.tcg.core.model.EnemyUnit
 import com.game.tcg.core.model.EmergencyRetreatResult
 import com.game.tcg.core.model.ManaState
 import com.game.tcg.core.model.MemoryFragmentSource
@@ -366,8 +369,22 @@ data class TcgGameState(
     val battleReserve: List<TcgCard> = emptyList(),
     val enemyName: String = "차원 틈새의 마수",
     val enemyElement: Element = Element.DARK,
-    val enemyHp: Int = 12000,
-    val enemyMaxHp: Int = 12000,
+    /**
+     * 적 진영 카드들 — 2026-11-18 다중 적 전투 개편.
+     *
+     * 예전에는 화면에 9~12장을 그려 놓고 실제로는 [enemyHp] 단일 풀 하나만 상대했다.
+     * 이제 카드 한 장 한 장이 HP·공격력을 가진 전투 단위이고,
+     * 아군은 전열부터 한 장씩 쓰러뜨려 **전부 쓰러뜨려야 승리**한다.
+     * ([com.game.tcg.core.model.EnemySquad])
+     */
+    val enemyUnits: List<EnemyUnit> = EnemySquad.buildFromTotals(
+        totalHp = 12000,
+        perTurnAtk = 900,
+        enemyName = "차원 틈새의 마수",
+        enemyElement = Element.DARK,
+        size = DeckRules.BASE_DECK_SIZE
+    ),
+    /** 적 카드 1장의 기준 공격력 (후열은 ×0.7) — 화면 표기·밸런스 계산용 */
     val enemyAtk: Int = 900,
     val isDemonLordBattle: Boolean = false,
     val turn: Int = 1,
@@ -491,6 +508,32 @@ data class TcgGameState(
 ) {
     /** 생존 아군 수 (오의 조건 판정용) */
     val aliveSurvivorCount: Int get() = party.count { it.isAlive }
+
+    // ── 적 진영 파생 상태 (다중 적 카드 전투) ──
+
+    /** 남은 적 HP — 살아 있는 적 카드들의 HP 합 */
+    val enemyHp: Int get() = EnemySquad.totalHp(enemyUnits)
+
+    /** 적 진영 최대 HP 합 */
+    val enemyMaxHp: Int get() = EnemySquad.totalMaxHp(enemyUnits)
+
+    /** 살아 있는 적 카드 수 */
+    val enemyAliveCount: Int get() = EnemySquad.aliveCount(enemyUnits)
+
+    /** 적 진영 카드 수 (화면 그리드 = 내 덱 크기) */
+    val enemyUnitCount: Int get() = enemyUnits.size
+
+    /** 지금 아군이 때릴 적 카드 (전열 우선 → 후열) */
+    val enemyTarget: EnemyUnit? get() = EnemySquad.focusTarget(enemyUnits)
+
+    /** 이번 턴 반격하는 적 카드 (전열 최대 3장) */
+    val enemyAttackers: List<EnemyUnit> get() = EnemySquad.attackersThisTurn(enemyUnits)
+
+    /** 이번 턴 예상 반격 총 피해 */
+    val enemyThreatPerTurn: Int get() = EnemySquad.threatPerTurn(enemyUnits)
+
+    /** 적 전멸 여부 (승리 조건) */
+    val isEnemyWipedOut: Boolean get() = enemyUnits.isNotEmpty() && enemyUnits.none { it.isAlive }
 
     // ── 플레이어 레벨 · 덱 해금 파생 상태 ──
 
@@ -1364,8 +1407,13 @@ class TcgGameViewModel(
                 next = deployBase.copy(
                     enemyName = result.enemyName ?: s.enemyName,
                     enemyElement = result.enemyElement,
-                    enemyHp = result.enemyHp,
-                    enemyMaxHp = result.enemyMaxHp,
+                    enemyUnits = EnemySquad.buildFromTotals(
+                        totalHp = result.enemyMaxHp,
+                        perTurnAtk = result.enemyAtk,
+                        enemyName = result.enemyName ?: s.enemyName,
+                        enemyElement = result.enemyElement,
+                        size = deployBase.unlockedDeckSize
+                    ),
                     enemyAtk = result.enemyAtk,
                     isDemonLordBattle = false,
                     isChapter2BossBattle = false,
@@ -1475,8 +1523,13 @@ class TcgGameViewModel(
                             "이계 전투 탭에서 '전열 공격'으로 교전을 시작하세요.",
                     enemyName = "차원 틈새의 마수",
                     enemyElement = Element.DARK,
-                    enemyHp = 12000,
-                    enemyMaxHp = 12000,
+                    enemyUnits = EnemySquad.buildFromTotals(
+                        totalHp = 12000,
+                        perTurnAtk = 900,
+                        enemyName = "차원 틈새의 마수",
+                        enemyElement = Element.DARK,
+                        size = s.unlockedDeckSize
+                    ),
                     enemyAtk = 900,
                     isDemonLordBattle = false,
                     turn = 1,
@@ -1516,8 +1569,14 @@ class TcgGameViewModel(
             base.copy(
                 enemyName = "마왕 릴리스",
                 enemyElement = Element.DARK,
-                enemyHp = 25000,
-                enemyMaxHp = 25000,
+                enemyUnits = EnemySquad.buildFromTotals(
+                    totalHp = 25000,
+                    perTurnAtk = 2800,
+                    enemyName = "마왕 릴리스",
+                    enemyElement = Element.DARK,
+                    size = base.unlockedDeckSize,
+                    isDemonLordBattle = true
+                ),
                 enemyAtk = 2800,
                 isDemonLordBattle = true,
                 turn = 1,
@@ -1534,7 +1593,7 @@ class TcgGameViewModel(
                 pendingLootGold = 2500,
                 pendingLootGems = 30,
                 battleLog = base.battleLog + listOf(
-                    "[마왕전 개시] 황혼과 욕망의 마왕 릴리스 — HP 25000 / 공격력 2800",
+                    "[마왕전 개시] 황혼과 욕망의 마왕 릴리스 — HP 25000 / 카드 공격력 2800",
                     penalty.debuffDescription
                 ),
                 statusMessage = "[마왕전] 릴리스가 심연의 옥좌에서 일어섰다. (홀림 ${s.combatPenalty.totalStacks}스택 적용)"
@@ -1556,8 +1615,13 @@ class TcgGameViewModel(
             base.copy(
                 enemyName = "차원 틈새의 마수",
                 enemyElement = Element.DARK,
-                enemyHp = 12000,
-                enemyMaxHp = 12000,
+                enemyUnits = EnemySquad.buildFromTotals(
+                    totalHp = 12000,
+                    perTurnAtk = 900,
+                    enemyName = "차원 틈새의 마수",
+                    enemyElement = Element.DARK,
+                    size = base.unlockedDeckSize
+                ),
                 enemyAtk = 900,
                 isDemonLordBattle = false,
                 turn = 1,
@@ -1573,19 +1637,20 @@ class TcgGameViewModel(
                 audioScene = AudioScene.BATTLE,
                 pendingLootGold = 300,
                 pendingLootGems = 5,
-                battleLog = base.battleLog + "[원정 개시] 차원 틈새의 마수 — HP 12000 / 공격력 900",
+                battleLog = base.battleLog + "[원정 개시] 차원 틈새의 마수 — HP 12000 / 카드 공격력 900 · 9장",
                 statusMessage = "[원정] 차원 틈새의 마수와 교전을 시작합니다."
             )
         }
     }
 
-    private fun enemyCard(s: TcgGameState): TcgCard = TcgCard(
+    /** 적 카드 1장을 TCG 카드로 (상성·컷인용) */
+    private fun enemyCard(unit: EnemyUnit?): TcgCard = unit?.asCard() ?: TcgCard(
         id = 900,
-        name = s.enemyName,
-        element = s.enemyElement,
+        name = "심연의 군주",
+        element = Element.DARK,
         baseCost = 10,
-        atk = s.enemyAtk,
-        def = s.enemyMaxHp,
+        atk = 900,
+        def = 12000,
         starLevel = 5,
         skillText = "심연의 압박"
     )
@@ -1596,9 +1661,16 @@ class TcgGameViewModel(
     /** 후열 지원 공격 */
     fun attackBack() = performAttack(front = false)
 
+    /**
+     * 공격 1회 — 2026-11-18 개편: 적 카드 **한 장**을 쓰러뜨리는 싸움.
+     *
+     * 대상은 전열의 살아 있는 적 카드 → 전열이 비면 후열 순서다([EnemySquad.focusTarget]).
+     * 피해 계산은 [SquadBattleEngine.playerAttack] 한 곳에서 처리해
+     * 머리 없는 시뮬레이터([BattleSimulator])와 규칙이 어긋나지 않는다.
+     */
     private fun performAttack(front: Boolean) {
         updateState { s ->
-            if (s.enemyHp <= 0) return@updateState s.copy(statusMessage = "[전투 종료] 이미 적을 쓰러뜨렸습니다.")
+            if (s.enemyHp <= 0 || s.isEnemyWipedOut) return@updateState s.copy(statusMessage = "[전투 종료] 이미 적을 모두 쓰러뜨렸습니다.")
             val attackers = s.party.filter { it.isAlive && it.isFrontRow == front }
             if (attackers.isEmpty()) {
                 return@updateState s.copy(
@@ -1614,22 +1686,33 @@ class TcgGameViewModel(
             }
             // 턴에 따라 공격자를 순환
             val attacker = attackers[(s.turn - 1) % attackers.size]
-            val base = battleEngine.calculateDamageWithTemptation(attacker.card, enemyCard(s), s.combatPenalty)
-            val intelMultiplier = 1.0 + (s.intelBonusPercent / 100.0)
-            val summonMultiplier = 1.0 + (s.summonBuffPercent / 100.0)
-            val finalDamage = (base.finalDamage * intelMultiplier * summonMultiplier).toInt()
-            val newEnemyHp = (s.enemyHp - finalDamage).coerceAtLeast(0)
+            val outcome = SquadBattleEngine.playerAttack(
+                attackerAtk = attacker.card.atk,
+                attackerElement = attacker.card.element,
+                ultimate = attacker.card.isUltimateUnlocked,
+                units = s.enemyUnits,
+                penaltyAttackReductionPercent = s.combatPenalty.attackReductionPercent,
+                intelBonusPercent = s.intelBonusPercent,
+                summonBuffPercent = s.summonBuffPercent
+            )
+            val finalDamage = outcome.damage
             val newMana = s.mana.copy(currentMana = s.mana.currentMana - 1)
+            val afterUnits = outcome.units
+            val enemyHpLeft = EnemySquad.totalHp(afterUnits)
+            val aliveLeft = EnemySquad.aliveCount(afterUnits)
 
-            val logLine = "[턴 ${s.turn}] ${attacker.card.name} → ${s.enemyName} : ${finalDamage} 데미지 " +
-                    "(상성 ${base.multiplier}x" +
+            val logLine = "[턴 ${s.turn}] ${attacker.card.name} → ${outcome.targetName} : ${finalDamage} 데미지 " +
+                    "(상성 ${outcome.multiplier}x" +
                     (if (s.intelBonusPercent > 0) ", 급소 +${s.intelBonusPercent}%" else "") +
                     (if (s.summonBuffPercent > 0) ", 현실 소환 +${s.summonBuffPercent}%" else "") +
                     (if (s.combatPenalty.isCharmed) ", 홀림 -${s.combatPenalty.attackReductionPercent}%" else "") +
-                    ") · 적 잔여 HP ${newEnemyHp}"
+                    ")" +
+                    (if (outcome.killed) " · ${outcome.targetName} 격파!" else "") +
+                    " · 적 ${aliveLeft}/${afterUnits.size}장 · 남은 HP $enemyHpLeft/${s.enemyMaxHp}"
 
-            if (newEnemyHp <= 0) {
+            if (outcome.victory) {
                 applyVictory(s, newMana, listOf(logLine)).copy(
+                    enemyUnits = afterUnits,
                     lastEnemyHitDamage = finalDamage,
                     lastEnemyHitTick = s.lastEnemyHitTick + 1,
                     lastAttackerSlot = attacker.slotIndex,
@@ -1638,15 +1721,15 @@ class TcgGameViewModel(
                         attacker = attacker,
                         front = front,
                         damage = finalDamage,
-                        multiplier = base.multiplier,
-                        critical = base.isCriticalElement,
-                        ultimate = base.isUltimateTriggered,
+                        multiplier = outcome.multiplier,
+                        critical = outcome.critical,
+                        ultimate = outcome.ultimate,
                         lethal = true
                     )
                 )
             } else {
                 s.copy(
-                    enemyHp = newEnemyHp,
+                    enemyUnits = afterUnits,
                     mana = newMana,
                     lastEnemyHitDamage = finalDamage,
                     lastEnemyHitTick = s.lastEnemyHitTick + 1,
@@ -1656,13 +1739,16 @@ class TcgGameViewModel(
                         attacker = attacker,
                         front = front,
                         damage = finalDamage,
-                        multiplier = base.multiplier,
-                        critical = base.isCriticalElement,
-                        ultimate = base.isUltimateTriggered,
-                        lethal = false
+                        multiplier = outcome.multiplier,
+                        critical = outcome.critical,
+                        ultimate = outcome.ultimate,
+                        lethal = false,
+                        targetName = outcome.targetName
                     ),
                     battleLog = s.battleLog + logLine,
-                    statusMessage = "[공격] ${attacker.card.name} ${finalDamage} 데미지 — 적 HP ${newEnemyHp}/${s.enemyMaxHp}"
+                    statusMessage = "[공격] ${attacker.card.name} ${finalDamage} 데미지 — ${outcome.targetName} " +
+                            (if (outcome.killed) "격파 · " else "") +
+                            "적 ${aliveLeft}/${afterUnits.size}장 (HP $enemyHpLeft/${s.enemyMaxHp})"
                 )
             }
         }
@@ -1690,7 +1776,8 @@ class TcgGameViewModel(
         multiplier: Double,
         critical: Boolean,
         ultimate: Boolean,
-        lethal: Boolean
+        lethal: Boolean,
+        targetName: String = s.enemyName
     ): BattleCutIn = BattleCutIn(
         tick = nextCutInTick(s),
         fromEnemy = false,
@@ -1700,7 +1787,7 @@ class TcgGameViewModel(
         element = attacker.card.element,
         attackName = if (front) "공격" else "후열 지원 사격",
         attackerSlot = attacker.slotIndex,
-        targetName = s.enemyName,
+        targetName = targetName,
         damage = damage,
         critical = critical,
         multiplier = multiplier,
@@ -1708,14 +1795,19 @@ class TcgGameViewModel(
         lethal = lethal
     )
 
-    /** 적 반격 컷인 — 적 보스 카드 아트가 중앙에 확대되고 아군 피해 슬롯이 흔들린다 */
-    private fun enemyCutIn(s: TcgGameState, victim: PartyMember, damage: Int): BattleCutIn = BattleCutIn(
+    /** 적 반격 컷인 — 맞는 적 카드 아트가 중앙에 확대되고 아군 피해 슬롯이 흔들린다 */
+    private fun enemyCutIn(
+        s: TcgGameState,
+        victim: PartyMember,
+        damage: Int,
+        attacker: EnemyUnit? = null
+    ): BattleCutIn = BattleCutIn(
         tick = nextCutInTick(s),
         fromEnemy = true,
         kind = BattleAttackKind.ENEMY_COUNTER,
-        attackerCardId = s.enemyCutInCardId,
-        attackerName = s.enemyName,
-        element = s.enemyElement,
+        attackerCardId = attacker?.cardId ?: s.enemyCutInCardId,
+        attackerName = attacker?.name ?: s.enemyName,
+        element = attacker?.element ?: s.enemyElement,
         attackName = "반격",
         attackerSlot = -1,
         targetName = shortName(victim.card.id, victim.card.name),
@@ -1896,7 +1988,7 @@ class TcgGameViewModel(
         }
 
         var state = s.copy(
-            enemyHp = 0,
+            enemyUnits = s.enemyUnits.map { if (it.isAlive) it.copy(hp = 0) else it },
             mana = newMana,
             ownedCards = s.ownedCards.toList(),
             battleLog = s.battleLog + logLines +
@@ -2009,55 +2101,95 @@ class TcgGameViewModel(
         return state
     }
 
-    /** 턴 진행 — 마나 회복, 후퇴 제한 해제, 적 반격 */
+    /**
+     * 턴 진행 — 마나 회복, 후퇴 제한 해제, 적 반격.
+     *
+     * 2026-11-18 다중 적 개편: 적은 이제 **개별 카드**들이다.
+     * 전열에 살아 있는 적 카드 최대 3장(모자라면 후열)이 각각 아군 1장을 때리고,
+     * 적 카드를 한 장씩 쓰러뜨릴수록 한 턴에 들어오는 피해가 줄어든다.
+     */
     fun nextTurn() {
         updateState { s ->
             if (s.enemyHp <= 0) return@updateState s.copy(statusMessage = "[전투 종료] 적이 없습니다. 새 원정을 시작하세요.")
             val nextTurnNo = s.turn + 1
             val mana = manaEngine.replenishTurnMana(manaEngine.calculateMaxManaForTurn(nextTurnNo))
-            val targets = s.party.filter { it.isAlive && it.isFrontRow }.ifEmpty { s.party.filter { it.isAlive } }
-            if (targets.isEmpty()) {
+            val defenders = s.party.filter { it.isAlive && it.isFrontRow }.ifEmpty { s.party.filter { it.isAlive } }
+            if (defenders.isEmpty()) {
                 return@updateState s.copy(
                     turn = nextTurnNo,
                     mana = mana,
                     statusMessage = "[전투 불능] 생존 카드가 없습니다. 도감에서 재획득이 필요합니다."
                 )
             }
-            val victim = targets[(nextTurnNo - 1) % targets.size]
-            val raw = s.enemyAtk
-            val taken = temptationEngine.applyDamageTakenPenalty(raw, s.combatPenalty)
-            val frontPenalty = if (victim.isFrontRow) s.frontRowDefensePenaltyPercent else 0
-            // ── 상성(방어) — 전열 다수가 적 속성에 유리하면 덜 맞는다 (2026-11-17 밸런스) ──
-            val edgeElements = s.party.filter { it.isAlive && it.isFrontRow }.ifEmpty { s.party.filter { it.isAlive } }
-                .map { it.card.element }
-            val edgeModifier = BalanceRules.damageTakenModifier(edgeElements, s.enemyElement)
-            val mitigated = (taken * (100 - s.defenseBonusPercent + frontPenalty) / 100.0 * edgeModifier).toInt()
-            val newHp = (victim.hp - mitigated).coerceAtLeast(0)
+            // ── 적 반격 (적 카드별 개별 공격) ──
+            var party = s.party
+            val logLines = mutableListOf<String>()
+            var lastDamage = 0
+            var lastVictimSlot = -1
+            var lastAttacker: EnemyUnit? = null
+            var deaths = 0
+            var post = s
 
-            var post = s.copy(
+            val attackers = EnemySquad.attackersThisTurn(s.enemyUnits)
+            attackers.forEachIndexed { index, enemyUnit ->
+                val aliveNow = party.filter { it.isAlive && it.isFrontRow }.ifEmpty { party.filter { it.isAlive } }
+                if (aliveNow.isEmpty()) return@forEachIndexed
+                val victim = aliveNow[(nextTurnNo + index - 1).mod(aliveNow.size)]
+                val edgeElements = party.filter { it.isAlive && it.isFrontRow }.ifEmpty { party.filter { it.isAlive } }
+                    .map { it.card.element }
+                val frontPenalty = if (victim.isFrontRow) s.frontRowDefensePenaltyPercent else 0
+                val mitigated = SquadBattleEngine.enemyHitDamage(
+                    unitAtk = enemyUnit.atk,
+                    unitElement = enemyUnit.element,
+                    frontElements = edgeElements,
+                    damageTakenIncreasePercent = s.combatPenalty.damageTakenIncreasePercent,
+                    defenseBonusPercent = s.defenseBonusPercent,
+                    frontRowDecayPercent = frontPenalty
+                )
+                val newHp = (victim.hp - mitigated).coerceAtLeast(0)
+                party = party.map { if (it.slotIndex == victim.slotIndex) it.copy(hp = newHp) else it }
+                lastDamage = mitigated
+                lastVictimSlot = victim.slotIndex
+                lastAttacker = enemyUnit
+                logLines += "[턴 $nextTurnNo] ${enemyUnit.name}의 반격 → ${victim.card.name} ${mitigated} 피해 " +
+                        "(적 카드 공격력 ${enemyUnit.atk}" +
+                        (if (s.combatPenalty.damageTakenIncreasePercent > 0) ", 받는 피해 +${s.combatPenalty.damageTakenIncreasePercent}%" else "") +
+                        (if (s.defenseBonusPercent > 0) ", 방어 보너스 -${s.defenseBonusPercent}%" else "") +
+                        (if (frontPenalty > 0) ", 전열 결손 방어 -$frontPenalty%" else "") +
+                        ") · 잔여 HP $newHp/${victim.maxHp}"
+
+                if (newHp <= 0) {
+                    post = applyDeath(post.copy(party = party), victim)
+                    // applyDeath 는 party 에서 사망 카드를 지운다 — 이후 반격은 그 결과를 따라간다
+                    party = post.party
+                    deaths += 1
+                }
+            }
+
+            post = post.copy(
                 turn = nextTurnNo,
                 mana = mana,
-                lastAllyHitDamage = mitigated,
-                lastAllyHitSlot = victim.slotIndex,
+                party = party,
+                lastAllyHitDamage = lastDamage,
+                lastAllyHitSlot = lastVictimSlot,
                 lastAllyHitTick = s.lastAllyHitTick + 1,
-                lastCutIn = enemyCutIn(s, victim, mitigated),
+                lastCutIn = if (lastVictimSlot >= 0) {
+                    party.firstOrNull { it.slotIndex == lastVictimSlot }?.let { enemyCutIn(s, it, lastDamage, lastAttacker) }
+                        ?: s.lastCutIn
+                } else {
+                    s.lastCutIn
+                },
                 retreatInfo = s.retreatInfo.copy(turn = nextTurnNo, retreatUsedThisTurn = false),
                 lastRetreatMessage = null,
-                party = s.party.map { if (it.slotIndex == victim.slotIndex) it.copy(hp = newHp) else it },
-                battleLog = s.battleLog + ("[턴 $nextTurnNo] ${s.enemyName}의 반격 → ${victim.card.name} ${mitigated} 피해 " +
-                        "(받는 피해 +${s.combatPenalty.damageTakenIncreasePercent}%, 방어 보너스 -${s.defenseBonusPercent}%" +
-                        (if (frontPenalty > 0) ", 전열 결손 방어 -$frontPenalty%" else "") +
-                        (if (edgeModifier < 1.0) ", 상성 우세 -${((1 - edgeModifier) * 100).toInt()}%" else "") +
-                        (if (edgeModifier > 1.0) ", 상성 열세 +${((edgeModifier - 1) * 100).toInt()}%" else "") +
-                        ") · 잔여 HP $newHp/${victim.maxHp}"),
-                statusMessage = "[턴 $nextTurnNo] 마나 ${mana.currentMana}/${mana.maxMana} 회복 · ${victim.card.name} 피해 ${mitigated}"
+                battleLog = s.battleLog + logLines +
+                        "[턴 $nextTurnNo] 적 ${EnemySquad.aliveCount(s.enemyUnits)}/${s.enemyUnits.size}장이 반격 " +
+                        "(반격 ${attackers.size}장 · 합계 ${attackers.sumOf { it.atk }} 공격력)",
+                statusMessage = "[턴 $nextTurnNo] 마나 ${mana.currentMana}/${mana.maxMana} 회복 · 적 ${attackers.size}장 반격" +
+                        (if (lastVictimSlot >= 0) " (${s.party.firstOrNull { it.slotIndex == lastVictimSlot }?.card?.name ?: "아군"} -$lastDamage)" else "")
             )
 
-            if (newHp <= 0 && post.reincarnationPool.none { it.templateId == victim.card.id }) {
-                post = applyDeath(post, victim)
-                // 전멸이면 DEFEAT 오버레이 (2026-11-17)
-                if (post.party.isEmpty()) post = applyDefeat(post, post.lastBattleLostCards)
-            }
+            // 전멸이면 DEFEAT 오버레이 (2026-11-17)
+            if (post.party.isEmpty()) post = applyDefeat(post, post.lastBattleLostCards)
             post
         }
     }
@@ -2492,8 +2624,10 @@ class TcgGameViewModel(
             base.copy(
                 enemyName = stage.enemyName,
                 enemyElement = stage.enemyElement,
-                enemyHp = stage.enemyHp,
-                enemyMaxHp = stage.enemyHp,
+                enemyUnits = EnemySquad.build(
+                    stage = stage,
+                    size = base.unlockedDeckSize
+                ),
                 enemyAtk = stage.enemyAtk,
                 isDemonLordBattle = false,
                 isChapter2BossBattle = false,
@@ -2517,7 +2651,7 @@ class TcgGameViewModel(
                 stageMessage = "[스테이지 $number] ${stage.name} — ${stage.enemyName}",
                 battleLog = base.battleLog + listOf(
                     "[스테이지 $number] ${stage.chapter}장 ${stage.chapterName} · ${stage.name}$bossLine",
-                    "${stage.enemyName} — HP ${stage.enemyHp} / 공격력 ${stage.enemyAtk} / 속성 ${stage.enemyElement.displayName}",
+                    "${stage.enemyName} — 총 HP ${stage.enemyHp} / 카드 공격력 ${stage.enemyAtk} / 전체 속성 ${stage.enemyElement.displayName} · 적 ${base.unlockedDeckSize}장 편성",
                     "권장 전투력 ${stage.recommendedPower} · 내 덱 ${s.deckTotalPower} (${StageEngine.readiness(s.deckTotalPower, stage).label})"
                 ),
                 statusMessage = "[스테이지 $number] ${stage.name} 출전 — ${StageEngine.readiness(s.deckTotalPower, stage).label}"
@@ -3176,7 +3310,7 @@ class TcgGameViewModel(
 
             val result = pairUltimateEngine.activate(
                 attacker = attacker.card,
-                defender = enemyCard(s),
+                defender = enemyCard(s.enemyTarget),
                 penalty = s.combatPenalty,
                 aliveCount = s.aliveSurvivorCount,
                 mana = s.mana,
@@ -3189,12 +3323,16 @@ class TcgGameViewModel(
                     statusMessage = result.failureReason ?: "[오의 불가] 발동 조건을 만족하지 못했습니다."
                 )
             }
-            val newEnemyHp = (s.enemyHp - result.damage).coerceAtLeast(0)
+            // 오의는 적 카드를 전열부터 차례로 무너뜨린다 (초과 피해는 다음 카드로 이어진다)
+            val afterUnits = EnemySquad.applyDamageSequential(s.enemyUnits, result.damage)
+            val newEnemyHp = EnemySquad.totalHp(afterUnits)
+            val aliveLeft = EnemySquad.aliveCount(afterUnits)
             val newMana = s.mana.copy(currentMana = (s.mana.currentMana - result.manaSpent).coerceAtLeast(0))
-            val tail = "[턴 ${s.turn}] 적 잔여 HP $newEnemyHp/${s.enemyMaxHp}"
+            val tail = "[턴 ${s.turn}] 적 ${aliveLeft}/${afterUnits.size}장 · 잔여 HP $newEnemyHp/${s.enemyMaxHp}"
 
             if (newEnemyHp <= 0) {
                 applyVictory(s, newMana, result.logLines + tail).copy(
+                    enemyUnits = afterUnits,
                     pairUltimateUsedThisBattle = true,
                     pairUltimateCount = s.pairUltimateCount + 1,
                     pairUltimateBanner = result.bannerTitle,
@@ -3206,7 +3344,7 @@ class TcgGameViewModel(
                 )
             } else {
                 s.copy(
-                    enemyHp = newEnemyHp,
+                    enemyUnits = afterUnits,
                     mana = newMana,
                     pairUltimateUsedThisBattle = true,
                     pairUltimateBanner = result.bannerTitle,
@@ -3217,7 +3355,7 @@ class TcgGameViewModel(
                     lastAttackerSlot = attacker.slotIndex,
                     lastCutIn = pairUltimateCutIn(s, attacker, result, lethal = false),
                     battleLog = s.battleLog + result.logLines + tail,
-                    statusMessage = "[⚡ 페어 얼티밋 오의] ${attacker.card.name} · ${result.damage} 데미지 — 적 HP $newEnemyHp/${s.enemyMaxHp}"
+                    statusMessage = "[⚡ 페어 얼티밋 오의] ${attacker.card.name} · ${result.damage} 데미지 — 적 ${aliveLeft}/${afterUnits.size}장 (HP $newEnemyHp/${s.enemyMaxHp})"
                 )
             }
         }
@@ -3281,8 +3419,13 @@ class TcgGameViewModel(
                 chapter2PreludeOpened = true,
                 enemyName = node.bossName,
                 enemyElement = node.bossElement,
-                enemyHp = node.bossHp,
-                enemyMaxHp = node.bossHp,
+                enemyUnits = EnemySquad.buildFromTotals(
+                    totalHp = node.bossHp,
+                    perTurnAtk = node.bossAtk,
+                    enemyName = node.bossName,
+                    enemyElement = node.bossElement,
+                    size = base.unlockedDeckSize
+                ),
                 enemyAtk = node.bossAtk,
                 isDemonLordBattle = false,
                 isChapter2BossBattle = true,

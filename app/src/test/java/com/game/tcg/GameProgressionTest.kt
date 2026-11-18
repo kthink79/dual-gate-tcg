@@ -78,7 +78,7 @@ class GameProgressionTest {
     /** 전투를 승리까지 진행한다 (최대 40턴) */
     private fun fightToVictory(vm: TcgGameViewModel) {
         var guard = 0
-        while (vm.uiState.value.enemyHp > 0 && guard < 120) {
+        while (vm.uiState.value.enemyHp > 0 && guard < 400) {
             val before = vm.uiState.value.enemyHp
             if (guard % 2 == 0) vm.attackFront() else vm.attackBack()
             if (vm.uiState.value.enemyHp >= before) {
@@ -89,6 +89,20 @@ class GameProgressionTest {
             }
             guard++
         }
+    }
+
+    /**
+     * 2026-11-18 다중 적 개편 — 적은 9~12장의 개별 HP 를 가진 카드다.
+     * 후반 보스는 강화·합성한 덱을 전제하므로, 검증용 덱도 그에 맞춰 강화한다.
+     * (카드 인스턴스를 직접 키우고 자동 편성으로 전열·후열을 다시 채운다)
+     */
+    private fun growDeck(vm: TcgGameViewModel, multiplier: Double = 2.2, star: Int = 5) {
+        vm.uiState.value.ownedCards.forEach { card ->
+            card.atk = (card.atk * multiplier).toInt()
+            card.def = (card.def * multiplier).toInt()
+            card.starLevel = star
+        }
+        vm.autoEquipParty()
     }
 
     // =========================================================================
@@ -271,6 +285,8 @@ class GameProgressionTest {
     fun `보스 스테이지를 깨면 확정 장비 드롭과 함께 다음 챕터가 열린다`() {
         val vm = strongViewModel(cleared = setOf(1, 2, 3, 4))
         val stage = StageCatalog.require(5)
+        // 5스테이지는 중간 보스 관문 — 강화·합성한 9~12장 덱으로 도전한다
+        growDeck(vm)
 
         assertTrue(vm.startStageBattle(5))
         fightToVictory(vm)
@@ -296,7 +312,7 @@ class GameProgressionTest {
             initialClearedStages = (1..25).toSet()
         )
         assertFalse(112 in vm.uiState.value.ownedCardIds)
-        vm.autoEquipParty()
+        growDeck(vm)
         assertTrue(vm.startStageBattle(26))
         fightToVictory(vm)
 

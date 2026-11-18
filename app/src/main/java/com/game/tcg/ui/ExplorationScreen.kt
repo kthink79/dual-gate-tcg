@@ -1,5 +1,10 @@
 package com.game.tcg.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,9 +13,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
@@ -18,6 +25,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -47,6 +61,16 @@ fun ExplorationScreen(
     onOpenCollection: () -> Unit,
     onOpenRealWorld: () -> Unit
 ) {
+    // ── 탐색 진행 연출 상태 (2026-11-18) ──
+    var stagingMode by remember { mutableStateOf<ExplorationMode?>(null) }
+    val staging = stagingMode
+    val companions = remember(state.party, state.lobbyHeroId, staging) {
+        ExplorationStaging.companionIds(
+            party = state.party.sortedBy { it.slotIndex }.map { it.card.id to it.isFrontRow },
+            fallbackCardId = state.lobbyHeroId
+        )
+    }
+
     ScreenFrame {
         // ── ① 파견 파티 + 차원 균열 에너지 ──
         SectionCard(
@@ -74,8 +98,8 @@ fun ExplorationScreen(
             ExplorationDecor.zones().forEach { zone ->
                 ExplorationZoneCard(
                     zone = zone,
-                    enabled = state.gateEnergy >= zone.mode.energyCost,
-                    onClick = { onExplore(zone.mode) }
+                    enabled = state.gateEnergy >= zone.mode.energyCost && staging == null,
+                    onClick = { stagingMode = zone.mode }
                 )
             }
             if (state.gateEnergy < ExplorationMode.RIFT.energyCost) {
@@ -243,6 +267,147 @@ fun ExplorationScreen(
                 hint = "전투 출전으로 오른 친밀도로 일상·데이트 룩을 해금하세요",
                 accent = TcgColors.Gold,
                 onClick = onOpenRealWorld
+            )
+        }
+    }
+
+    // ── 탐색 진행 연출 오버레이 — 일상복 캐릭터가 화면에 서고 게이지가 차오른다 ──
+    if (staging != null) {
+        ExplorationProgressOverlay(
+            mode = staging,
+            companionIds = companions,
+            backdropResId = ExplorationDecor.zoneOf(staging).backdropResId,
+            tone = elementColor(ExploreStageTone(staging)),
+            onFinished = {
+                stagingMode = null
+                onExplore(staging)
+            }
+        )
+    }
+}
+
+/** 구역별 진행 연출 색조 */
+private fun ExploreStageTone(mode: ExplorationMode) = when (mode) {
+    ExplorationMode.RIFT -> com.game.tcg.core.model.Element.DARK
+    ExplorationMode.FRAGMENT -> com.game.tcg.core.model.Element.ICE
+    ExplorationMode.ENCOUNTER -> com.game.tcg.core.model.Element.LIGHT
+}
+
+/**
+ * 탐색 진행 연출 — 배경 장면 위로 일상복 동료가 차례로 들어서고,
+ * 진행 게이지와 단계 문구가 함께 흘러간다.
+ */
+@Composable
+private fun ExplorationProgressOverlay(
+    mode: ExplorationMode,
+    companionIds: List<Int>,
+    backdropResId: Int,
+    tone: Color,
+    onFinished: () -> Unit
+) {
+    val steps = remember(mode) { ExplorationStaging.steps(mode) }
+    val progress = remember { Animatable(0f) }
+    var revealed by remember { mutableIntStateOf(0) }
+    val finished by rememberUpdatedState(onFinished)
+
+    LaunchedEffect(mode) {
+        revealed = 1
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = ExplorationStaging.DURATION_MILLIS, easing = LinearEasing)
+        )
+        finished()
+    }
+    // 단계별로 동료를 한 명씩 세운다 (일상복 차림)
+    LaunchedEffect(progress.value) {
+        val want = (1 + (progress.value * companionIds.size).toInt()).coerceAtMost(companionIds.size)
+        if (want > revealed) revealed = want
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TcgColors.Background.copy(alpha = 0.96f))
+            .clickable(enabled = false) { }
+    ) {
+        ResourceArtImage(
+            resId = backdropResId,
+            contentDescription = mode.displayName,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+            targetWidthPx = 720
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xCC0B0A12), Color(0x550B0A12), Color(0xF20B0A12))
+                    )
+                )
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Pill("${mode.icon} ${mode.displayName} 탐색 중", tone, filled = true)
+            Spacer(Modifier.height(10.dp))
+            // 일상복 캐릭터 스트립 — 차례로 슬라이드 인
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                companionIds.forEachIndexed { index, id ->
+                    val show = index < revealed
+                    val offset by animateDpAsState(
+                        targetValue = if (show) 0.dp else 28.dp,
+                        animationSpec = tween(220),
+                        label = "explore_slide_$id"
+                    )
+                    val alpha by animateFloatAsState(
+                        targetValue = if (show) 1f else 0f,
+                        animationSpec = tween(220),
+                        label = "explore_alpha_$id"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(if (index == 0) 116.dp else 92.dp)
+                            .aspectRatio(2f / 3f)
+                            .offset(x = offset, y = 0.dp)
+                            .alpha(alpha)
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.5.dp, tone.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+                    ) {
+                        CardArtImage(
+                            cardId = id,
+                            visual = ExplorationStaging.stagingVisual,
+                            contentDescription = TcgGameViewModel.profileOf(id)?.displayName ?: "동료",
+                            contentScale = ContentScale.Crop,
+                            alignment = Alignment.TopCenter,
+                            modifier = Modifier.fillMaxSize(),
+                            targetWidthPx = 320
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                ExplorationStaging.messageAt(mode, progress.value),
+                color = TcgColors.Text,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 18.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            StatBar(ratio = progress.value, color = tone, height = 9)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "${(progress.value * 100).toInt()}%",
+                color = TcgColors.Muted,
+                fontSize = 11.sp
             )
         }
     }

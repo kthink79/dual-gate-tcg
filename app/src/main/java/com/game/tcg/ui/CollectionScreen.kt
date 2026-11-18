@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.model.CardCatalog
 import com.game.tcg.core.model.DeckRules
+import com.game.tcg.core.model.Element
 import com.game.tcg.core.model.TcgCard
 import com.game.tcg.core.model.VisualState
 
@@ -73,21 +74,54 @@ fun CollectionScreen(
     }
 
     ScreenFrame {
-        // ── 카드 선택 (170인 전체 스크롤 목록) ──
+        // ── 카드 선택 (170인 전체 목록 · 속성/성급 묶음·필터) ──
         val allProfiles = TcgGameViewModel.profiles()
         val ownedIds = state.ownedCardIds
         var catalogFilter by remember { mutableStateOf(CatalogFilter.ALL) }
-        val shownProfiles = when (catalogFilter) {
-            CatalogFilter.ALL -> allProfiles
-            CatalogFilter.NEW_WAVE -> allProfiles.filter { CardCatalog.isNewWave(it.cardId) }
-            CatalogFilter.ORIGINAL -> allProfiles.filter { !CardCatalog.isNewWave(it.cardId) }
-            CatalogFilter.BOSS -> TcgGameViewModel.midBossProfiles()
-        }
+        var viewMode by remember { mutableStateOf(CatalogViewMode.NUMBER) }
+        var elementFilter by remember { mutableStateOf<Element?>(null) }
+        var starFilter by remember { mutableStateOf<Int?>(null) }
+        var ownedOnly by remember { mutableStateOf(false) }
+        val starOf: (Int) -> Int = { id -> state.ownedCards.firstOrNull { it.id == id }?.starLevel ?: 1 }
+
+        val baseProfiles = CollectionCatalog.filterByPrimary(
+            profiles = allProfiles,
+            filter = catalogFilter,
+            midBossProfiles = TcgGameViewModel.midBossProfiles()
+        )
+        val shownProfiles = CollectionCatalog.orderForManagement(
+            profiles = CollectionCatalog.applyFilters(
+                profiles = baseProfiles,
+                element = elementFilter,
+                star = starFilter,
+                ownedOnly = ownedOnly,
+                ownedIds = ownedIds,
+                starOf = starOf
+            ),
+            ownedIds = ownedIds,
+            starOf = starOf
+        )
+        val groups = CollectionCatalog.group(shownProfiles, viewMode, starOf)
+
         SectionCard(
             title = "도감 카드",
             badge = "보유 ${state.ownedCards.size}/${allProfiles.size}",
             accent = TcgColors.Violet
         ) {
+            // ① 보기 방식 — 번호순 / 속성별 묶음 / 성급별 묶음
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                CatalogViewMode.entries.forEach { mode ->
+                    ChipButton(
+                        label = mode.label,
+                        selected = viewMode == mode,
+                        accent = TcgColors.Violet
+                    ) { viewMode = mode }
+                }
+            }
+            // ② 기존 필터 — 전체 / 신규 / 기존 / 보스
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ChipButton("전체 ${allProfiles.size}인", catalogFilter == CatalogFilter.ALL) {
                     catalogFilter = CatalogFilter.ALL
@@ -102,15 +136,62 @@ fun CollectionScreen(
                     catalogFilter = CatalogFilter.BOSS
                 }
             }
+            // ③ 속성 필터
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ChipButton("속성 전체", elementFilter == null, TcgColors.Muted) { elementFilter = null }
+                Element.entries.forEach { element ->
+                    ChipButton(
+                        label = "${CollectionCatalog.elementBadge(element)} ${element.displayName}",
+                        selected = elementFilter == element,
+                        accent = elementColor(element)
+                    ) { elementFilter = if (elementFilter == element) null else element }
+                }
+            }
+            // ④ 성급 필터 + 보유만 보기
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ChipButton("성급 전체", starFilter == null, TcgColors.Muted) { starFilter = null }
+                (5 downTo 1).forEach { star ->
+                    ChipButton(
+                        label = CollectionCatalog.starText(star),
+                        selected = starFilter == star,
+                        accent = TcgColors.Gold
+                    ) { starFilter = if (starFilter == star) null else star }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ChipButton(
+                    label = if (ownedOnly) "보유만 보기 ON" else "보유만 보기",
+                    selected = ownedOnly,
+                    accent = TcgColors.Heal
+                ) { ownedOnly = !ownedOnly }
+                ChipButton("필터 초기화", false, TcgColors.Muted) {
+                    catalogFilter = CatalogFilter.ALL
+                    viewMode = CatalogViewMode.NUMBER
+                    elementFilter = null
+                    starFilter = null
+                    ownedOnly = false
+                }
+            }
             Text(
-                if (catalogFilter == CatalogFilter.NEW_WAVE) {
-                    "No.155~169 신규 15인 — 매력 유지 + 얼굴형·포즈 다양화로 다시 그린 세트입니다."
-                } else if (catalogFilter == CatalogFilter.ORIGINAL) {
-                    "No.1~154 · No.184 아메넷 — 기존 155인. 전원 4종 비주얼(전투·일상·데이트·미니어처)이 들어 있습니다."
-                } else if (catalogFilter == CatalogFilter.BOSS) {
-                    "No.170~175 중간 보스 6인 — 챕터 마일스톤 관문. 격파 후 「심연 연성」으로 계약하면 아군이 됩니다."
-                } else {
-                    "도감 번호를 누르면 카드 상세와 4종 비주얼이 열립니다. (176명 × 4 = JPG 704장, 1캐릭터 = 1장 유일성)"
+                when {
+                    shownProfiles.isEmpty() -> "조건에 맞는 캐릭터가 없습니다 — 필터를 초기화해 보세요."
+                    catalogFilter == CatalogFilter.NEW_WAVE ->
+                        "No.155~169 신규 15인 — 매력 유지 + 얼굴형·포즈 다양화로 다시 그린 세트입니다."
+                    catalogFilter == CatalogFilter.ORIGINAL ->
+                        "No.1~154 · No.184 아메넷 — 기존 155인. 전원 4종 비주얼(전투·일상·데이트·미니어처)이 들어 있습니다."
+                    catalogFilter == CatalogFilter.BOSS ->
+                        "No.170~175 중간 보스 6인 — 챕터 마일스톤 관문. 격파 후 「심연 연성」으로 계약하면 아군이 됩니다."
+                    viewMode == CatalogViewMode.ELEMENT ->
+                        "속성별 묶음 — 화염 → 바람 → 빙결 → 빛 → 어둠 순으로 묶였습니다. 상성 조합을 짜기 쉽습니다."
+                    viewMode == CatalogViewMode.STAR ->
+                        "성급별 묶음 — 5성부터 1성까지. 합성 재료를 고를 때 같은 성급끼리 모아 봅니다."
+                    else -> "도감 번호를 누르면 카드 상세와 4종 비주얼이 열립니다. (176명 × 4 = JPG 704장, 1캐릭터 = 1장 유일성)"
                 },
                 color = TcgColors.Muted,
                 fontSize = 12.sp,
@@ -119,39 +200,67 @@ fun CollectionScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(228.dp)
+                    // 필터·묶음이 늘어난 만큼 목록 높이도 키워 한 화면에서 훑기 좋게 한다
+                    .height(300.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(TcgColors.Background)
                     .verticalScroll(rememberScrollState())
                     .padding(6.dp)
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    shownProfiles.chunked(2).forEach { rowItems ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            rowItems.forEach { profileItem ->
-                                Box(modifier = Modifier.weight(1f)) {
-                                    ChipButton(
-                                        label = "#${profileItem.cardId} ${profileItem.displayName}" +
-                                            if (profileItem.cardId in ownedIds) "" else " 🔒",
-                                        selected = profileItem.cardId == state.selectedCardId,
-                                        accent = if (profileItem.cardId in ownedIds) {
-                                            elementColor(profileItem.element)
-                                        } else {
-                                            TcgColors.Line
-                                        },
-                                        onClick = { onSelectCard(profileItem.cardId) }
-                                    )
-                                }
-                            }
-                            if (rowItems.size == 1) {
+                    groups.forEach { group ->
+                        if (viewMode != CatalogViewMode.NUMBER) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(group.tint).copy(alpha = 0.16f))
+                                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    group.title,
+                                    color = Color(group.tint),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                                 Spacer(Modifier.weight(1f))
+                                Text(
+                                    "${group.entries.size}명",
+                                    color = TcgColors.Muted,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                        group.entries.chunked(2).forEach { rowItems ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                rowItems.forEach { profileItem ->
+                                    val owned = profileItem.cardId in ownedIds
+                                    val star = starOf(profileItem.cardId)
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        ChipButton(
+                                            label = CollectionCatalog.entryLabel(profileItem, owned) +
+                                                " " + CollectionCatalog.starText(star),
+                                            selected = profileItem.cardId == state.selectedCardId,
+                                            accent = if (owned) {
+                                                elementColor(profileItem.element)
+                                            } else {
+                                                TcgColors.Line
+                                            },
+                                            onClick = { onSelectCard(profileItem.cardId) }
+                                        )
+                                    }
+                                }
+                                if (rowItems.size == 1) {
+                                    Spacer(Modifier.weight(1f))
+                                }
                             }
                         }
                     }
                 }
             }
             Text(
-                "목록 ${shownProfiles.size}명 전원 스크롤 가능 · 자물쇠 표시는 아직 계약하지 않은 카드입니다.",
+                "목록 ${shownProfiles.size}명 · 보유 우선 정렬(성급 높은 순 → 번호순) · 🔒 는 아직 계약하지 않은 카드입니다.",
                 color = TcgColors.Muted,
                 fontSize = 12.sp
             )
@@ -618,5 +727,4 @@ private fun StatColumn(label: String, value: String, color: Color) {
     }
 }
 
-/** 도감 목록 필터 */
-private enum class CatalogFilter { ALL, NEW_WAVE, ORIGINAL, BOSS }
+/** 도감 목록 필터 — [CatalogFilter] 로 옮겼다 (2026-11-18 묶음/필터 개편) */

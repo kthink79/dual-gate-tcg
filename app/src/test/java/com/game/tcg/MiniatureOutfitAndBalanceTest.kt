@@ -211,9 +211,17 @@ class MiniatureOutfitAndBalanceTest {
         val s25 = StageCatalog.require(25)
         assertTrue("보스 HP 가 스테이지와 함께 커진다", s25.enemyHp > s5.enemyHp)
         assertTrue("보스 공격력도 커진다", s25.enemyAtk > s5.enemyAtk)
-        // 적 공격력은 권장 전투력 대비 충분히 위협적이어야 한다 (이전 110 분의 1 → 지금 72 분의 1)
+        // 적 공격력은 권장 전투력 대비 충분히 위협적이어야 한다
+        // (2026-11-18 다중 적 개편 — 카드 1장 공격력 = 권장 전투력 / 160, 한 턴에 전열 3장이 반격)
         val normal = StageCatalog.require(3)
-        assertTrue("적 ATK 가 권장 전투력의 1/100 이상", normal.enemyAtk > normal.recommendedPower / 100)
+        assertTrue("적 카드 ATK 가 권장 전투력의 1/200 이상", normal.enemyAtk > normal.recommendedPower / 200)
+        // 다중 적 — 적 진영은 9~12장의 개별 HP 카드다 (전열 3 + 후열)
+        val squad = com.game.tcg.core.model.EnemySquad.build(stage = normal, size = 9)
+        assertEquals("적 카드 수 = 덱 크기", 9, squad.size)
+        assertEquals("전열 3장", 3, squad.count { it.isFront })
+        assertEquals("총 HP 합 = 스테이지 적 HP", normal.enemyHp, squad.sumOf { it.maxHp })
+        assertTrue("전열 HP 가 후열보다 두껍다", squad.first().maxHp > squad.last().maxHp)
+        assertTrue("전열 공격력이 후열보다 높다", squad.first().atk > squad.last().atk)
     }
 
     @Test
@@ -226,7 +234,9 @@ class MiniatureOutfitAndBalanceTest {
             starterIds.all { CardCatalog.require(it).baseCost in com.game.tcg.core.model.StartingRoster.STARTER_COST_RANGE }
         )
         val starter = starterIds.map { id -> CardCatalog.require(id).toCard() }
-        (5..30 step 5).forEach { number ->
+        // 2026-11-18 다중 적 개편 — 3장 무강화 덱은 5스테이지 중간 보스까지가 한계이고,
+        // 6스테이지부터는 덱을 더 채우고 강화해야 한다.
+        (6..30 step 4).forEach { number ->
             val stage = StageCatalog.require(number)
             val result = BattleSimulator.simulate(starter, stage)
             assertFalse("무강화 덱이 ${number}스테이지를 뚫었다 (${result.summary})", result.victory)
