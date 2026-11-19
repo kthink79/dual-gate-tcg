@@ -2,25 +2,28 @@ package com.game.tcg.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -35,14 +38,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.game.tcg.core.engine.AffinityRules
-import com.game.tcg.core.model.CardCatalog
 import com.game.tcg.core.model.DeckRules
-import com.game.tcg.core.model.Element
 import com.game.tcg.core.model.TcgCard
 import com.game.tcg.core.model.VisualState
 
 /**
- * 탭 3 — 🃏 도감 · 서약 (4종 비주얼)
+ * 탭 3 — 🃏 도감 · 성장 (도감 / 강화 / 합성)
+ *
+ * 2026-11-19 사용자 요청(스크린샷 피드백) 전면 개편:
+ *  ① '신규 15인 / 기존 155인 / 보스 6' 구분 버튼 **삭제**
+ *  ② 5줄 필터 버튼을 **콤보박스(보기/속성/성급) + '보유만' 1줄**로 축약
+ *  ③ 도감에서 캐릭터를 고르면 **상단 서브 탭 [도감][강화][합성]** 으로 바로 전환 —
+ *     아래로 길게 스크롤하지 않아도 되고, 선택한 캐릭터가 그대로 이어진다
+ *  ④ 목록은 칩 나열 대신 **2:3 썸네일 그리드**(태블릿에서는 열 수 자동 증가)
+ *  ⑤ 설명문은 짧은 라벨·아이콘 위주로 정리
  */
 @Composable
 fun CollectionScreen(
@@ -58,7 +67,11 @@ fun CollectionScreen(
     onDeployToParty: (Int, Int) -> Unit,
     onUndeployFromParty: (Int) -> Unit,
     onVideoStart: () -> Unit = {},
-    onVideoEnd: () -> Unit = {}
+    onVideoEnd: () -> Unit = {},
+    // 2026-11-19: 도감 화면에서 바로 강화·합성을 실행한다 (탭 연동)
+    onUpgrade: (Int) -> Unit = {},
+    onCraft: (Int) -> Unit = {},
+    onTranscend: (Int) -> Unit = {}
 ) {
     val selected: TcgCard = state.ownedCards.firstOrNull { it.id == state.selectedCardId }
         ?: TcgGameViewModel.characterCard(state.selectedCardId)
@@ -66,32 +79,39 @@ fun CollectionScreen(
     val profile = TcgGameViewModel.profileOf(state.selectedCardId)
     val isDemonLordCard = state.selectedCardId == 112
 
-    // 🎬 등장 영상 — assets/character_videos/{번호}.mp4 가 등록된 캐릭터만 버튼을 보여 준다
+    // 🎬 등장 영상 — assets/character_videos/{번호}.mp4 (또는 _{n}) 가 있는 캐릭터만 버튼을 보여 준다
     val context = LocalContext.current
     var videoCardId by remember { mutableStateOf<Int?>(null) }
-    val selectedHasVideo = remember(state.selectedCardId) {
-        CharacterVideoRegistry.hasVideo(context, state.selectedCardId)
+    var videoTick by remember { mutableIntStateOf(0) }
+    val selectedVideoCount = remember(state.selectedCardId) {
+        CharacterVideoRegistry.videoCount(context, state.selectedCardId)
     }
 
     ScreenFrame {
-        // ── 카드 선택 (170인 전체 목록 · 속성/성급 묶음·필터) ──
+        // ── 머리: 제목 + 보유 수 ──
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("도감·성장", color = TcgColors.Text, fontSize = TcgType.TITLE.sp, fontWeight = FontWeight.Black)
+            Spacer(Modifier.width(8.dp))
+            Pill("보유 ${state.ownedCards.size}", TcgColors.Violet)
+            Spacer(Modifier.weight(1f))
+            Pill("#${selected.id}", elementColor(selected.element))
+        }
+
+        // ── ① 콤보박스 1줄 (보기 기준 / 속성 / 성급 / 보유만) ──
         val allProfiles = TcgGameViewModel.profiles()
         val ownedIds = state.ownedCardIds
-        var catalogFilter by remember { mutableStateOf(CatalogFilter.ALL) }
-        var viewMode by remember { mutableStateOf(CatalogViewMode.NUMBER) }
-        var elementFilter by remember { mutableStateOf<Element?>(null) }
-        var starFilter by remember { mutableStateOf<Int?>(null) }
+        var viewModeIndex by remember { mutableIntStateOf(0) }
+        var elementIndex by remember { mutableIntStateOf(0) }
+        var starIndex by remember { mutableIntStateOf(0) }
         var ownedOnly by remember { mutableStateOf(false) }
+        val viewMode = CatalogViewMode.entries[viewModeIndex.coerceIn(0, CatalogViewMode.entries.size - 1)]
+        val elementFilter = CollectionCatalog.elementAt(elementIndex)
+        val starFilter = CollectionCatalog.starAt(starIndex)
         val starOf: (Int) -> Int = { id -> state.ownedCards.firstOrNull { it.id == id }?.starLevel ?: 1 }
 
-        val baseProfiles = CollectionCatalog.filterByPrimary(
-            profiles = allProfiles,
-            filter = catalogFilter,
-            midBossProfiles = TcgGameViewModel.midBossProfiles()
-        )
         val shownProfiles = CollectionCatalog.orderForManagement(
             profiles = CollectionCatalog.applyFilters(
-                profiles = baseProfiles,
+                profiles = allProfiles,
                 element = elementFilter,
                 star = starFilter,
                 ownedOnly = ownedOnly,
@@ -103,606 +123,152 @@ fun CollectionScreen(
         )
         val groups = CollectionCatalog.group(shownProfiles, viewMode, starOf)
 
-        SectionCard(
-            title = "도감 카드",
-            badge = "보유 ${state.ownedCards.size}/${allProfiles.size}",
-            accent = TcgColors.Violet
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // ① 보기 방식 — 번호순 / 속성별 묶음 / 성급별 묶음
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                CatalogViewMode.entries.forEach { mode ->
-                    ChipButton(
-                        label = mode.label,
-                        selected = viewMode == mode,
-                        accent = TcgColors.Violet
-                    ) { viewMode = mode }
-                }
-            }
-            // ② 기존 필터 — 전체 / 신규 / 기존 / 보스
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ChipButton("전체 ${allProfiles.size}인", catalogFilter == CatalogFilter.ALL) {
-                    catalogFilter = CatalogFilter.ALL
-                }
-                ChipButton("신규 15인", catalogFilter == CatalogFilter.NEW_WAVE, TcgColors.Gold) {
-                    catalogFilter = CatalogFilter.NEW_WAVE
-                }
-                ChipButton("기존 155인", catalogFilter == CatalogFilter.ORIGINAL, TcgColors.Mana) {
-                    catalogFilter = CatalogFilter.ORIGINAL
-                }
-                ChipButton("보스 6", catalogFilter == CatalogFilter.BOSS, TcgColors.Danger) {
-                    catalogFilter = CatalogFilter.BOSS
-                }
-            }
-            // ③ 속성 필터
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                ChipButton("속성 전체", elementFilter == null, TcgColors.Muted) { elementFilter = null }
-                Element.entries.forEach { element ->
-                    ChipButton(
-                        label = "${CollectionCatalog.elementBadge(element)} ${element.displayName}",
-                        selected = elementFilter == element,
-                        accent = elementColor(element)
-                    ) { elementFilter = if (elementFilter == element) null else element }
-                }
-            }
-            // ④ 성급 필터 + 보유만 보기
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                ChipButton("성급 전체", starFilter == null, TcgColors.Muted) { starFilter = null }
-                (5 downTo 1).forEach { star ->
-                    ChipButton(
-                        label = CollectionCatalog.starText(star),
-                        selected = starFilter == star,
-                        accent = TcgColors.Gold
-                    ) { starFilter = if (starFilter == star) null else star }
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ChipButton(
-                    label = if (ownedOnly) "보유만 보기 ON" else "보유만 보기",
-                    selected = ownedOnly,
-                    accent = TcgColors.Heal
-                ) { ownedOnly = !ownedOnly }
-                ChipButton("필터 초기화", false, TcgColors.Muted) {
-                    catalogFilter = CatalogFilter.ALL
-                    viewMode = CatalogViewMode.NUMBER
-                    elementFilter = null
-                    starFilter = null
-                    ownedOnly = false
-                }
-            }
-            Text(
-                when {
-                    shownProfiles.isEmpty() -> "조건에 맞는 캐릭터가 없습니다 — 필터를 초기화해 보세요."
-                    catalogFilter == CatalogFilter.NEW_WAVE ->
-                        "No.155~169 신규 15인 — 매력 유지 + 얼굴형·포즈 다양화로 다시 그린 세트입니다."
-                    catalogFilter == CatalogFilter.ORIGINAL ->
-                        "No.1~154 · No.184 아메넷 — 기존 155인. 전원 4종 비주얼(전투·일상·데이트·미니어처)이 들어 있습니다."
-                    catalogFilter == CatalogFilter.BOSS ->
-                        "No.170~175 중간 보스 6인 — 챕터 마일스톤 관문. 격파 후 「심연 연성」으로 계약하면 아군이 됩니다."
-                    viewMode == CatalogViewMode.ELEMENT ->
-                        "속성별 묶음 — 화염 → 바람 → 빙결 → 빛 → 어둠 순으로 묶였습니다. 상성 조합을 짜기 쉽습니다."
-                    viewMode == CatalogViewMode.STAR ->
-                        "성급별 묶음 — 5성부터 1성까지. 합성 재료를 고를 때 같은 성급끼리 모아 봅니다."
-                    else -> "도감 번호를 누르면 카드 상세와 4종 비주얼이 열립니다. (176명 × 4 = JPG 704장, 1캐릭터 = 1장 유일성)"
-                },
-                color = TcgColors.Muted,
-                fontSize = 12.sp,
-                lineHeight = 14.sp
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 필터·묶음이 늘어난 만큼 목록 높이도 키워 한 화면에서 훑기 좋게 한다
-                    .height(300.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(TcgColors.Background)
-                    .verticalScroll(rememberScrollState())
-                    .padding(6.dp)
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    groups.forEach { group ->
-                        if (viewMode != CatalogViewMode.NUMBER) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(group.tint).copy(alpha = 0.16f))
-                                    .padding(horizontal = 8.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    group.title,
-                                    color = Color(group.tint),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(Modifier.weight(1f))
-                                Text(
-                                    "${group.entries.size}명",
-                                    color = TcgColors.Muted,
-                                    fontSize = 11.sp
-                                )
-                            }
-                        }
-                        group.entries.chunked(2).forEach { rowItems ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                rowItems.forEach { profileItem ->
-                                    val owned = profileItem.cardId in ownedIds
-                                    val star = starOf(profileItem.cardId)
-                                    Box(modifier = Modifier.weight(1f)) {
-                                        ChipButton(
-                                            label = CollectionCatalog.entryLabel(profileItem, owned) +
-                                                " " + CollectionCatalog.starText(star),
-                                            selected = profileItem.cardId == state.selectedCardId,
-                                            accent = if (owned) {
-                                                elementColor(profileItem.element)
-                                            } else {
-                                                TcgColors.Line
-                                            },
-                                            onClick = { onSelectCard(profileItem.cardId) }
-                                        )
-                                    }
-                                }
-                                if (rowItems.size == 1) {
-                                    Spacer(Modifier.weight(1f))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Text(
-                "목록 ${shownProfiles.size}명 · 보유 우선 정렬(성급 높은 순 → 번호순) · 🔒 는 아직 계약하지 않은 카드입니다.",
-                color = TcgColors.Muted,
-                fontSize = 12.sp
-            )
-        }
-
-        // ── 4종 비주얼 + 카드 상세 ──
-        SectionCard(
-            title = "${selected.name}",
-            badge = if (isOwned) "${selected.starLevel}★" else "미계약",
-            accent = elementColor(selected.element)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 540×810(2:3) 원본 비율 유지 — 일상·데이트 일러스트의 머리·발끝이 잘리지 않는다
-                    .aspectRatio(2f / 3f)
-                    .clip(RoundedCornerShape(14.dp))
-            ) {
-                CardArtImage(
-                    cardId = selected.id,
-                    visual = state.selectedVisual,
-                    contentDescription = selected.name,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize(),
-                    targetWidthPx = 720
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0xDD0B0A12))
-                            )
-                        )
-                )
-                // 미보유 카드는 잠금(실루엣) 오버레이로 표시 — 도감 열람만 가능
-                if (!isOwned) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xD90B0A12)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "🔒 미보유 — 카드팩·연성으로 획득",
-                            color = TcgColors.Text.copy(alpha = 0.8f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Pill(state.selectedVisual.displayName, TcgColors.Violet, filled = true)
-                        Spacer(Modifier.width(6.dp))
-                        Pill(selected.element.displayName, elementColor(selected.element))
-                        if (isDemonLordCard) {
-                            Spacer(Modifier.width(6.dp))
-                            Pill("마왕", TcgColors.Danger, filled = true)
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        profile?.title ?: selected.skillText,
-                        color = TcgColors.Text,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-
-            // 4종 비주얼 전환 — ② 일상은 친밀도 30, ③ 데이트는 70부터 (미해금은 자물쇠)
-            // ④ 미니어처(SD)는 친밀도와 무관하게 항상 고를 수 있다
-            val bond = state.selectedCardBond
-            val casualOpen = AffinityRules.isCasualUnlocked(bond)
-            val dateOpen = AffinityRules.isDateUnlocked(bond)
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                ChipButton("① 전투", state.selectedVisual == VisualState.BATTLE) {
-                    onSelectVisual(VisualState.BATTLE)
-                }
-                ChipButton(
-                    if (casualOpen) "② 일상" else "② 일상 🔒",
-                    state.selectedVisual == VisualState.CASUAL_CUTE,
-                    if (casualOpen) TcgColors.Heal else TcgColors.Muted
-                ) {
-                    onSelectVisual(VisualState.CASUAL_CUTE)
-                }
-                ChipButton(
-                    if (dateOpen) "③ 데이트" else "③ 데이트 🔒",
-                    state.selectedVisual == VisualState.ROMANTIC_DATE,
-                    if (dateOpen) TcgColors.Gold else TcgColors.Muted
-                ) {
-                    onSelectVisual(VisualState.ROMANTIC_DATE)
-                }
-                ChipButton(
-                    "④ 미니어처",
-                    state.selectedVisual == VisualState.MINIATURE,
-                    TcgColors.Abyss
-                ) {
-                    onSelectVisual(VisualState.MINIATURE)
-                }
-            }
-            if (!casualOpen) {
-                // 일상·데이트 미해금 — 도감에서도 잠금 안내와 진행도를 일관되게 보여 준다
-                Text(
-                    "🔒 미해금 비주얼 — 일상 ${AffinityRules.CASUAL_UNLOCK_BOND} · 데이트 ${AffinityRules.DATE_UNLOCK_BOND} " +
-                        "(현재 친밀도 $bond/100 · 전투 출전 ${selected.battleCount}회)",
-                    color = TcgColors.Muted,
-                    fontSize = 12.sp,
-                    lineHeight = 14.sp
-                )
-                StatBar(ratio = AffinityRules.casualProgress(bond), color = TcgColors.Danger, height = 7)
-            }
-            if (state.visualLockMessage != null) {
-                Text(
-                    state.visualLockMessage,
-                    color = TcgColors.Danger,
-                    fontSize = 12.sp,
-                    lineHeight = 15.sp
-                )
-            }
-
-            // 🎬 등장 영상 다시 보기 — 등장 MP4 가 있는 캐릭터만
-            if (selectedHasVideo) {
-                ActionTile(
-                    label = "🎬 등장 영상 다시 보기",
-                    hint = "카드팩 개봉 연출로 재생",
-                    accent = TcgColors.Gold,
-                    onClick = { videoCardId = state.selectedCardId }
-                )
-            }
-
-            // 전투 편성 — 이 캐릭터를 전열/후열 슬롯에 직접 소환
-            val currentSlot = state.party.firstOrNull { it.card.id == selected.id }
-            Text(
-                if (currentSlot != null) {
-                    "전투 편성: ${DeckRules.slotLabel(currentSlot.slotIndex)} 슬롯 (HP ${currentSlot.hp}/${currentSlot.maxHp})"
-                } else {
-                    "전투 편성: 현재 미배치 — 슬롯을 눌러 소환하세요. (${state.party.size}/${state.unlockedDeckSize}장)"
-                },
-                color = if (currentSlot != null) TcgColors.Heal else TcgColors.Muted,
-                fontSize = 12.sp
-            )
-            (0 until state.unlockedDeckSize).chunked(4).forEach { rowSlots ->
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    rowSlots.forEach { slot ->
-                        Box(modifier = Modifier.weight(1f)) {
-                            ChipButton(
-                                label = DeckRules.slotLabel(slot),
-                                selected = currentSlot?.slotIndex == slot,
-                                accent = if (DeckRules.isFrontSlot(slot)) TcgColors.Hp else TcgColors.Mana
-                            ) {
-                                if (isOwned) onDeployToParty(selected.id, slot)
-                            }
-                        }
-                    }
-                    repeat(4 - rowSlots.size) { Spacer(Modifier.weight(1f)) }
-                }
-            }
-            if (currentSlot != null) {
-                ActionTile(
-                    label = "↩ 전투 편성에서 빼기 (대기열로)",
-                    hint = "HP는 전투 시작 시 최대치로 재설정됩니다",
-                    accent = TcgColors.Muted,
-                    onClick = { onUndeployFromParty(selected.id) }
-                )
-            }
-
-            ActionTile(
-                label = if (state.lobbyHeroId == selected.id) "★ 메인 로비 대표 캐릭터" else "★ 메인 로비 대표 캐릭터로 설정",
-                hint = if (state.lobbyHeroId == selected.id) {
-                    "지금 메인 화면 중앙에 서 있는 캐릭터입니다"
-                } else {
-                    "메인 로비 중앙에 크게 소환합니다"
-                },
-                accent = TcgColors.Gold,
-                enabled = isOwned && state.lobbyHeroId != selected.id,
-                onClick = { onSetLobbyHero(selected.id) }
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatColumn("ATK", "${selected.atk}", TcgColors.Hp)
-                StatColumn("DEF", "${selected.def}", TcgColors.Mana)
-                StatColumn("성급", "${selected.starLevel}★", TcgColors.Gold)
-                StatColumn("친밀도", "${selected.bondLevel}", TcgColors.Heal)
-                StatColumn("출전", "${selected.battleCount}회", TcgColors.Violet)
-            }
-            Text("스킬 · ${selected.skillText}", color = TcgColors.Text.copy(alpha = 0.85f), fontSize = 12.sp, lineHeight = 16.sp)
-            if (!isOwned) {
-                Text(
-                    "아직 계약하지 않은 카드입니다. 도감 열람과 4종 비주얼 감상은 가능하며, " +
-                            "계약은 2웨이 합성의 '신규 연성'에서 할 수 있습니다.",
-                    color = TcgColors.Muted,
-                    fontSize = 12.sp,
-                    lineHeight = 14.sp
-                )
-            }
-            if (isDemonLordCard && state.isDemonLordBattle && state.enemyHp == 0) {
-                Pill(
-                    if (profile?.disguiseName != null) "서약 파트너 합류 (위장 신분 '${profile.disguiseName}' → 마왕 릴리스)" else "서약 파트너",
-                    TcgColors.Heal
-                )
-            }
-        }
-
-        // ── 마왕 응시 기믹 ──
-        if (isDemonLordCard) {
-            SectionCard(title = "마왕 카드 · 자세히 응시하기", badge = "유혹 기믹", accent = TcgColors.Danger) {
-                Text(
-                    "마왕의 사진을 확대해 10초 이상 응시하면 [홀림] 스택이 쌓입니다. " +
-                            "이 스택은 마왕전에서 아군 공격력 저하·피격 피해 증가로 은밀히 적용됩니다.",
-                    color = TcgColors.Muted,
-                    fontSize = 12.sp,
-                    lineHeight = 15.sp
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Pill(
-                        "[홀림] 시선 ${state.temptationState.gazeTemptationStacks}/5 · 저주 ${state.temptationState.curseOfArchdemonStacks}/5",
-                        TcgColors.Danger
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text("누적 ${state.temptationState.totalTemptationStacks}/10", color = TcgColors.Danger, fontSize = 12.sp)
-                }
-                StatBar(
-                    ratio = state.temptationState.visualMistIntensity,
-                    color = TcgColors.Abyss,
-                    height = 8
-                )
-                Text(
-                    "심장 박동 ${state.temptationState.heartbeatBpm} BPM · 응시 누적 ${state.temptationState.gazeDurationSeconds}초 · 줌 ${state.temptationState.gazeZoomCount}회",
-                    color = TcgColors.Muted,
-                    fontSize = 12.sp
-                )
-                ActionTile(
-                    label = "🔍 자세히 응시하기 (핀치 줌 체험)",
-                    hint = "[홀림] 스택 +1 · 마왕전 디버프 누적",
-                    accent = TcgColors.Danger,
-                    onClick = onGaze
-                )
-                ActionTile(
-                    label = "💧 성수로 정화 (보유 ${state.holyWater})",
-                    hint = "매혹·저주 스택 -2",
-                    accent = TcgColors.Heal,
-                    enabled = state.holyWater > 0,
-                    onClick = onPurify
-                )
-                if (state.gazeMessage != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(TcgColors.Danger.copy(alpha = 0.12f))
-                            .padding(10.dp)
-                    ) {
-                        Text(state.gazeMessage, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = 12.sp, lineHeight = 15.sp)
-                    }
-                }
-                Text(state.combatPenalty.debuffDescription, color = TcgColors.Danger, fontSize = 12.sp)
-            }
-        }
-
-        // ── 「기억의 잔향」: 기억이 지워진 동료 ──
-        if (selected.isMemoryReset) {
-            val progress = state.memoryResetCards.firstOrNull { it.id == selected.id }
-            val fragments = progress?.memoryFragments ?: selected.memoryFragments
-            val target = TcgCard.MEMORY_FRAGMENT_TARGET
-            SectionCard(
-                title = "기억이 지워진 동료",
-                badge = "기억 파편 $fragments/$target",
-                accent = TcgColors.Abyss
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Pill("기억이 지워진 동료", TcgColors.Abyss, filled = true)
-                    Spacer(Modifier.width(6.dp))
-                    Pill("재획득 ${selected.reincarnationCount}회차", TcgColors.Muted)
-                }
-                Text(
-                    "환생 풀에서 돌아온 '${selected.name}'은(는) 이름도 온기도 기억하지 못합니다. " +
-                            "현실 교감과 이계 전투 승리로 기억 파편을 모으면 「기억의 조각 회상」 이벤트로 " +
-                            "스탯 보너스와 기억을 되찾을 수 있습니다.",
-                    color = TcgColors.Muted,
-                    fontSize = 12.sp,
-                    lineHeight = 15.sp
-                )
-                StatBar(ratio = fragments.toFloat() / target, color = TcgColors.Abyss, height = 10)
-                Text(
-                    "기억 파편 게이지 $fragments/$target" +
-                            (if (fragments >= target) " — 회상 이벤트 개방!" else " — ${target - fragments}개 더 필요"),
-                    color = if (fragments >= target) TcgColors.Gold else TcgColors.Muted,
-                    fontSize = 12.sp
-                )
-                Text(
-                    "파편 수집 경로: 현실 교감 탭의 「기억의 잔향」 교감(파편 +1) · 이계 전투 승리(파편 +1)",
-                    color = TcgColors.Muted,
-                    fontSize = 12.sp
-                )
-                ActionTile(
-                    label = "🌙 기억의 조각 회상 이벤트 열기",
-                    hint = if (fragments >= target) "스탯 보너스 + 기억 복원"
-                    else "기억 파편 ${target - fragments}개 부족",
-                    accent = TcgColors.Gold,
-                    enabled = fragments >= target,
-                    onClick = { onMemoryRecall(selected.id) }
-                )
-                if (state.memoryRecallMessage != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(TcgColors.Abyss.copy(alpha = 0.14f))
-                            .padding(10.dp)
-                    ) {
-                        Text(
-                            state.memoryRecallMessage,
-                            color = TcgColors.Text.copy(alpha = 0.9f),
-                            fontSize = 12.sp,
-                            lineHeight = 15.sp
-                        )
-                    }
-                }
-            }
-        }
-
-        // ── 「기억의 조각 회상」 대화 연출 ──
-        val recallDialogue = state.memoryRecallDialogue
-        if (recallDialogue != null) {
-            SectionCard(
-                title = "「${recallDialogue.eventTitle}」",
-                badge = recallDialogue.subtitle,
+            TcgDropdown(
+                label = "보기",
+                value = viewMode.label,
+                options = CollectionCatalog.VIEW_MODE_OPTIONS,
+                modifier = Modifier.weight(1.05f),
+                accent = TcgColors.Violet
+            ) { viewModeIndex = it }
+            TcgDropdown(
+                label = "속성",
+                value = CollectionCatalog.ELEMENT_OPTIONS[elementIndex.coerceIn(0, CollectionCatalog.ELEMENT_OPTIONS.size - 1)],
+                options = CollectionCatalog.ELEMENT_OPTIONS,
+                modifier = Modifier.weight(1f),
+                accent = TcgColors.Mana
+            ) { elementIndex = it }
+            TcgDropdown(
+                label = "성급",
+                value = CollectionCatalog.STAR_OPTIONS[starIndex.coerceIn(0, CollectionCatalog.STAR_OPTIONS.size - 1)],
+                options = CollectionCatalog.STAR_OPTIONS,
+                modifier = Modifier.weight(0.85f),
                 accent = TcgColors.Gold
-            ) {
-                recallDialogue.lines.forEach { line ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(TcgColors.SurfaceAlt)
-                            .padding(10.dp)
-                    ) {
-                        Text(
-                            line,
-                            color = TcgColors.Text.copy(alpha = 0.9f),
-                            fontSize = 12.sp,
-                            lineHeight = 17.sp
-                        )
-                    }
-                }
-                Text(
-                    recallDialogue.closingLine,
-                    color = TcgColors.Gold,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+            ) { starIndex = it }
+            TcgToggleChip(label = "보유", checked = ownedOnly) { ownedOnly = it }
         }
 
-        // ── 2웨이 합성 요약 ──
-        SectionCard(title = "2웨이 합성", badge = "연성 · 한계 돌파", accent = TcgColors.Gold) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(modifier = Modifier.weight(1f)) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(TcgColors.SurfaceAlt)
-                            .padding(10.dp)
-                    ) {
-                        Text("① 신규 연성", color = TcgColors.Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            "잡카드 3장 + 수수료 300G\n→ 미보유 캐릭터 1종과 계약",
-                            color = TcgColors.Muted,
-                            fontSize = 12.sp,
-                            lineHeight = 14.sp
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        ActionTile(
-                            label = "연성 실행",
-                            hint = "보유 잡카드 ${state.junkCards}장 · ${state.gold}G",
-                            accent = TcgColors.Gold,
-                            enabled = state.junkCards >= 3 && state.gold >= 300,
-                            onClick = onCraftNew
-                        )
-                    }
-                }
-                Box(modifier = Modifier.weight(1f)) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(TcgColors.SurfaceAlt)
-                            .padding(10.dp)
-                    ) {
-                        Text("② 한계 돌파", color = TcgColors.Violet, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            "동일 카드 흡수\n→ 성급 +1 (ATK/DEF +20%, 최대 5★)",
-                            color = TcgColors.Muted,
-                            fontSize = 12.sp,
-                            lineHeight = 14.sp
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        ActionTile(
-                            label = "돌파 실행",
-                            hint = "대상 ${selected.name.take(6)}",
-                            accent = TcgColors.Violet,
-                            enabled = isOwned && selected.starLevel < 5,
-                            onClick = onLimitBreak
-                        )
-                    }
-                }
-            }
-            if (state.synthesisMessage != null) {
-                Box(
+        // ── ② 서브 탭 (도감 / 강화 / 합성) ──
+        var hubTab by remember { mutableStateOf(CharacterHubTab.CATALOG) }
+        TcgTabBar(
+            tabs = CharacterHubTab.entries.map { it.label },
+            selectedIndex = hubTab.ordinal,
+            accent = TcgColors.Violet,
+            onSelect = { hubTab = CharacterHubTab.entries[it] }
+        )
+
+        // ── ③ 캐릭터 썸네일 그리드 (선택하면 세 탭이 모두 이 캐릭터를 쓴다) ──
+        SectionCard(
+            title = "캐릭터",
+            badge = CollectionCatalog.countLabel(shownProfiles.size, allProfiles.size, state.ownedCards.size),
+            accent = TcgColors.Abyss
+        ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val columns = ResponsiveLayout.gridColumns(maxWidth.value)
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(columns),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(TcgColors.Gold.copy(alpha = 0.12f))
-                        .padding(10.dp)
+                        .height(if (maxWidth.value >= 600f) 300.dp else 248.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(TcgColors.Background)
+                        .padding(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(state.synthesisMessage, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = 12.sp, lineHeight = 15.sp)
+                    groups.forEach { group ->
+                        if (viewMode != CatalogViewMode.NUMBER) {
+                            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(group.tint).copy(alpha = 0.16f))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        group.title,
+                                        color = Color(group.tint),
+                                        fontSize = TcgType.LABEL.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(Modifier.weight(1f))
+                                    Text("${group.entries.size}", color = TcgColors.Muted, fontSize = TcgType.LABEL.sp)
+                                }
+                            }
+                        }
+                        items(group.entries, key = { it.cardId }) { item ->
+                            val owned = item.cardId in ownedIds
+                            val star = starOf(item.cardId)
+                            // 카드 모서리의 전투력 = 카탈로그 ATK+DEF (없으면 0)
+                            val record = com.game.tcg.core.model.CardCatalog.find(item.cardId)
+                            val power = ((record?.atk ?: 0) + (record?.def ?: 0)) / 100
+                            DuelCardTile(
+                                cardId = item.cardId,
+                                visual = VisualState.BATTLE,
+                                element = item.element,
+                                starLevel = star,
+                                power = power,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(CardLayoutRules.TILE_ASPECT),
+                                highlighted = item.cardId == state.selectedCardId,
+                                dimmed = !owned,
+                                statusBadge = if (owned) null else "미보유",
+                                statusBadgeColor = TcgColors.Line,
+                                targetWidthPx = 200,
+                                onClick = { onSelectCard(item.cardId) }
+                            )
+                        }
+                    }
                 }
             }
-            Text(
-                "한계 돌파는 도감·서약의 카드 상세에서 대상 카드를 먼저 선택하세요.",
-                color = TcgColors.Muted,
-                fontSize = 12.sp
+        }
+
+        // ── ④ 탭 내용 ──
+        when (hubTab) {
+            CharacterHubTab.CATALOG -> CatalogTab(
+                state = state,
+                selected = selected,
+                isOwned = isOwned,
+                profileTitle = profile?.title,
+                isDemonLordCard = isDemonLordCard,
+                onSelectVisual = onSelectVisual,
+                onGaze = onGaze,
+                onPurify = onPurify,
+                onMemoryRecall = onMemoryRecall,
+                onSetLobbyHero = onSetLobbyHero,
+                onDeployToParty = onDeployToParty,
+                onUndeployFromParty = onUndeployFromParty,
+                videoCount = selectedVideoCount,
+                onReplayVideo = { videoTick += 1; videoCardId = state.selectedCardId },
+                onCraftNew = onCraftNew,
+                onLimitBreak = onLimitBreak
             )
+            CharacterHubTab.UPGRADE -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SelectedHeadline(state, selected, isOwned)
+                UpgradeSection(state, selected, onUpgrade) { }
+            }
+            CharacterHubTab.SYNTHESIS -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SelectedHeadline(state, selected, isOwned)
+                SynthesisSection(state, selected, onCraft, onTranscend)
+            }
         }
     }
 
-    // ── 🎬 등장 영상 전체 화면 (다시 보기) ──
+    // ── 🎬 등장 영상 전체 화면 ──
+    // (2026-11-19: 1:N — 목록 중 1편을 랜덤 재생, 「다시 보기」를 누를 때마다 다시 고른다)
     val playingCardId = videoCardId
-    val playingPath = playingCardId?.let { CharacterVideoRegistry.videoPath(context, it) }
+    val playingPath = playingCardId?.let {
+        remember(playingCardId, videoTick) { CharacterVideoRegistry.randomVideoPath(context, it) }
+    }
     if (playingCardId != null && playingPath != null) {
-        // 영상 재생 1회 = BGM 일시정지 1회 (닫기·종료·건너뛰기 모두 onDispose 로 복구)
-        DisposableEffect(playingCardId) {
+        DisposableEffect(playingCardId, playingPath) {
             onVideoStart()
             onDispose { onVideoEnd() }
         }
@@ -714,17 +280,302 @@ fun CollectionScreen(
     }
 }
 
+/** 강화·합성 탭 위에 붙는 선택 캐릭터 요약 — 어느 캐릭터를 키우는지 항상 보이게 */
 @Composable
-private fun StatColumn(label: String, value: String, color: Color) {
-    Column(
+private fun SelectedHeadline(state: TcgGameState, card: TcgCard, isOwned: Boolean) {
+    Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
             .background(TcgColors.SurfaceAlt)
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = TcgColors.Muted, fontSize = 11.sp)
-        Text(value, color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        DuelCardTile(
+            cardId = card.id,
+            visual = card.currentVisual,
+            element = card.element,
+            starLevel = card.starLevel,
+            power = (card.atk + card.def) / 100,
+            modifier = Modifier
+                .width(58.dp)
+                .aspectRatio(CardLayoutRules.TILE_ASPECT),
+            targetWidthPx = 160
+        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                "#${card.id} ${card.name}",
+                color = TcgColors.Text,
+                fontSize = TcgType.BODY.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+            Text(
+                "${"★".repeat(card.starLevel)} · Lv.${card.upgradeLevel + 1} · ATK ${card.atk} / DEF ${card.def}",
+                color = TcgColors.Gold,
+                fontSize = TcgType.LABEL.sp,
+                maxLines = 1
+            )
+            if (!isOwned) {
+                Text("미보유 — 도감 열람만 가능", color = TcgColors.Muted, fontSize = TcgType.TILE_MARK.sp)
+            } else if (state.party.any { it.card.id == card.id }) {
+                Pill("출전 중", TcgColors.Heal)
+            }
+        }
     }
 }
 
-/** 도감 목록 필터 — [CatalogFilter] 로 옮겼다 (2026-11-18 묶음/필터 개편) */
+@Composable
+private fun CatalogTab(
+    state: TcgGameState,
+    selected: TcgCard,
+    isOwned: Boolean,
+    profileTitle: String?,
+    isDemonLordCard: Boolean,
+    onSelectVisual: (VisualState) -> Unit,
+    onGaze: () -> Unit,
+    onPurify: () -> Unit,
+    onMemoryRecall: (Int) -> Unit,
+    onSetLobbyHero: (Int) -> Unit,
+    onDeployToParty: (Int, Int) -> Unit,
+    onUndeployFromParty: (Int) -> Unit,
+    videoCount: Int,
+    onReplayVideo: () -> Unit,
+    onCraftNew: () -> Unit,
+    onLimitBreak: () -> Unit
+) {
+    // ── 카드 상세 (2:3 원본 비율 유지) ──
+    SectionCard(
+        title = selected.name,
+        badge = if (isOwned) "${selected.starLevel}★" else "미계약",
+        accent = elementColor(selected.element)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(2f / 3f)
+                .clip(RoundedCornerShape(14.dp))
+        ) {
+            CardArtImage(
+                cardId = selected.id,
+                visual = state.selectedVisual,
+                contentDescription = selected.name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+                targetWidthPx = 720
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xDD0B0A12))))
+            )
+            if (!isOwned) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xD90B0A12)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("🔒 미보유", color = TcgColors.Text.copy(alpha = 0.8f), fontSize = TcgType.BODY_SMALL.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Pill(state.selectedVisual.displayName, TcgColors.Violet, filled = true)
+                Pill(selected.element.displayName, elementColor(selected.element))
+                if (isDemonLordCard) Pill("마왕", TcgColors.Danger, filled = true)
+            }
+        }
+        if (profileTitle != null) {
+            Text(profileTitle, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = TcgType.BODY_SMALL.sp, fontWeight = FontWeight.SemiBold)
+        }
+
+        // 4종 비주얼
+        val bond = state.selectedCardBond
+        val casualOpen = AffinityRules.isCasualUnlocked(bond)
+        val dateOpen = AffinityRules.isDateUnlocked(bond)
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            ChipButton("① 전투", state.selectedVisual == VisualState.BATTLE) { onSelectVisual(VisualState.BATTLE) }
+            ChipButton(
+                if (casualOpen) "② 일상" else "② 일상 🔒",
+                state.selectedVisual == VisualState.CASUAL_CUTE,
+                if (casualOpen) TcgColors.Heal else TcgColors.Muted
+            ) { onSelectVisual(VisualState.CASUAL_CUTE) }
+            ChipButton(
+                if (dateOpen) "③ 데이트" else "③ 데이트 🔒",
+                state.selectedVisual == VisualState.ROMANTIC_DATE,
+                if (dateOpen) TcgColors.Gold else TcgColors.Muted
+            ) { onSelectVisual(VisualState.ROMANTIC_DATE) }
+            ChipButton("④ 미니어처", state.selectedVisual == VisualState.MINIATURE, TcgColors.Abyss) {
+                onSelectVisual(VisualState.MINIATURE)
+            }
+        }
+        if (!casualOpen) {
+            Text(
+                "일상 ${AffinityRules.CASUAL_UNLOCK_BOND} · 데이트 ${AffinityRules.DATE_UNLOCK_BOND} (지금 $bond/100)",
+                color = TcgColors.Muted,
+                fontSize = TcgType.TILE_MARK.sp
+            )
+        }
+        if (state.visualLockMessage != null) {
+            Text(state.visualLockMessage, color = TcgColors.Danger, fontSize = TcgType.LABEL.sp)
+        }
+
+        // 스탯
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            StatChip("ATK", "${selected.atk}", TcgColors.Hp, Modifier.weight(1f))
+            StatChip("DEF", "${selected.def}", TcgColors.Mana, Modifier.weight(1f))
+            StatChip("성급", "${selected.starLevel}★", TcgColors.Gold, Modifier.weight(1f))
+            StatChip("친밀도", "${selected.bondLevel}", TcgColors.Heal, Modifier.weight(1f))
+        }
+        Text("스킬 · ${selected.skillText}", color = TcgColors.Text.copy(alpha = 0.85f), fontSize = TcgType.LABEL.sp, lineHeight = 17.sp)
+
+        // 영상 다시 보기 (1:N 이면 편수 표시)
+        if (videoCount > 0) {
+            ActionTile(
+                label = if (videoCount > 1) "🎬 등장 영상 다시 보기 · ${videoCount}편 랜덤" else "🎬 등장 영상 다시 보기",
+                hint = "카드팩 개봉 연출로 재생",
+                accent = TcgColors.Gold,
+                onClick = onReplayVideo
+            )
+        }
+
+        // 전투 편성
+        val currentSlot = state.party.firstOrNull { it.card.id == selected.id }
+        Text(
+            if (currentSlot != null) "편성 · ${DeckRules.slotLabel(currentSlot.slotIndex)} (HP ${currentSlot.hp}/${currentSlot.maxHp})"
+            else "편성 · 미배치 (${state.party.size}/${state.unlockedDeckSize})",
+            color = if (currentSlot != null) TcgColors.Heal else TcgColors.Muted,
+            fontSize = TcgType.TILE_MARK.sp
+        )
+        (0 until state.unlockedDeckSize).chunked(4).forEach { rowSlots ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                rowSlots.forEach { slot ->
+                    Box(modifier = Modifier.weight(1f)) {
+                        ChipButton(
+                            label = DeckRules.slotLabel(slot),
+                            selected = currentSlot?.slotIndex == slot,
+                            accent = if (DeckRules.isFrontSlot(slot)) TcgColors.Hp else TcgColors.Mana
+                        ) { if (isOwned) onDeployToParty(selected.id, slot) }
+                    }
+                }
+                repeat(4 - rowSlots.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+        if (currentSlot != null) {
+            ActionTile("↩ 편성에서 빼기", "HP는 전투 시작 시 최대치로", TcgColors.Muted) { onUndeployFromParty(selected.id) }
+        }
+        ActionTile(
+            label = if (state.lobbyHeroId == selected.id) "★ 로비 대표 캐릭터" else "★ 로비 대표로 설정",
+            hint = null,
+            accent = TcgColors.Gold,
+            enabled = isOwned && state.lobbyHeroId != selected.id,
+            onClick = { onSetLobbyHero(selected.id) }
+        )
+
+        // 빠른 합성 (선택 캐릭터 기준)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) {
+                ActionTile(
+                    label = "🧪 한계 돌파",
+                    hint = if (isOwned && selected.starLevel < 5) "${selected.starLevel}★ → ${selected.starLevel + 1}★" else "5★ 최대",
+                    accent = TcgColors.Violet,
+                    enabled = isOwned && selected.starLevel < 5,
+                    onClick = onLimitBreak
+                )
+            }
+            Box(Modifier.weight(1f)) {
+                ActionTile(
+                    label = "✨ 신규 연성",
+                    hint = "잡카드 ${state.junkCards} · ${state.gold}G",
+                    accent = TcgColors.Gold,
+                    enabled = state.junkCards >= 3 && state.gold >= 300,
+                    onClick = onCraftNew
+                )
+            }
+        }
+        if (state.synthesisMessage != null) {
+            Text(state.synthesisMessage, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = TcgType.LABEL.sp, lineHeight = 16.sp)
+        }
+        if (!isOwned) {
+            Text("계약은 '2웨이 합성 → 신규 연성'에서", color = TcgColors.Muted, fontSize = TcgType.TILE_MARK.sp)
+        }
+    }
+
+    // ── 마왕 응시 기믹 ──
+    if (isDemonLordCard) {
+        SectionCard(title = "마왕 · 응시", badge = "유혹", accent = TcgColors.Danger) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Pill("[홀림] ${state.temptationState.gazeTemptationStacks}/5 · 저주 ${state.temptationState.curseOfArchdemonStacks}/5", TcgColors.Danger)
+                Spacer(Modifier.width(6.dp))
+                Text("누적 ${state.temptationState.totalTemptationStacks}/10", color = TcgColors.Danger, fontSize = TcgType.LABEL.sp)
+            }
+            StatBar(ratio = state.temptationState.visualMistIntensity, color = TcgColors.Abyss, height = 8)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f)) {
+                    ActionTile("🔍 응시 (+1)", "줌 체험", TcgColors.Danger) { onGaze() }
+                }
+                Box(Modifier.weight(1f)) {
+                    ActionTile("💧 정화 ($" + "${state.holyWater})", "-2", TcgColors.Heal, enabled = state.holyWater > 0) { onPurify() }
+                }
+            }
+            if (state.gazeMessage != null) {
+                Text(state.gazeMessage, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = TcgType.LABEL.sp, lineHeight = 16.sp)
+            }
+            Text(state.combatPenalty.debuffDescription, color = TcgColors.Danger, fontSize = TcgType.TILE_MARK.sp)
+        }
+    }
+
+    // ── 기억의 잔향 ──
+    if (selected.isMemoryReset) {
+        val progress = state.memoryResetCards.firstOrNull { it.id == selected.id }
+        val fragments = progress?.memoryFragments ?: selected.memoryFragments
+        val target = TcgCard.MEMORY_FRAGMENT_TARGET
+        SectionCard(title = "기억이 지워진 동료", badge = "파편 $fragments/$target", accent = TcgColors.Abyss) {
+            StatBar(ratio = fragments.toFloat() / target, color = TcgColors.Abyss, height = 10)
+            ActionTile(
+                label = "🌙 기억 회상",
+                hint = if (fragments >= target) "스탯 보너스 + 기억 복원" else "파편 ${target - fragments}개 부족",
+                accent = TcgColors.Gold,
+                enabled = fragments >= target,
+                onClick = { onMemoryRecall(selected.id) }
+            )
+            if (state.memoryRecallMessage != null) {
+                Text(state.memoryRecallMessage, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = TcgType.LABEL.sp, lineHeight = 16.sp)
+            }
+        }
+    }
+
+    // ── 기억 회상 연출 ──
+    val recallDialogue = state.memoryRecallDialogue
+    if (recallDialogue != null) {
+        SectionCard(title = "「${recallDialogue.eventTitle}」", badge = recallDialogue.subtitle, accent = TcgColors.Gold) {
+            recallDialogue.lines.forEach { line ->
+                Text(line, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = TcgType.LABEL.sp, lineHeight = 17.sp)
+            }
+            Text(recallDialogue.closingLine, color = TcgColors.Gold, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun StatChip(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(TcgColors.SurfaceAlt)
+            .padding(horizontal = 8.dp, vertical = 5.dp)
+    ) {
+        Text(label, color = TcgColors.Muted, fontSize = TcgType.TILE_MARK.sp, maxLines = 1)
+        Text(value, color = color, fontSize = TcgType.BODY_SMALL.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}

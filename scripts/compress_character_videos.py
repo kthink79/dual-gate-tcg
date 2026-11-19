@@ -115,6 +115,19 @@ def card_id_from_name(name: str) -> int | None:
     return cid if MIN_CARD_ID <= cid <= MAX_CARD_ID else None
 
 
+def next_slot(out_dir: Path, cid: int, used: list[Path], dry_run: bool = False) -> Path:
+    """이 캐릭터의 빈 파일 이름을 고른다 — `{id}.mp4` → `{id}_2.mp4` → `{id}_3.mp4` …"""
+    used_names = {p.name for p in used}
+    for n in range(1, 100):
+        name = f"{cid}.mp4" if n == 1 else f"{cid}_{n}.mp4"
+        if name in used_names:
+            continue
+        if not dry_run and (out_dir / name).exists():
+            continue
+        return out_dir / name
+    die(f"No.{cid} 영상 슬롯이 너무 많습니다.")
+
+
 def delogo_expr(spec: str | None) -> str | None:
     """`X:Y:W:H` → ffmpeg delogo 필터 문자열. 형식이 틀리면 즉시 실패한다."""
     if not spec:
@@ -223,18 +236,19 @@ def main(argv: list[str] | None = None) -> int:
     print()
 
     rows: list[dict] = []
-    seen: dict[int, Path] = {}
+    taken: dict[int, list[Path]] = {}
     with tempfile.TemporaryDirectory() as tmp:
         for src, cid in jobs:
-            if cid in seen:
-                print(f"[!] No.{cid} 는 이미 {seen[cid].name} 로 배치됨 — {src.name} 는 건너뜀")
-                continue
-            seen[cid] = src
-            tmp_out = Path(tmp) / f"{cid}.mp4"
-            print(f"· No.{cid:<4} ← {src.name}")
+            # 2026-11-19: 같은 캐릭터에 여러 편을 **모두** 넣는다(1:N).
+            # 예전에는 한 캐릭터에 두 번째 영상이 오면 건너뛰었지만, 이제는
+            # `{번호}.mp4` 가 이미 있으면 `{번호}_2.mp4`, `{번호}_3.mp4` … 로 나란히 배치한다.
+            # (앱은 랜덤 재생으로 목록 중 1개를 고른다 — CharacterVideoIndex 참조)
+            target = next_slot(out_dir, cid, taken.get(cid, []), dry_run=args.dry_run)
+            taken.setdefault(cid, []).append(target)
+            tmp_out = Path(tmp) / target.name
+            print(f"· No.{cid:<4} ← {src.name}  → {target.name}")
             row = compress(src, tmp_out, args)
             row["card_id"] = cid
-            target = out_dir / f"{cid}.mp4"
             if not args.dry_run:
                 shutil.copyfile(tmp_out, target)
                 row["dst"] = target

@@ -41,15 +41,29 @@ object CharacterVideoRegistry {
         return CharacterVideoIndex.fromFileNames(names)
     }
 
-    /** 이 캐릭터의 등장 영상 assets 경로 — 없으면 null */
+    /** 이 캐릭터의 대표 등장 영상 assets 경로 — 없으면 null */
     fun videoPath(context: Context, cardId: Int): String? =
         index(context).videoFor(cardId)
+
+    /** 이 캐릭터의 등장 영상 **전체 목록** (1:N) */
+    fun videoPaths(context: Context, cardId: Int): List<String> =
+        index(context).videosFor(cardId)
+
+    /** 카드 뽑기 연출용 랜덤 선택 — 목록 중 1편 */
+    fun randomVideoPath(context: Context, cardId: Int, random: kotlin.random.Random = kotlin.random.Random.Default): String? =
+        index(context).randomVideoFor(cardId, random)
+
+    /** 이 캐릭터의 등장 영상 편수 */
+    fun videoCount(context: Context, cardId: Int): Int = index(context).videoCount(cardId)
 
     fun hasVideo(context: Context, cardId: Int): Boolean =
         index(context).hasVideo(cardId)
 
-    /** 설치된 등장 영상 수 (로비 정보 패널·QA 용) */
+    /** 설치된 등장 영상 **편수** (로비 정보 패널·QA 용) */
     fun installedCount(context: Context): Int = index(context).size
+
+    /** 영상이 2편 이상인 캐릭터 번호 (1:N) */
+    fun multiVideoCardIds(context: Context): List<Int> = index(context).multiVideoCardIds
 
     /** 캐시 무효화 — 테스트나 APK 갱신 직후 강제 재스캔 */
     fun reset() {

@@ -3,8 +3,9 @@ package com.game.tcg.core.model
 /**
  * 카드 도감의 정식 등록 기록 (이름·칭호·속성·ATK·DEF·코스트·스킬).
  *
- * 2026-11-15 기준 **170명 전원**을 이 표 하나에 등록한다.
- * (No.1~169 + No.184 아메넷 = 170명, 캐릭터당 전투·일상·데이트·미니어처 4종 비주얼 = JPG 680장)
+ * 2026-11-19 기준 **177명 전원**을 이 표 하나에 등록한다.
+ * (No.1~169 + No.176·177·185~189 신규 7인 + No.184 아메넷 = 177명,
+ *  캐릭터당 전투·일상·데이트·미니어처 4종 비주얼 = JPG 708장 + 중간 보스 6인 24장)
  *
  * 도감·서약·덱·로비·전투·탐색은 모두 이 카탈로그를 단일 진실 원천으로 쓴다.
  * 이름·칭호는 배치별 제작 기록(프롬프트 전체집 · 명단 문서 · 제작 보고)에서 그대로 옮겼고,
@@ -53,10 +54,10 @@ data class CharacterRecord(
 }
 
 /**
- * 도감 카탈로그 — 170명 전원.
+ * 도감 카탈로그 — 177명 전원.
  *
- * 로스터 구성: No.1~169 + No.184(아메넷) = 170명.
- * (No.170~183은 2026-11-15 삭제 요청으로 로스터에서 제외되어 참조도 남기지 않는다.)
+ * 로스터 구성: No.1~169 + No.176 · No.177 + No.185~189(2026-11-19 신규 7인) + No.184(아메넷) = 177명.
+ * (No.170~175는 중간 보스, No.178~183은 삭제 요청으로 로스터에서 제외되어 참조도 남기지 않는다.)
  */
 object CardCatalog {
 
@@ -66,15 +67,19 @@ object CardCatalog {
     /** 3대 마왕 (No.112 릴리스 · No.113 카밀라 · No.114 모르가나) */
     val DEMON_LORD_IDS: List<Int> = listOf(112, 113, 114)
 
-    /** 이번에 합류한 신규 15인 (No.155~169) — 도감 '신규 15' 필터 대상 */
+    /** 2026-11-15 이후 합류한 신규 배치 (No.155~169 → 2026-11-19 에 176·177·185~189 추가) */
     val NEW_WAVE_RANGE: IntRange = 155..169
-    val NEW_WAVE_IDS: List<Int> = NEW_WAVE_RANGE.toList()
 
-    /** 기존 155인 (No.1~154 + No.184) — 도감 '기존' 필터 대상 */
+    /** 도감·덱 'NEW' 표시 대상 — 155~169 + 2026-11-19 신규 7인(176·177·185~189) */
+    val NEW_WAVE_IDS: List<Int> = NEW_WAVE_RANGE.toList() + listOf(176, 177, 185, 186, 187, 188, 189)
+
+    private val NEW_WAVE_SET: Set<Int> = NEW_WAVE_IDS.toSet()
+
+    /** 기존 155인 (No.1~154 + No.184 아메넷) */
     val LEGACY_IDS: List<Int> = (1..154).toList() + 184
 
-    /** 전체 로스터 크기 */
-    const val ROSTER_SIZE: Int = 170
+    /** 전체 로스터 크기 — 2026-11-19 신규 7인 합류로 177명 */
+    const val ROSTER_SIZE: Int = 177
 
     /**
      * 합류 시점 친밀도 — 170명 전원이 **0**에서 시작한다(2026-11-16 개편).
@@ -1964,6 +1969,85 @@ object CardCatalog {
             skill = "해바라기 질주 · 선제 공격, 아군 사기 +10%",
             bondSeed = ROSTER_BOND_SEED,
         ),
+        // ── 🌬 2026-11-19 신규 7인 (No.176 · 177 · 185~189) ──
+        CharacterRecord(
+            id = 176,
+            name = "하린",
+            title = "바람의 한복 궁수",
+            element = Element.WIND,
+            atk = 4200,
+            def = 3400,
+            baseCost = 6,
+            skill = "바람의 연사 · 전열 2명 관통 사격, 아군 전체 회피 +15%",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 177,
+            name = "시온",
+            title = "황혼 유카타 쌍검사",
+            element = Element.DARK,
+            atk = 4300,
+            def = 3500,
+            baseCost = 6,
+            skill = "황혼 쌍섬 · 적 1명 2연격, 달빛 표식 부여",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 185,
+            name = "볼티아",
+            title = "뇌광의 아케인 건슬링거",
+            element = Element.LIGHT,
+            atk = 4000,
+            def = 3300,
+            baseCost = 5,
+            skill = "뇌전 난사 · 적 전열 감전, 2턴 행동 지연",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 186,
+            name = "솔레나",
+            title = "태양빛의 무희 무투가",
+            element = Element.FIRE,
+            atk = 4100,
+            def = 3200,
+            baseCost = 5,
+            skill = "태양무 · 회전 열풍으로 적 전체 피해, 아군 사기 +10%",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 187,
+            name = "니바라",
+            title = "빙결 별빛의 천문 마도사",
+            element = Element.ICE,
+            atk = 3900,
+            def = 3600,
+            baseCost = 5,
+            skill = "성빙 유성 · 적 2명 빙결, 마나 +1",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 188,
+            name = "비트리아",
+            title = "무지갯빛 유리 기사",
+            element = Element.LIGHT,
+            atk = 4000,
+            def = 3900,
+            baseCost = 5,
+            skill = "프리즘 굴절 · 받은 피해 30% 반사, 아군 전체 성광 실드",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 189,
+            name = "아라냐",
+            title = "가시장미의 수호자",
+            element = Element.WIND,
+            atk = 4100,
+            def = 3500,
+            baseCost = 5,
+            skill = "가시 덩굴 · 적 전체 속박, 3턴 지속 피해",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+
         // ── 🌟 아메넷 (No.184) ──
         CharacterRecord(
             id = 184,
@@ -2008,7 +2092,8 @@ object CardCatalog {
     /** 기존 155인 */
     fun legacy(): List<CharacterRecord> = LEGACY_IDS.map { require(it) }
 
-    fun isNewWave(id: Int): Boolean = id in NEW_WAVE_RANGE
+    /** 신규 배치(155~169 + 2026-11-19 신규 7인)인지 — 덱·도감의 'NEW' 표시 */
+    fun isNewWave(id: Int): Boolean = id in NEW_WAVE_SET
 
     /** 마왕 3인 */
     fun demonLords(): List<CharacterRecord> = DEMON_LORD_IDS.map { require(it) }

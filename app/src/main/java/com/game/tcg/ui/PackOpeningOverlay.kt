@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -89,9 +90,12 @@ fun PackOpeningOverlay(
     // 지금 공개한 카드에 {번호}.mp4 가 있으면 REVEAL 단계에서 1회 재생한다.
     val context = LocalContext.current
     val revealCardId = opening.currentDraw?.cardId ?: 0
-    val videoAssetPath = remember(opening.phase, opening.revealIndex, revealCardId) {
+    // 「🎬 다시 보기」를 누를 때마다 +1 — 같은 카드라도 다시 뽑으면 다른 테이크가 나온다
+    var replayTick by remember(opening.phase, opening.revealIndex, revealCardId) { mutableIntStateOf(0) }
+    // 1:N — 이 캐릭터의 영상 목록({번호}.mp4 · {번호}_2.mp4 …) 중 1편을 랜덤하게 고른다
+    val videoAssetPath = remember(opening.phase, opening.revealIndex, revealCardId, replayTick) {
         if (opening.phase == PackOpeningPhase.REVEAL) {
-            CharacterVideoRegistry.videoPath(context, revealCardId)
+            CharacterVideoRegistry.randomVideoPath(context, revealCardId)
         } else {
             null
         }
@@ -200,7 +204,7 @@ fun PackOpeningOverlay(
                     onRevealAll = { onSfx(SfxEffect.CLICK); onRevealAll() },
                     hasVideo = videoCue.hasVideo,
                     onReplayVideo = if (videoCue.hasVideo) {
-                        { onSfx(SfxEffect.CLICK); videoHandled = false }
+                        { onSfx(SfxEffect.CLICK); replayTick += 1; videoHandled = false }
                     } else {
                         null
                     }

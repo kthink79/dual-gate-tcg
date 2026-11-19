@@ -6,7 +6,7 @@ import com.game.tcg.core.model.VisualState
 /**
  * 카드 번호 + 4종 비주얼 상태 → 드로어블 리소스 매핑 테이블.
  *
- * 2026-11-17 기준 **176명 × 4비주얼 = JPG 704장**
+ * 2026-11-19 기준 **183명 × 4비주얼 = JPG 732장**
  * (`res/drawable-nodpi/char_{번호}_{battle|casual|date|miniature}.jpg`)을 정식 등록했다.
  * 도감·로비·전투·현실 교감·의상 선택의 모든 이미지는 이 표를 통해서만 해석된다.
  * (표에 없는 번호는 null → 호출부가 플레이스홀더로 대체한다.)
@@ -1036,6 +1036,49 @@ object CharacterArtRegistry {
             R.drawable.char_184_casual,
             R.drawable.char_184_date,
             R.drawable.char_184_miniature
+        ),
+        // ── 2026-11-19 신규 7인 (No.176 · 177 · 185~189) ──
+        176 to intArrayOf(
+            R.drawable.char_176_battle,
+            R.drawable.char_176_casual,
+            R.drawable.char_176_date,
+            R.drawable.char_176_miniature
+        ),
+        177 to intArrayOf(
+            R.drawable.char_177_battle,
+            R.drawable.char_177_casual,
+            R.drawable.char_177_date,
+            R.drawable.char_177_miniature
+        ),
+        185 to intArrayOf(
+            R.drawable.char_185_battle,
+            R.drawable.char_185_casual,
+            R.drawable.char_185_date,
+            R.drawable.char_185_miniature
+        ),
+        186 to intArrayOf(
+            R.drawable.char_186_battle,
+            R.drawable.char_186_casual,
+            R.drawable.char_186_date,
+            R.drawable.char_186_miniature
+        ),
+        187 to intArrayOf(
+            R.drawable.char_187_battle,
+            R.drawable.char_187_casual,
+            R.drawable.char_187_date,
+            R.drawable.char_187_miniature
+        ),
+        188 to intArrayOf(
+            R.drawable.char_188_battle,
+            R.drawable.char_188_casual,
+            R.drawable.char_188_date,
+            R.drawable.char_188_miniature
+        ),
+        189 to intArrayOf(
+            R.drawable.char_189_battle,
+            R.drawable.char_189_casual,
+            R.drawable.char_189_date,
+            R.drawable.char_189_miniature
         ),
         170 to intArrayOf(
             R.drawable.char_170_battle,

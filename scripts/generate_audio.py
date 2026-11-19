@@ -155,6 +155,30 @@ def soft_clip(x: np.ndarray, drive: float = 1.0) -> np.ndarray:
     return np.tanh(x * drive) / np.tanh(drive)
 
 
+def high_shelf(x: np.ndarray, freq: float = 4200.0, gain_db: float = -3.0,
+               span: float = 4000.0) -> np.ndarray:
+    """
+    고음역 소프트 셀프 — 2026-11-19 사용자 요청.
+
+    > "BGM 이 전체적으로 거슬리지 않고 차분하게, 특히 메뉴 클릭음이 너무 하이톤"
+
+    `freq` 아래는 그대로 두고, `freq + span` 위로 갈수록 `gain_db` 만큼 부드럽게 깎는다
+    (smoothstep). 위상 이동이 없는 제로페이즈라 루프 이음매가 흐트러지지 않는다.
+    """
+    if x.size == 0 or gain_db == 0.0:
+        return x
+    n = x.size
+    pad = 1 << int(math.ceil(math.log2(max(n * 2, 1024))))
+    spec = np.fft.rfft(x, pad)
+    freqs = np.fft.rfftfreq(pad, 1.0 / SR)
+    w = np.clip((freqs - freq) / max(span, 1.0), 0.0, 1.0)
+    w = w * w * (3.0 - 2.0 * w)
+    g = 10.0 ** (gain_db / 20.0)
+    resp = 1.0 + (g - 1.0) * w
+    out = np.fft.irfft(spec * resp, pad)
+    return out[:n]
+
+
 def reverb(x: np.ndarray, decay: float = 1.1, mix: float = 0.25, seed: int = 7,
            circular: bool = False) -> np.ndarray:
     """
@@ -464,10 +488,19 @@ def apply_bus_fx(stereo: np.ndarray, reverb_mix: float, low_cut: float = 30.0,
 
 
 def finalize_loop(bus: "Bus", reverb_mix: float, low_cut: float, high_cut: float,
-                  drive: float, peak: float) -> np.ndarray:
-    """루프 마무리 — 꼬리 되접기 → 원형 필터·리버브 → 정규화 → 초단기 페이드"""
+                  drive: float, peak: float,
+                  air_shelf_db: float = -3.2, air_shelf_hz: float = 4200.0) -> np.ndarray:
+    """
+    루프 마무리 — 꼬리 되접기 → 원형 필터·리버브 → 고음 셀프 → 정규화 → 초단기 페이드.
+
+    2026-11-19: 고음역 자극(글록·벨·하이햇의 8kHz 위 성분)을 `air_shelf_db` 만큼 깎는다.
+    """
     out = bus.finish()
     out = apply_bus_fx(out, reverb_mix=reverb_mix, low_cut=low_cut, high_cut=high_cut, loop=True)
+    out = np.stack([
+        high_shelf(out[0], freq=air_shelf_hz, gain_db=air_shelf_db),
+        high_shelf(out[1], freq=air_shelf_hz, gain_db=air_shelf_db),
+    ])
     out = normalize(soft_clip(out, drive), peak)
     return micro_fade(out, ms=3.5)
 
@@ -528,7 +561,8 @@ def build_bgm_intro() -> np.ndarray:
             bus.add(fm_bell(hz(nm), 2.2, amp=0.13, ratio=2.0, index=3.0, decay=2.0),
                     b * bar + i * beat, pan=0.1 if i % 2 else -0.1)
 
-    return finalize_loop(bus, reverb_mix=0.42, low_cut=32.0, high_cut=12000.0, drive=1.15, peak=0.86)
+    return finalize_loop(bus, reverb_mix=0.42, low_cut=32.0, high_cut=9800.0, drive=1.15, peak=0.78,
+                         air_shelf_db=-4.0, air_shelf_hz=3600.0)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -595,7 +629,8 @@ def build_bgm_lobby() -> np.ndarray:
     bus.add(glock(hz("G5"), 1.8, amp=0.07), bar * 11 + beat * 3.0, pan=0.2)
     bus.add(fm_bell(hz("C6"), 2.0, amp=0.06, ratio=2.0, index=2.0, decay=2.4), bar * 11 + beat * 3.5, pan=-0.15)
 
-    return finalize_loop(bus, reverb_mix=0.26, low_cut=34.0, high_cut=13500.0, drive=1.1, peak=0.87)
+    return finalize_loop(bus, reverb_mix=0.26, low_cut=34.0, high_cut=10000.0, drive=1.1, peak=0.79,
+                         air_shelf_db=-4.2, air_shelf_hz=3600.0)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -666,7 +701,8 @@ def build_bgm_battle() -> np.ndarray:
     for i in range(4):
         bus.add(snare(0.16, amp=0.16 + 0.03 * i, seed=90 + i), fill_start + i * beat * 0.25, pan=0.05)
 
-    return finalize_loop(bus, reverb_mix=0.16, low_cut=36.0, high_cut=14500.0, drive=1.35, peak=0.90)
+    return finalize_loop(bus, reverb_mix=0.16, low_cut=36.0, high_cut=10500.0, drive=1.35, peak=0.80,
+                         air_shelf_db=-3.4, air_shelf_hz=4000.0)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -737,25 +773,58 @@ def build_bgm_boss() -> np.ndarray:
     for nm, pos, dur in climax:
         bus.add(brass([hz(nm)], beat * dur, amp=0.10, attack=0.05), pos * beat, pan=0.18)
 
-    return finalize_loop(bus, reverb_mix=0.34, low_cut=30.0, high_cut=13000.0, drive=1.45, peak=0.91)
+    return finalize_loop(bus, reverb_mix=0.34, low_cut=30.0, high_cut=10000.0, drive=1.45, peak=0.80,
+                         air_shelf_db=-3.8, air_shelf_hz=3800.0)
 
 
 # ──────────────────────────────────────────────────────────────
 # SFX
 # ──────────────────────────────────────────────────────────────
 def sfx_click() -> np.ndarray:
-    """UI 버튼 · 탭 — 아주 짧은 나무/유리 클릭"""
-    n = int(0.065 * SR)
+    """UI 버튼·탭 — 따뜻한 중저음 우드 탭 (2026-11-19 재제작).
+
+    사용자 요청: "메뉴 변경/클릭 시 효과음이 너무 하이톤이라 신경 쓰인다".
+    예전 소리는 1.18kHz·2.38kHz 사인에 고역 노이즈를 얹어 귀를 찌르는 유리 클릭이었다
+    (5kHz 위 에너지 3.0% · 최고 피크 0.96).
+
+    이제는 **속이 빈 목재를 톡 두드린 소리**다:
+      · 195→170Hz 우드 몸통 + 430Hz 2배음(아주 짧게) — 따뜻한 중저음 중심
+      · 700~2.6kHz 대역의 부드러운 타격(나무 표면의 "톡") — 11ms 만에 사라짐
+      · 5.2kHz 저역통과 + 2.6kHz 위 셀프 -2.5dB — 하이톤 자극 제거
+      · 어택 1.5ms · 전체 80ms · 피크 0.55 (다른 SFX 보다 한 단계 작게)
+
+    휴대폰 스피커에서 들리도록 중역 0.5~5kHz 성분은 남겼다(5kHz 위는 1% 미만).
+    """
+    dur = 0.08
+    n = int(dur * SR)
     t = t_axis(n)
-    body = np.sin(2 * np.pi * 1180 * t) * np.exp(-t * 150.0)
-    body += 0.5 * np.sin(2 * np.pi * 2380 * t) * np.exp(-t * 220.0)
-    noise = np.random.default_rng(1).uniform(-1, 1, n) * np.exp(-t * 320.0) * 0.5
-    sig = soft_clip(body + noise, 1.2)
-    sig *= (1 - np.exp(-t * 6000.0))
-    # 끝단 클릭 방지용 2ms 페이드아웃
-    k = int(0.002 * SR)
+    rng = np.random.default_rng(11)
+
+    # ① 우드 몸통 — 살짝 떨어지는 피치(195 → 170Hz)
+    pitch = 195.0 - 25.0 * (t / dur)
+    body = np.sin(2 * np.pi * np.cumsum(pitch) / SR) * np.exp(-t * 85.0)
+
+    # ② 2배음(430Hz) — 아주 짧게, 몸통에 따뜻한 색을 더한다
+    body += 0.22 * np.sin(2 * np.pi * 430.0 * t) * np.exp(-t * 130.0)
+
+    # ③ 나무 표면 타격 — 중역 노이즈 버스트 (11ms)
+    tick = fft_filter(rng.uniform(-1.0, 1.0, n), "band", 700.0, order=1, cutoff2=2600.0)
+    tick = tick * np.exp(-t * 95.0) * 2.2
+
+    sig = body + tick
+
+    # ④ 고역 정리 — 5.2kHz 위는 저역통과로 걷어내고 2.6kHz 위는 -2.5dB
+    sig = fft_filter(sig, "low", 5200.0, order=2)
+    sig = high_shelf(sig, freq=2600.0, gain_db=-2.5, span=2000.0)
+
+    # ⑤ 부드러운 어택(1.5ms) · 끝단 클릭 방지 페이드(5ms)
+    sig *= (1.0 - np.exp(-t * 620.0))
+    k = int(0.005 * SR)
     sig[-k:] *= np.linspace(1, 0, k)
-    return normalize(sig, 0.7)[None, :].repeat(2, axis=0)
+
+    # ⑥ 왼쪽을 살짝 먼저 — 나무가 손끝에서 울리는 느낌
+    right = np.concatenate([np.zeros(12), sig[: -12]]) * 0.94
+    return normalize(np.stack([sig, right]), 0.55)
 
 
 def sfx_attack() -> np.ndarray:

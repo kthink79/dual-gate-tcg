@@ -93,17 +93,47 @@ class CharacterVideoTest {
     }
 
     @Test
-    fun `같은 번호가 여러 테이크로 있으면 정식 이름을 고른다`() {
-        val canonical = CharacterVideoIndex.fromFileNames(listOf("4_alt.mp4", "4.mp4"))
-        assertEquals("character_videos/4.mp4", canonical.videoFor(4))
-        assertEquals(1, canonical.size)
+    fun `같은 캐릭터의 영상이 여러 편이면 하나도 버리지 않고 모두 담는다`() {
+        // 2026-11-19 사용자 요청: "동일 캐릭터에 2개 이상의 영상이 매칭되면 덮어쓰지 말고 모두 반영"
+        val index = CharacterVideoIndex.fromFileNames(
+            listOf("4_alt.mp4", "4.mp4", "4_2.mp4")
+        )
+        assertEquals("편수는 3편", 3, index.size)
+        assertEquals("캐릭터는 1명", 1, index.characterCount)
+        assertEquals(listOf(4), index.multiVideoCardIds)
+        assertEquals("대표는 정식 이름", "character_videos/4.mp4", index.videoFor(4))
+        assertEquals(
+            "정식 이름이 첫 번째, 나머지는 사전순",
+            listOf("character_videos/4.mp4", "character_videos/4_2.mp4", "character_videos/4_alt.mp4"),
+            index.videosFor(4)
+        )
 
-        // 정식 이름이 없으면 사전순 첫 파일 (재시작해도 같은 영상 — 결정적)
+        // 정식 이름이 없으면 사전순 첫 파일이 대표 (재시작해도 같은 순서 — 결정적)
         val alternate = CharacterVideoIndex.fromFileNames(listOf("4_take2.mp4", "4-take1.mp4"))
         assertEquals("character_videos/4-take1.mp4", alternate.videoFor(4))
+        assertEquals(2, alternate.size)
 
         // 파일이 하나도 없으면 빈 색인 (크래시 없음)
-        assertTrue(CharacterVideoIndex.fromFileNames(emptyList()).isEmpty)
+        val empty = CharacterVideoIndex.fromFileNames(emptyList())
+        assertTrue(empty.isEmpty)
+        assertEquals(0, empty.size)
+        assertEquals(0, empty.characterCount)
+        assertTrue(empty.multiVideoCardIds.isEmpty())
+    }
+
+    @Test
+    fun `카드 뽑기 연출은 그 캐릭터의 영상 목록 중 1편을 랜덤하게 고른다`() {
+        val index = CharacterVideoIndex.fromFileNames(listOf("116.mp4", "116_2.mp4", "116_3.mp4"))
+        val list = index.videosFor(116)
+        assertEquals(3, list.size)
+
+        // 같은 시드면 같은 선택(결정적), 여러 번 돌리면 목록 안에서만 고른다
+        val random = kotlin.random.Random(7)
+        val picked = (1..60).map { index.randomVideoFor(116, random) }
+        assertTrue("목록 밖의 영상을 고르지 않는다", picked.all { it in list })
+        assertEquals("3편이 모두 등장한다", 3, picked.toSet().size)
+
+        assertNull("영상이 없는 캐릭터", index.randomVideoFor(999))
     }
 
     // ── 3. 팩 개봉 트리거 ─────────────────────────────────────────
@@ -229,6 +259,33 @@ class CharacterVideoTest {
             )
         }
         assertTrue("등록 영상은 13편", index.size >= 13)
+    }
+
+    @Test
+    fun `2026-11-19 추가 18편이 프레임 대조로 확정한 번호 그대로 탑재됐다`() {
+        val names = assetsDir().listFiles()?.filter { it.isFile }?.map { it.name } ?: emptyList()
+        val index = CharacterVideoIndex.fromFileNames(names)
+
+        // 06:47·10:48·10:51 업로드분 23편 중 기존 반영분과 같은 5편(32·33·34·35·36)은 중복 제외,
+        // 나머지 18편을 첫·중간 프레임 ↔ char_{번호}_battle.jpg 대조로 확정했다.
+        val fresh = listOf(70, 68, 67, 116, 65, 60, 147, 63, 59, 58, 61, 16, 55, 64, 57, 66)
+        fresh.forEach { cardId ->
+            assertTrue("No.$cardId 등장 영상이 없다", index.hasVideo(cardId))
+            assertTrue(
+                "No.$cardId 는 카탈로그에 있어야 한다",
+                CardCatalog.ALL.any { it.id == cardId }
+            )
+        }
+        // 1:N — 한 캐릭터에 테이크 2편
+        assertEquals(
+            "No.116 · No.61 은 2편",
+            listOf("character_videos/116.mp4", "character_videos/116_2.mp4"),
+            index.videosFor(116)
+        )
+        assertTrue(index.videoCount(61) >= 2)
+        assertTrue("16번은 기존 1편 + 신규 1편", index.videoCount(16) >= 2)
+        listOf(116, 61, 16).forEach { assertTrue("No.$it 는 1:N", it in index.multiVideoCardIds) }
+        assertTrue("등록 영상은 70편 이상", index.size >= 70)
     }
 
     // ── 5. BGM 일시정지 · 복구 ────────────────────────────────────

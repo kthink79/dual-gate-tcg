@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -17,12 +18,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -109,37 +114,55 @@ fun GrowthScreen(
             else -> EquipmentSection(state, card, onBuyEquipment, onEquip, onUnequip)
         }
 
-        // ── 보유 카드 스트립 (2:3 미니 카드) ──
+        // ── 성장할 동료 — 2:3 썸네일 그리드 (2026-11-19 개편) ──
+        // 예전에는 가로 스크롤 1줄이라 177명 중 뒤쪽 캐릭터를 찾기 어려웠다.
+        // 이제 화면 폭에 맞춰 열 수가 늘어나는 그리드 + 이름순/전투력순 정렬을 쓴다.
         SectionCard(title = "성장할 동료", badge = "${state.ownedCards.size}명", accent = TcgColors.Abyss) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                items(state.ownedCards.sortedWith(
-                    compareByDescending<TcgCard> { it.atk + it.def }.thenBy { it.id }
-                ), key = { it.id }) { owned ->
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.width(62.dp)
-                    ) {
-                        DuelCardTile(
-                            cardId = owned.id,
-                            visual = owned.currentVisual,
-                            element = owned.element,
-                            starLevel = owned.starLevel,
-                            power = (owned.atk + owned.def) / 100,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(CardLayoutRules.TILE_ASPECT),
-                            highlighted = owned.id == card.id,
-                            targetWidthPx = 180,
-                            onClick = { onSelectCard(owned.id) }
-                        )
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            "Lv.${owned.upgradeLevel + 1}",
-                            color = if (owned.id == card.id) TcgColors.Gold else TcgColors.Muted,
-                            fontSize = TcgType.LABEL.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1
-                        )
+            var sortByPower by remember { mutableStateOf(true) }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ChipButton("전투력순", sortByPower, TcgColors.Violet) { sortByPower = true }
+                ChipButton("번호순", !sortByPower, TcgColors.Muted) { sortByPower = false }
+            }
+            val roster = remember(state.ownedCards, sortByPower) {
+                if (sortByPower) {
+                    state.ownedCards.sortedWith(compareByDescending<TcgCard> { it.atk + it.def }.thenBy { it.id })
+                } else {
+                    state.ownedCards.sortedBy { it.id }
+                }
+            }
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val columns = ResponsiveLayout.gridColumns(maxWidth.value)
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(columns),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (maxWidth.value >= 600f) 300.dp else 248.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(roster, key = { it.id }) { owned ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            DuelCardTile(
+                                cardId = owned.id,
+                                visual = owned.currentVisual,
+                                element = owned.element,
+                                starLevel = owned.starLevel,
+                                power = (owned.atk + owned.def) / 100,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(CardLayoutRules.TILE_ASPECT),
+                                highlighted = owned.id == card.id,
+                                targetWidthPx = 200,
+                                onClick = { onSelectCard(owned.id) }
+                            )
+                            Text(
+                                "Lv.${owned.upgradeLevel + 1}",
+                                color = if (owned.id == card.id) TcgColors.Gold else TcgColors.Muted,
+                                fontSize = TcgType.TILE_MARK.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }
@@ -280,8 +303,9 @@ private fun GrowthHeroPreview(state: TcgGameState, card: TcgCard) {
     }
 }
 
+/** 강화 섹션 — 도감 화면의 [강화] 서브 탭에서도 그대로 재사용한다 (2026-11-19) */
 @Composable
-private fun UpgradeSection(
+internal fun UpgradeSection(
     state: TcgGameState,
     card: TcgCard,
     onUpgrade: (Int) -> Unit,
@@ -357,8 +381,9 @@ private fun UpgradeSection(
     }
 }
 
+/** 합성·초월 섹션 — 도감 화면의 [합성] 서브 탭에서도 그대로 재사용한다 (2026-11-19) */
 @Composable
-private fun SynthesisSection(
+internal fun SynthesisSection(
     state: TcgGameState,
     card: TcgCard,
     onCraft: (Int) -> Unit,

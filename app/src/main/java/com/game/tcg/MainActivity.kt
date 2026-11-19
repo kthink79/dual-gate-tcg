@@ -300,7 +300,11 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                             onUndeployFromParty = { id -> viewModel.undeployFromParty(id) },
                             // 🎬 도감 「등장 영상 다시 보기」 재생 동안 BGM 일시정지
                             onVideoStart = { audio.suspendBgmForVideo() },
-                            onVideoEnd = { audio.resumeBgmAfterVideo() }
+                            onVideoEnd = { audio.resumeBgmAfterVideo() },
+                            // 2026-11-19: 도감 서브 탭 [강화][합성]에서 바로 실행
+                            onUpgrade = { id -> viewModel.upgradeCard(id) },
+                            onCraft = { id -> viewModel.craftCharacter(id) },
+                            onTranscend = { id -> viewModel.transcendCard(id) }
                         )
                         LobbyDestination.DECK -> DeckBuilderScreen(
                             state = state,

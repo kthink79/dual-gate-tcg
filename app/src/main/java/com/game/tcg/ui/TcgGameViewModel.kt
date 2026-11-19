@@ -2772,7 +2772,8 @@ class TcgGameViewModel(
             if (s.ownedCards.none { it.id == cardId }) {
                 return@updateState s.copy(growthMessage = "[강화] 보유하지 않은 카드입니다. (도감 #$cardId)")
             }
-            s.copy(growthCardId = cardId, growthMessage = null)
+            // 2026-11-19: 성장 화면에서 고른 카드도 도감 선택과 같은 캐릭터로 이어진다
+            s.copy(growthCardId = cardId, selectedCardId = cardId, growthMessage = null)
         }
     }
 
@@ -3022,14 +3023,22 @@ class TcgGameViewModel(
     // 도감·서약
     // ──────────────────────────────────────────────────────────────
 
+    /**
+     * 도감에서 카드를 고른다.
+     *
+     * 2026-11-19 사용자 요청: 도감 → 강화/합성 서브 탭이 **같은 캐릭터**를 그대로 들고 가야 한다.
+     * 그래서 보유 카드를 고르면 성장 대상([growthCardId])도 같이 맞춰 둔다.
+     */
     fun selectCard(cardId: Int) {
         updateState { s ->
+            val owned = s.ownedCards.any { it.id == cardId }
             s.copy(
                 selectedCardId = cardId,
                 selectedVisual = VisualState.BATTLE,
                 visualLockMessage = null,
                 gazeMessage = null,
-                synthesisMessage = null
+                synthesisMessage = null,
+                growthCardId = if (owned) cardId else s.growthCardId
             )
         }
     }

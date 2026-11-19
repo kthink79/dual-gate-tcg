@@ -1,29 +1,28 @@
 package com.game.tcg.ui
 
-import com.game.tcg.core.model.CardCatalog
 import com.game.tcg.core.model.Element
 
 /**
- * 캐릭터 관리(도감·합성) 목록의 보기 방식 — 2026-11-18 사용자 요청.
+ * 캐릭터 관리(도감·강화·합성) 목록의 보기 방식 — 2026-11-18 요청, 2026-11-19 슬림화.
  *
- * > "캐릭터 관리 화면은 번호순 2열 알약 버튼만 나열되어 보유 캐릭터를 찾고 강화·합성을 진행하기
- * >  매우 불편함. 속성별 묶음/필터, 성급별 묶음/필터, 보유만 보기(또는 보유 우선 정렬) 기능을
- * >  추가해 강화·합성 대상 캐릭터를 빠르게 찾고 선택할 수 있도록 UI/UX를 개편한다."
+ * 2026-11-19 사용자 요청(스크린샷 피드백):
+ *  - '신규 15인 / 기존 155인 / 보스 6' 구분 버튼 **완전 삭제**
+ *  - 상단 5줄 필터 버튼 → **콤보박스(보기 기준/속성/성급) + '보유만' 1줄**로 압축
+ *  - 도감↔강화↔합성을 **상단 서브 탭**으로 바로 전환(선택 캐릭터 유지)
  *
  * 화면(Compose)과 분리해 순수 함수로 두었기 때문에 JVM 단위 테스트에서 그대로 검증한다.
  */
 enum class CatalogViewMode(val label: String) {
     NUMBER("번호순"),
-    ELEMENT("속성별 묶음"),
-    STAR("성급별 묶음")
+    ELEMENT("속성별"),
+    STAR("성급별")
 }
 
-/** 도감 목록의 1차 필터 (기존 '전체 / 신규 / 기존 / 보스' 유지) */
-enum class CatalogFilter(val label: String) {
-    ALL("전체"),
-    NEW_WAVE("신규 15인"),
-    ORIGINAL("기존 155인"),
-    BOSS("보스 6")
+/** 도감·성장 허브의 상단 서브 탭 — 선택한 캐릭터를 그대로 들고 이동한다 */
+enum class CharacterHubTab(val label: String) {
+    CATALOG("도감"),
+    UPGRADE("강화"),
+    SYNTHESIS("합성")
 }
 
 /** 묶음 머리글 1개 */
@@ -43,17 +42,22 @@ data class CatalogGroup(
  */
 object CollectionCatalog {
 
-    /** 속성 필터 선택값 (null = 전체) */
-    fun filterByPrimary(
-        profiles: List<CharacterProfile>,
-        filter: CatalogFilter,
-        midBossProfiles: List<CharacterProfile>
-    ): List<CharacterProfile> = when (filter) {
-        CatalogFilter.ALL -> profiles
-        CatalogFilter.NEW_WAVE -> profiles.filter { CardCatalog.isNewWave(it.cardId) }
-        CatalogFilter.ORIGINAL -> profiles.filter { !CardCatalog.isNewWave(it.cardId) }
-        CatalogFilter.BOSS -> midBossProfiles
-    }
+    /** 콤보박스 '속성' 옵션 — 0번이 '전체' */
+    val ELEMENT_OPTIONS: List<String> = listOf("전체") + Element.entries.map { it.displayName }
+
+    /** 콤보박스 '성급' 옵션 — 0번이 '전체' (5★ → 1★) */
+    val STAR_OPTIONS: List<String> = listOf("전체") + (5 downTo 1).map { "$it★" }
+
+    /** 콤보박스 '보기 기준' 옵션 — [CatalogViewMode] 순서와 1:1 */
+    val VIEW_MODE_OPTIONS: List<String> = CatalogViewMode.entries.map { it.label }
+
+    /** 옵션 인덱스 → 속성 (0 = 전체 = null) */
+    fun elementAt(index: Int): Element? =
+        Element.entries.getOrNull(index - 1)
+
+    /** 옵션 인덱스 → 성급 (0 = 전체 = null) */
+    fun starAt(index: Int): Int? =
+        if (index in 1..5) 6 - index else null
 
     /** 속성·성급·보유 필터를 한 번에 적용한다 */
     fun applyFilters(
@@ -140,4 +144,8 @@ object CollectionCatalog {
         Element.LIGHT -> 0xFFFFD54F
         Element.DARK -> 0xFF7C4DFF
     }
+
+    /** 한 줄 요약 — 긴 설명문 대신 목록 머리에 붙는 짧은 라벨 */
+    fun countLabel(shown: Int, total: Int, owned: Int): String =
+        "$shown/$total · 보유 $owned"
 }

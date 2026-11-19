@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -16,13 +17,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,6 +38,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.game.tcg.core.model.Element
@@ -70,18 +79,33 @@ fun elementColor(element: Element): Color = when (element) {
 fun characterImage(cardId: Int, visual: VisualState): Int? =
     CharacterArtRegistry.resId(cardId, visual)
 
-/** 스크롤 가능한 화면 본문 */
+/**
+ * 스크롤 가능한 화면 본문.
+ *
+ * 2026-11-19 사용자 요청: 태블릿·폴더블처럼 넓은 화면에서도
+ * 카드(2:3)·일러스트 비율이 유지되도록 **본문 최대 폭을 제한하고 가운데 정렬**한다.
+ * (휴대폰은 화면 폭 그대로 — 달라지는 것이 없다)
+ */
 @Composable
 fun ScreenFrame(content: @Composable ColumnScope.() -> Unit) {
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(TcgColors.Background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        content = content
-    )
+    ) {
+        val contentMaxWidth = ResponsiveLayout.contentMaxWidthDp(maxWidth.value).dp
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .widthIn(max = contentMaxWidth)
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content
+        )
+    }
 }
 
 /**
@@ -314,5 +338,103 @@ fun LogBox(lines: List<String>, accent: Color = TcgColors.Violet, maxLines: Int 
         if (lines.isEmpty()) {
             Text("· 기록 없음", color = accent.copy(alpha = 0.6f), fontSize = TcgType.BODY_SMALL.sp)
         }
+    }
+}
+
+/**
+ * 콤보박스(드롭다운) 1개 — 2026-11-19 사용자 요청.
+ *
+ * > "상단 5줄 필터 버튼·장황한 설명 텍스트를 대폭 줄이고
+ * >  콤보박스(보기 기준/속성/성급) + '보유만' 토글 1줄로 압축해 달라."
+ *
+ * 칩을 여러 줄 늘어놓는 대신 `라벨 값 ▾` 한 칸으로 접고, 누르면 목록이 열린다.
+ */
+@Composable
+fun TcgDropdown(
+    label: String,
+    value: String,
+    options: List<String>,
+    modifier: Modifier = Modifier,
+    accent: Color = TcgColors.Violet,
+    onSelect: (Int) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(TcgColors.SurfaceAlt)
+                .border(1.dp, if (expanded) accent else TcgColors.Line, RoundedCornerShape(10.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, color = TcgColors.Muted, fontSize = TcgType.LABEL.sp, maxLines = 1)
+            Spacer(Modifier.width(5.dp))
+            Text(
+                value,
+                color = TcgColors.Text,
+                fontSize = TcgType.BODY_SMALL.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            Spacer(Modifier.width(4.dp))
+            Text("▾", color = accent, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.Bold)
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEachIndexed { index, option ->
+                val isCurrent = option == value
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            option,
+                            color = if (isCurrent) accent else TcgColors.Text,
+                            fontSize = TcgType.BODY_SMALL.sp,
+                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelect(index)
+                    }
+                )
+            }
+        }
+    }
+}
+
+/** '보유만' 같은 1줄 토글 — 콤보박스 옆에 나란히 놓는다 */
+@Composable
+fun TcgToggleChip(
+    label: String,
+    checked: Boolean,
+    modifier: Modifier = Modifier,
+    accent: Color = TcgColors.Heal,
+    onToggle: (Boolean) -> Unit
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (checked) accent.copy(alpha = 0.22f) else TcgColors.SurfaceAlt)
+            .border(1.dp, if (checked) accent else TcgColors.Line, RoundedCornerShape(10.dp))
+            .clickable { onToggle(!checked) }
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(if (checked) "✓" else "○", color = if (checked) accent else TcgColors.Muted, fontSize = TcgType.LABEL.sp)
+        Spacer(Modifier.width(5.dp))
+        Text(
+            label,
+            color = if (checked) TcgColors.Text else TcgColors.Muted,
+            fontSize = TcgType.LABEL.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
+        )
     }
 }

@@ -2,7 +2,7 @@
 """듀얼 게이트 TCG — 리소스·아트 무결성 전수 검사.
 
 검사 항목
-  1) CardCatalog(플레이 170명) · MidBossCatalog(중간 보스 6명)의 모든 캐릭터 번호가
+  1) CardCatalog(플레이 177명) · MidBossCatalog(중간 보스 6명)의 모든 캐릭터 번호가
      CharacterArtRegistry에 battle/casual/date/miniature 4비주얼 모두 등록되어 있는지
      (miniature = 2026-11-17 추가된 4번째 페어 '미니어처(SD/Chibi)')
   2) 등록된 모든 드로어블 이름이 res/drawable-nodpi/char_{번호}_{상태}.jpg 실제 파일과 1:1인지
@@ -62,8 +62,8 @@ registry_src = read(SRC / "ui/CharacterArtRegistry.kt")
 roster_ids = sorted({int(m) for m in re.findall(r"^\s*id\s*=\s*(\d+)\s*,", card_catalog, re.M)})
 midboss_ids = sorted({int(m) for m in re.findall(r"^\s*id\s*=\s*(\d+)\s*,", mid_boss, re.M)})
 
-if len(roster_ids) != 170:
-    errors.append(f"CardCatalog 캐릭터 수가 170명이 아님: {len(roster_ids)}명")
+if len(roster_ids) != 177:
+    errors.append(f"CardCatalog 캐릭터 수가 177명이 아님: {len(roster_ids)}명")
 if len(midboss_ids) != 6:
     errors.append(f"MidBossCatalog 캐릭터 수가 6명이 아님: {len(midboss_ids)}명")
 if set(roster_ids) & set(midboss_ids):
@@ -187,7 +187,13 @@ for kt in sorted(SRC.rglob("*.kt")):
 VIDEO_DIR = ROOT / "app/src/main/assets/character_videos"
 VIDEO_NAME_RE = re.compile(r"^(\d{1,3})(?:[-_ ].*)?\.mp4$", re.IGNORECASE)
 VIDEO_SIZE_LIMIT = int(1.5 * 1024 * 1024)  # 편당 1.5MB 권장 상한
-video_ids: dict[int, str] = {}
+# 2026-11-19: 한 캐릭터에 영상 여러 편(1:N)을 **모두** 넣는 규칙으로 바뀌었다.
+#   `{번호}.mp4` · `{번호}_2.mp4` · `{번호}_3.mp4` … 는 각각 다른 테이크이며 정상이다.
+#   (앱은 목록 중 1편을 랜덤 재생 — CharacterVideoIndex.randomVideoFor)
+#   같은 **파일명**이 두 번 나오는 것만 오류, 번호 중복은 1:N 으로 인정한다.
+video_ids: dict[int, list[str]] = {}
+video_files: set[str] = set()
+TAKE_NAME_RE = re.compile(r"^(\d{1,3})(?:_(\d+))?\.mp4$", re.IGNORECASE)
 
 if VIDEO_DIR.is_dir():
     for p in sorted(VIDEO_DIR.iterdir()):
@@ -201,9 +207,16 @@ if VIDEO_DIR.is_dir():
         if cid not in expected_ids:
             errors.append(f"등장 영상 {p.name} → 카탈로그에 없는 번호 {cid}")
             continue
-        if cid in video_ids:
-            errors.append(f"등장 영상 번호 {cid} 중복: {video_ids[cid]} / {p.name}")
-        video_ids[cid] = p.name
+        if p.name in video_files:
+            errors.append(f"등장 영상 파일명 중복: {p.name}")
+        video_files.add(p.name)
+        # 같은 번호의 테이크가 이미 있는데 정식 이름(`{번호}.mp4`)을 또 넣으면 앱의 대표 선택이 흔들린다
+        takes = video_ids.setdefault(cid, [])
+        take_match = TAKE_NAME_RE.match(p.name)
+        take_no = int(take_match.group(2)) if (take_match and take_match.group(2)) else 1
+        if take_no in {1 if n == f"{cid}.mp4" else -1 for n in takes} and p.name in takes:
+            errors.append(f"등장 영상 테이크 중복: {p.name}")
+        takes.append(p.name)
         size = p.stat().st_size
         if size == 0:
             errors.append(f"등장 영상 0바이트: {p.name}")
@@ -229,7 +242,8 @@ print(f"중간 보스   : {len(midboss_ids)}명  {midboss_ids}")
 print(f"아트 레지스트리: {len(registry)}명 × {len(VISUAL_STATES)}비주얼 = {len(registry) * len(VISUAL_STATES)}장")
 print(f"drawable-nodpi char_*.jpg: {len(files)}장")
 print(f"인트로 장면: 4장")
-print(f"캐릭터 등장 영상: {len(video_ids)}편 {sorted(video_ids)}")
+"영상 편수" 
+print(f"캐릭터 등장 영상: {sum(len(v) for v in video_ids.values())}편 / {len(video_ids)}명 {sorted(video_ids)}")
 print()
 if warnings:
     print(f"[경고] {len(warnings)}건")
