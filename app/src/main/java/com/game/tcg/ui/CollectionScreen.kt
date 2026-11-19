@@ -53,6 +53,7 @@ import com.game.tcg.core.model.VisualState
  *  ④ 목록은 칩 나열 대신 **2:3 썸네일 그리드**(태블릿에서는 열 수 자동 증가)
  *  ⑤ 설명문은 짧은 라벨·아이콘 위주로 정리
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun CollectionScreen(
     state: TcgGameState,
@@ -124,10 +125,11 @@ fun CollectionScreen(
         )
         val groups = CollectionCatalog.group(shownProfiles, viewMode, starOf)
 
-        Row(
+        // 좁은 화면에서는 자연스럽게 한 줄 더 접히도록 FlowRow (넓은 화면은 1줄)
+        androidx.compose.foundation.layout.FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             TcgDropdown(
                 label = "보기",
