@@ -71,7 +71,8 @@ fun CollectionScreen(
     // 2026-11-19: 도감 화면에서 바로 강화·합성을 실행한다 (탭 연동)
     onUpgrade: (Int) -> Unit = {},
     onCraft: (Int) -> Unit = {},
-    onTranscend: (Int) -> Unit = {}
+    onTranscend: (Int) -> Unit = {},
+    onOpenShop: () -> Unit = {}
 ) {
     val selected: TcgCard = state.ownedCards.firstOrNull { it.id == state.selectedCardId }
         ?: TcgGameViewModel.characterCard(state.selectedCardId)
@@ -252,7 +253,7 @@ fun CollectionScreen(
             )
             CharacterHubTab.UPGRADE -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SelectedHeadline(state, selected, isOwned)
-                UpgradeSection(state, selected, onUpgrade) { }
+                UpgradeSection(state, selected, onUpgrade, onOpenShop)
             }
             CharacterHubTab.SYNTHESIS -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SelectedHeadline(state, selected, isOwned)
@@ -525,7 +526,7 @@ private fun CatalogTab(
                     ActionTile("🔍 응시 (+1)", "줌 체험", TcgColors.Danger) { onGaze() }
                 }
                 Box(Modifier.weight(1f)) {
-                    ActionTile("💧 정화 ($" + "${state.holyWater})", "-2", TcgColors.Heal, enabled = state.holyWater > 0) { onPurify() }
+                    ActionTile("💧 정화 (${state.holyWater})", "매혹·저주 -2", TcgColors.Heal, enabled = state.holyWater > 0) { onPurify() }
                 }
             }
             if (state.gazeMessage != null) {

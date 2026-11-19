@@ -304,7 +304,8 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                             // 2026-11-19: 도감 서브 탭 [강화][합성]에서 바로 실행
                             onUpgrade = { id -> viewModel.upgradeCard(id) },
                             onCraft = { id -> viewModel.craftCharacter(id) },
-                            onTranscend = { id -> viewModel.transcendCard(id) }
+                            onTranscend = { id -> viewModel.transcendCard(id) },
+                            onOpenShop = { viewModel.openScreen(LobbyDestination.SHOP) }
                         )
                         LobbyDestination.DECK -> DeckBuilderScreen(
                             state = state,
