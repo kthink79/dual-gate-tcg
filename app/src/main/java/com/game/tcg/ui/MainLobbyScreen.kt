@@ -7,6 +7,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,12 +22,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -44,6 +48,13 @@ import com.game.tcg.core.model.VisualState
  *     [LobbyInfoOverlay] 패널로 옮겨 캐릭터 얼굴/상반신을 가리지 않게 했다.)
  *  - 하단 캐릭터 정보도 이름·칭호·호감도·4종 비주얼(전투·일상·데이트·미니어처)·캐릭터 전환만 남겨 컴팩트하게 정돈.
  *  - 좌·우 측면 레일의 서브메뉴 6종은 그대로.
+ *
+ * 2026-11-20 사용자 요청(태블릿 가로 실기 스크린샷) 반영:
+ *  - 대표 캐릭터 원화(2:3)가 가로 화면에서 Crop 으로 채워지며 **머리가 잘리던 문제**를
+ *    [AmbientCharacterBackdrop] 으로 교체 — 좌우는 같은 원화의 블러 앰비언트,
+ *    중앙은 2:3 그대로 잘림 없이.
+ *  - 태블릿 대화면에서 좌우 레일·상단 재화 바·하단 캐릭터 패널이 구석에 작게 몰리지 않도록
+ *    [ResponsiveLayout.uiScale] 배율을 글자·여백·버튼 크기에 곱한다(휴대폰은 1.0 그대로).
  */
 @Composable
 fun MainLobbyScreen(
@@ -71,17 +82,19 @@ fun MainLobbyScreen(
     val settings = audioSettings ?: state.audioSettings
     val muted = !settings.bgmEnabled && !settings.sfxEnabled
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(TcgColors.Background)
     ) {
-        // ── 중앙 대형 캐릭터 아트 (화면의 주인공) ──
-        CardArtImage(
+        // 태블릿·대화면 배율 — 휴대폰(짧은 변 ≤420dp)은 1.0 이라 기존 화면과 동일
+        val uiScale = ResponsiveLayout.uiScale(maxWidth.value, maxHeight.value)
+
+        // ── 중앙 대형 캐릭터 아트 (화면의 주인공) — 가로 화면에서도 머리 잘림 없이 ──
+        AmbientCharacterBackdrop(
             cardId = hero.id,
             visual = state.lobbyVisual,
             contentDescription = "${hero.name} 대표 캐릭터",
-            contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
             targetWidthPx = 1080
         )
@@ -100,6 +113,8 @@ fun MainLobbyScreen(
                 )
         )
 
+        // 좌우 레일·상단 재화 바·하단 캐릭터 패널 — 태블릿 배율을 한 번에 적용한다
+        ScaledHud(uiScale) {
         // ── ① 최상단 1줄: 차원·재화 요약 + 음소거 + 📊 정보 ──
         Row(
             modifier = Modifier
@@ -312,6 +327,8 @@ fun MainLobbyScreen(
             )
         }
 
+        }
+
         // ── 📊 정보 패널 (모달 시트) ──
         if (state.isInfoPanelOpen) {
             LobbyInfoOverlay(
@@ -323,6 +340,27 @@ fun MainLobbyScreen(
                 onToggleSfx = onToggleSfx,
                 onResetGame = onResetGame
             )
+        }
+    }
+}
+
+/**
+ * 태블릿·대화면에서 HUD(사이드 레일·재화 바·하단 패널)를 화면 크기에 맞춰 키우는 래퍼.
+ *
+ * [scale] 이 1.0 이면(휴대폰) 아무 것도 바꾸지 않고, 1.0 보다 크면 이 서브트리의
+ * 밀도를 함께 올려 dp·sp 가 모두 같은 비율로 커지게 한다 — 버튼·글자·터치 영역이
+ * 구석에 작게 몰리지 않고 화면 비율에 맞게 자리잡는다.
+ */
+@Composable
+private fun ScaledHud(scale: Float, content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
+    if (scale <= 1.02f) {
+        Box(modifier = Modifier.fillMaxSize(), content = content)
+    } else {
+        val density = LocalDensity.current
+        CompositionLocalProvider(
+            LocalDensity provides Density(density = density.density * scale, fontScale = density.fontScale)
+        ) {
+            Box(modifier = Modifier.fillMaxSize(), content = content)
         }
     }
 }

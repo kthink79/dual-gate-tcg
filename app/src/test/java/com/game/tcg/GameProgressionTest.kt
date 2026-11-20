@@ -360,7 +360,7 @@ class GameProgressionTest {
 
     @Test
     fun `중복 카드는 조각과 소량 골드로 자동 변환된다`() {
-        // 도감 177명 전원 보유 → 팩에서 나오는 카드는 모두 중복 (티켓 없이 골드로 구매)
+        // 도감 179명 전원 보유 → 팩에서 나오는 카드는 모두 중복 (티켓 없이 골드로 구매)
         val vm = TcgGameViewModel(
             random = Random(7),
             initialOwnedCardIds = allIds,
@@ -890,7 +890,7 @@ class GameProgressionTest {
             assertEquals(destination, vm.uiState.value.currentScreen)
             assertTrue(vm.uiState.value.statusMessage.startsWith("[${destination.label}]"))
         }
-        assertEquals("중간 보스는 로비 순환 순서 마지막에 붙는다", 183, TcgGameViewModel.LOBBY_HERO_ORDER.size)
+        assertEquals("중간 보스는 로비 순환 순서 마지막에 붙는다", 185, TcgGameViewModel.LOBBY_HERO_ORDER.size)
         assertEquals((170..175).toList(), TcgGameViewModel.LOBBY_HERO_ORDER.takeLast(6))
     }
 }

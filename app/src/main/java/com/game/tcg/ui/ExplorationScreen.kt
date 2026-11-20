@@ -138,6 +138,8 @@ fun ExplorationScreen(
                             visual = ExplorationDecor.resultVisual(result),
                             contentDescription = ExplorationDecor.resultCompanionLabel(result) ?: "탐색 결과",
                             contentScale = ContentScale.Crop,
+                            // 가로로 긴 배너라 가운데 크롭하면 머리가 잘린다 — 상단 기준으로 자른다
+                            alignment = Alignment.TopCenter,
                             modifier = Modifier.fillMaxSize(),
                             targetWidthPx = 720
                         )
@@ -333,10 +335,10 @@ private fun ExplorationProgressOverlay(
             // 연출 중 아래 화면(스크롤·버튼)으로 탭이 새지 않도록 입력을 소비한다
             .pointerInput(Unit) { detectTapGestures { } }
     ) {
-        ResourceArtImage(
+        // 태블릿·가로 화면에서도 원화가 잘리지 않도록 앰비언트 + 2:3 프레임으로 그린다
+        AmbientResourceBackdrop(
             resId = backdropResId,
             contentDescription = mode.displayName,
-            contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
             targetWidthPx = 720
         )
@@ -495,6 +497,7 @@ private fun ExplorationZoneCard(
             resId = zone.backdropResId,
             contentDescription = zone.mode.displayName,
             contentScale = ContentScale.Crop,
+            alignment = Alignment.TopCenter,
             modifier = Modifier.fillMaxSize(),
             targetWidthPx = 720
         )

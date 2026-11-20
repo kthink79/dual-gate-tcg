@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -415,6 +416,24 @@ private fun stagedAlpha(sceneIndex: Int, tag: String, startDelayMs: Long): Float
  */
 @Composable
 private fun IntroSceneArt(sceneIndex: Int, kenBurns: Float) {
+    // 태블릿·가로 화면: 2:3 장면화를 잘리지 않게(앰비언트 + 원본 프레임) — Ken Burns 는 세로 화면 전용
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        if (ResponsiveLayout.isWideArtContainer(maxWidth.value, maxHeight.value)) {
+            AmbientResourceBackdrop(
+                resId = IntroArtRegistry.resId(sceneIndex),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                targetWidthPx = 900
+            )
+            return@BoxWithConstraints
+        }
+        IntroSceneArtKenBurns(sceneIndex = sceneIndex, kenBurns = kenBurns)
+    }
+}
+
+/** 세로 화면용 Ken Burns 장면 연출 (기존 동작 유지) */
+@Composable
+private fun IntroSceneArtKenBurns(sceneIndex: Int, kenBurns: Float) {
     val context = LocalContext.current
     Crossfade(
         targetState = sceneIndex,

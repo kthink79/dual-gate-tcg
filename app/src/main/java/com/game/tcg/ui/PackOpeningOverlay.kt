@@ -13,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
@@ -349,11 +351,17 @@ private fun RevealStage(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            // 태블릿 대화면에서 카드가 작게 몰리지 않도록 화면 크기 배율을 곱하고,
+            // 높이는 2:3 비율로 맞춘다(원화 잘림 없음 — ContentScale.Fit)
+            val uiScale = ResponsiveLayout.uiScale(
+                LocalConfiguration.current.screenWidthDp.toFloat(),
+                LocalConfiguration.current.screenHeightDp.toFloat()
+            )
             PackRevealCard(
                 draw = draw,
                 modifier = Modifier
-                    .width(236.dp)
-                    .height(336.dp)
+                    .width((236f * uiScale).dp)
+                    .aspectRatio(ResponsiveLayout.ART_ASPECT)
                     .scale(0.9f + 0.1f * reveal)
             )
 
@@ -455,7 +463,7 @@ private fun PackRevealCard(
             cardId = draw.cardId,
             visual = VisualState.BATTLE,
             contentDescription = draw.name,
-            contentScale = ContentScale.Crop,
+            contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize(),
             targetWidthPx = 720
         )

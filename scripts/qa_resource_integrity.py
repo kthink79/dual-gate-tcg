@@ -2,7 +2,7 @@
 """듀얼 게이트 TCG — 리소스·아트 무결성 전수 검사.
 
 검사 항목
-  1) CardCatalog(플레이 177명) · MidBossCatalog(중간 보스 6명)의 모든 캐릭터 번호가
+  1) CardCatalog(플레이 179명) · MidBossCatalog(중간 보스 6명)의 모든 캐릭터 번호가
      CharacterArtRegistry에 battle/casual/date/miniature 4비주얼 모두 등록되어 있는지
      (miniature = 2026-11-17 추가된 4번째 페어 '미니어처(SD/Chibi)')
   2) 등록된 모든 드로어블 이름이 res/drawable-nodpi/char_{번호}_{상태}.jpg 실제 파일과 1:1인지
@@ -62,8 +62,8 @@ registry_src = read(SRC / "ui/CharacterArtRegistry.kt")
 roster_ids = sorted({int(m) for m in re.findall(r"^\s*id\s*=\s*(\d+)\s*,", card_catalog, re.M)})
 midboss_ids = sorted({int(m) for m in re.findall(r"^\s*id\s*=\s*(\d+)\s*,", mid_boss, re.M)})
 
-if len(roster_ids) != 177:
-    errors.append(f"CardCatalog 캐릭터 수가 177명이 아님: {len(roster_ids)}명")
+if len(roster_ids) != 179:
+    errors.append(f"CardCatalog 캐릭터 수가 179명이 아님: {len(roster_ids)}명")
 if len(midboss_ids) != 6:
     errors.append(f"MidBossCatalog 캐릭터 수가 6명이 아님: {len(midboss_ids)}명")
 if set(roster_ids) & set(midboss_ids):

@@ -43,9 +43,9 @@ class MiniatureOutfitAndBalanceTest {
     }
 
     @Test
-    fun `183명 전원이 미니어처 아트를 가진다`() {
+    fun `185명 전원이 미니어처 아트를 가진다`() {
         val ids = CardCatalog.ALL.map { it.id } + com.game.tcg.core.model.MidBossCatalog.ALL.map { it.id }
-        assertEquals(183, ids.size)
+        assertEquals(185, ids.size)
         ids.forEach { id ->
             val res = CharacterArtRegistry.resId(id, VisualState.MINIATURE)
             assertNotNull("#$id 미니어처 아트 없음", res)

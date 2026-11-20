@@ -27,6 +27,47 @@ object ResponsiveLayout {
     /** 이 폭이면 태블릿·폴더블 펼침으로 본다 */
     fun isWide(screenWidthDp: Float): Boolean = screenWidthDp >= TABLET_BREAKPOINT_DP
 
+    // ── 2:3 원화 프레임 (2026-11-20 태블릿 가로 대응) ──────────────────────
+
+    /** 캐릭터 원화(JPG 540×810)의 세로 비율 — 가로/세로 */
+    const val ART_ASPECT: Float = 2f / 3f
+
+    /**
+     * 컨테이너가 원화보다 **가로로 넓은지** (가로형 태블릿·폴더블 펼침).
+     *
+     * 이 경우 [ContentScale.Crop] 으로 채우면 2:3 세로 원화의 위아래가 잘려
+     * 머리가 날아간다 — 대신 앰비언트 배경 + 2:3 프레임([fittedArtWidthDp])으로 그린다.
+     */
+    fun isWideArtContainer(widthDp: Float, heightDp: Float): Boolean =
+        heightDp > 0f && widthDp / heightDp > ART_ASPECT + 0.02f
+
+    /**
+     * 컨테이너 높이를 꽉 채우면서 2:3을 유지하는 원화 폭(dp).
+     * 넓은 화면에서는 `높이 × 2/3`, 좁은 화면에서는 컨테이너 폭 그대로.
+     */
+    fun fittedArtWidthDp(widthDp: Float, heightDp: Float): Float {
+        val byHeight = heightDp * ART_ASPECT
+        return if (byHeight < widthDp) byHeight else widthDp
+    }
+
+    // ── HUD 크기 (태블릿 대화면에서 UI 가 구석에 작게 몰리지 않게) ──────────
+
+    /** 휴대폰 기준 짧은 변(dp) — 이 크기면 배율 1.0 */
+    const val PHONE_SHORT_SIDE_DP: Float = 420f
+
+    /** 태블릿 배율 상한 — 너무 커지면 한 화면에 정보가 안 들어간다 */
+    const val MAX_UI_SCALE: Float = 1.8f
+
+    /**
+     * 화면 짧은 변 기준 UI 배율. 휴대폰(≤420dp)은 1.0, 태블릿 가로(≈800dp)는 1.8 로 커진다.
+     * 사이드 레일·상단 재화 바·하단 캐릭터 패널의 글자·여백·터치 영역에 곱해 쓴다.
+     */
+    fun uiScale(widthDp: Float, heightDp: Float): Float =
+        (minOf(widthDp, heightDp) / PHONE_SHORT_SIDE_DP).coerceIn(1f, MAX_UI_SCALE)
+
+    /** 태블릿·대화면 여부 — 배율이 1.0 보다 큰지로 판단 */
+    fun isLargeScreen(widthDp: Float, heightDp: Float): Boolean = uiScale(widthDp, heightDp) > 1.02f
+
     /**
      * 본문 컨텐츠 최대 폭 — 넓은 화면에서 늘어지지 않게 제한한다.
      * (휴대폰은 화면 폭 그대로, 태블릿은 [TABLET_MAX_WIDTH_DP] 까지)

@@ -143,6 +143,8 @@ private fun ScenarioBanner(state: TcgGameState, step: StoryStep) {
             resId = ScenarioDecor.bannerResId,
             contentDescription = "차원의 문 배너",
             contentScale = ContentScale.Crop,
+            // 가로 배너(158dp)에서 머리가 잘리지 않게 상단 기준 크롭
+            alignment = Alignment.TopCenter,
             modifier = Modifier.fillMaxSize(),
             targetWidthPx = 1080
         )
