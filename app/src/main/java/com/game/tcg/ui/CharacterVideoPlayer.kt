@@ -12,6 +12,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +23,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -280,7 +283,7 @@ fun CharacterVideoEntranceStage(
         CardCatalog.ALL.firstOrNull { it.id == cardId }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(
@@ -291,6 +294,16 @@ fun CharacterVideoEntranceStage(
             .clickable { onSkip() },
         contentAlignment = Alignment.Center
     ) {
+        // 2026-11-21 태블릿 가로 대응 — 16:9 무대를 **화면 높이에 맞춰** 줄인다.
+        // 예전에는 fillMaxWidth() × 16:9 라서 가로 화면에서 무대 높이가 화면을 넘어
+        // 영상이 아래로 밀려 보이지 않았다(사용자 피드백 "가로 모드일 때 영상이 안 보여").
+        val stageHorizontalPadding = 14.dp
+        val reservedForTexts = 232.dp          // 상단 표시·이름·칭호·스탯·안내 문구 자리
+        val maxStageHeight = (maxHeight - reservedForTexts).coerceAtLeast(120.dp)
+        val stageWidth = minOf(
+            (maxWidth - stageHorizontalPadding * 2).coerceAtLeast(120.dp),
+            maxStageHeight * 16f / 9f
+        )
         // 상단: 등장 연출 표시 + 남은 카드
         Row(
             modifier = Modifier
@@ -313,12 +326,13 @@ fun CharacterVideoEntranceStage(
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 14.dp)
+            modifier = Modifier
+                .padding(horizontal = stageHorizontalPadding)
+                .verticalScroll(rememberScrollState())
         ) {
-            // 영상 — 16:9 무대, 금빛 테두리
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .width(stageWidth)
                     .aspectRatio(16f / 9f)
                     .clip(RoundedCornerShape(14.dp))
                     .background(Color.Black)

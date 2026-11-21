@@ -15,28 +15,28 @@
   {
     "name": "bgm_lobby",
     "file": "bgm_lobby.ogg",
-    "seconds": 28.8,
-    "kbytes": 562.3,
-    "kbps": 159.9,
+    "seconds": 26.67,
+    "kbytes": 372.6,
+    "kbps": 114.4,
     "verified_from_file": true,
-    "loop_seam_jump": 0.00178,
-    "mean_step": 0.00648,
-    "seam_vs_local_rms": 0.0102,
-    "peak": 0.7798,
-    "rms_db": -17.01
+    "loop_seam_jump": 0.00232,
+    "mean_step": 0.00478,
+    "seam_vs_local_rms": 0.0176,
+    "peak": 0.7035,
+    "rms_db": -18.13
   },
   {
     "name": "bgm_battle",
     "file": "bgm_battle.ogg",
-    "seconds": 27.43,
-    "kbytes": 515.3,
-    "kbps": 153.9,
+    "seconds": 22.86,
+    "kbytes": 325.6,
+    "kbps": 116.7,
     "verified_from_file": true,
-    "loop_seam_jump": 0.00202,
-    "mean_step": 0.00984,
-    "seam_vs_local_rms": 0.0112,
-    "peak": 0.8146,
-    "rms_db": -15.86
+    "loop_seam_jump": 0.00145,
+    "mean_step": 0.0042,
+    "seam_vs_local_rms": 0.0123,
+    "peak": 0.6596,
+    "rms_db": -18.2
   },
   {
     "name": "bgm_boss",
@@ -54,11 +54,11 @@
   {
     "name": "sfx_click",
     "file": "sfx_click.ogg",
-    "seconds": 0.08,
-    "kbytes": 5.9,
-    "kbps": 568.1,
+    "seconds": 0.11,
+    "kbytes": 6.4,
+    "kbps": 476.3,
     "verified_from_file": true,
-    "peak": 0.4982
+    "peak": 0.6045
   },
   {
     "name": "sfx_attack",
@@ -117,11 +117,11 @@
   {
     "name": "sfx_victory",
     "file": "sfx_victory.ogg",
-    "seconds": 1.9,
-    "kbytes": 41.4,
-    "kbps": 178.4,
+    "seconds": 2.2,
+    "kbytes": 24.4,
+    "kbps": 91.0,
     "verified_from_file": true,
-    "peak": 0.9026
+    "peak": 0.8256
   },
   {
     "name": "sfx_defeat",

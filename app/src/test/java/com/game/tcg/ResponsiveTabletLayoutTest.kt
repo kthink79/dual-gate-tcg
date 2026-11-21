@@ -88,4 +88,43 @@ class ResponsiveTabletLayoutTest {
         assertTrue(ResponsiveLayout.isLargeScreen(tabletLandscape.first, tabletLandscape.second))
         assertTrue(ResponsiveLayout.isLargeScreen(foldableOpen.first, foldableOpen.second))
     }
+
+    // ── 2026-11-21 가로 모드 높이 맞춤 ────────────────────────────────────
+
+    @Test
+    fun `가로 모드일 때만 높이 맞춤 프레임을 쓴다`() {
+        assertFalse("세로 화면은 전체 사용", ResponsiveLayout.isLandscape(phonePortrait.first, phonePortrait.second))
+        assertFalse("태블릿 세로도 전체 사용", ResponsiveLayout.isLandscape(tabletPortrait.first, tabletPortrait.second))
+        assertTrue("태블릿 가로", ResponsiveLayout.isLandscape(tabletLandscape.first, tabletLandscape.second))
+        assertTrue("휴대폰 가로", ResponsiveLayout.isLandscape(phoneLandscape.first, phoneLandscape.second))
+    }
+
+    @Test
+    fun `가로 모드 프레임은 높이를 채우고 폭은 2대3으로 줄어든다`() {
+        // 1280×800 태블릿 가로 → 프레임 533.3×800 (화면 높이 그대로)
+        val w = ResponsiveLayout.portraitFrameWidthDp(tabletLandscape.first, tabletLandscape.second)
+        assertEquals(533.33f, w, 0.1f)
+        assertEquals(ResponsiveLayout.LANDSCAPE_FRAME_ASPECT, w / tabletLandscape.second, 0.001f)
+        // 프레임은 화면 폭을 넘지 않는다
+        assertTrue(w <= tabletLandscape.first)
+        // 양옆 여백은 (1280 - 533.3) / 2
+        assertEquals((1280f - w) / 2f, ResponsiveLayout.landscapeSideBarWidthDp(tabletLandscape.first, tabletLandscape.second), 0.1f)
+    }
+
+    @Test
+    fun `좁은 창에서는 프레임이 화면 폭을 넘지 않는다`() {
+        // 폭이 높이×2/3 보다 좁으면 화면 폭 그대로 (음수·초과 방지)
+        assertEquals(300f, ResponsiveLayout.portraitFrameWidthDp(300f, 800f), 0.01f)
+        assertEquals(0f, ResponsiveLayout.landscapeSideBarWidthDp(300f, 800f), 0.01f)
+    }
+
+    @Test
+    fun `등장 영상 무대는 컨테이너 높이를 넘지 않는 16대9 폭을 고른다`() {
+        // 800dp 높이 컨테이너의 16:9 무대 → 폭 1422dp 가 아니라 높이 제한으로 355.5dp
+        assertEquals(16f / 9f * 200f, ResponsiveLayout.fitVideoWidthDp(1280f, 200f), 0.01f)
+        // 폭이 더 좁으면 폭이 기준
+        assertEquals(300f, ResponsiveLayout.fitVideoWidthDp(300f, 800f), 0.01f)
+        // 값이 0 이하이면 0 (레이아웃 붕괴 방지)
+        assertEquals(0f, ResponsiveLayout.fitVideoWidthDp(0f, 100f), 0.01f)
+    }
 }

@@ -13,6 +13,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,18 +34,24 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.game.tcg.core.engine.IntroStoryEngine
+import com.game.tcg.core.model.VisualState
 import com.game.tcg.audio.AudioManager
 import com.game.tcg.audio.ApplyBgmScene
 import com.game.tcg.audio.AudioScene
 import com.game.tcg.audio.SfxEffect
 import com.game.tcg.audio.rememberAudioManager
 import com.game.tcg.ui.BattleScreen
+import com.game.tcg.ui.CardArtImage
 import com.game.tcg.ui.CollectionScreen
 import com.game.tcg.ui.DeckBuilderScreen
 import com.game.tcg.ui.ExplorationScreen
@@ -54,6 +62,7 @@ import com.game.tcg.ui.MainLobbyScreen
 import com.game.tcg.ui.PackShopScreen
 import com.game.tcg.ui.Pill
 import com.game.tcg.ui.RealWorldScreen
+import com.game.tcg.ui.ResponsiveLayout
 import com.game.tcg.ui.ScenarioScreen
 import com.game.tcg.ui.StageScreen
 import com.game.tcg.ui.TcgColors
@@ -145,7 +154,11 @@ fun TcgApp(viewModel: TcgGameViewModel) {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // 2026-11-21 태블릿 가로 대응 — 가로에서는 **높이에 맞춘** 2:3 세로 프레임 안에 게임을 담는다.
+    HeightFitGameFrame(
+        backdropCardId = state.lobbyHeroId,
+        backdropVisual = state.lobbyVisual
+    ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             bottomBar = {
@@ -342,6 +355,92 @@ fun TcgApp(viewModel: TcgGameViewModel) {
 
         // ── 결과성 SFX — 상태 변화를 감지해 튼다 (공격·피격·개봉·강화·소환·승패) ──
         GameAudioEffects(state = state, audio = audio)
+    }
+}
+
+/**
+ * 가로 모드 높이 맞춤 프레임 — 2026-11-21 사용자 피드백.
+ *
+ * > "tcg 게임 테블릿 에서 실행하면 여전히 가로 모드일때 풀 화면에 맞춰 지면서 영상이 안보여
+ * >  가로 모드일때는 높이에 맞춰 화면 사이즈가 조절 되도록 해줘"
+ *
+ * 세로 화면(휴대폰 기본)은 지금까지처럼 화면 전체를 쓴다. 가로(폭 > 높이, 태블릿 가로 포함)에서는
+ *
+ *  · 게임 컨테이너를 **화면 높이에 꽉 맞추고** 폭은 2:3([ResponsiveLayout.LANDSCAPE_FRAME_ASPECT])로 줄인다
+ *  · 그래서 로비·도감·전투·등장 영상이 폭에 끌려 늘어나거나 아래로 밀리지 않는다
+ *  · 양옆에는 대표 캐릭터 원화를 흐리게(블러) 깐 앰비언트 배경을 둔다 — 빈 공간이 아니라 '무대 밖 조명'처럼 보인다
+ */
+@Composable
+private fun HeightFitGameFrame(
+    backdropCardId: Int = 3,
+    backdropVisual: VisualState = VisualState.BATTLE,
+    content: @Composable () -> Unit
+) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TcgColors.Background)
+    ) {
+        val widthDp = maxWidth.value
+        val heightDp = maxHeight.value
+        val landscape = ResponsiveLayout.isLandscape(widthDp, heightDp)
+
+        if (landscape) {
+            // 무대 밖 — 대표 캐릭터 원화를 깊게 흐리게 깔고 어둡게 덮는다
+            // (AmbientCharacterBackdrop 과 같은 방식: 블러 앰비언트 + 어두운 스크림)
+            CardArtImage(
+                cardId = backdropCardId,
+                visual = backdropVisual,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(32.dp),
+                targetWidthPx = 360
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(TcgColors.Background.copy(alpha = 0.78f))
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                TcgColors.Violet.copy(alpha = 0.16f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+            val frameWidth = ResponsiveLayout.portraitFrameWidthDp(widthDp, heightDp).dp
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .width(frameWidth)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(14.dp))
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.verticalGradient(
+                            listOf(
+                                TcgColors.Gold.copy(alpha = 0.45f),
+                                TcgColors.Violet.copy(alpha = 0.35f),
+                                TcgColors.Gold.copy(alpha = 0.25f)
+                            )
+                        ),
+                        shape = RoundedCornerShape(14.dp)
+                    )
+            ) {
+                content()
+            }
+        } else {
+            Box(modifier = Modifier.fillMaxSize()) {
+                content()
+            }
+        }
     }
 }
 

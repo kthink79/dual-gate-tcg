@@ -255,6 +255,35 @@ def ks_pluck(freq: float, dur: float, amp: float = 0.3, damp: float = 0.997,
     return amp * out
 
 
+def piano_note(freq: float, dur: float, amp: float = 0.3, bright: float = 0.55,
+               hammer: float = 0.045) -> np.ndarray:
+    """어쿠스틱 피아노 근사 — 배음별 감쇠 + 아주 약한 해머 노이즈 (2026-11-21 추가).
+
+    사용자 요청 "BGM 을 잔잔한 음악으로" 에 맞춘 부드러운 건반 음색.
+    두 줄(미세 디튠)을 겹쳐 살짝 맥동하게 하고, 고배음일수록 빨리 사라져
+    둥글고 따뜻한 소리가 된다(고역 자극 없음).
+    """
+    n = int(dur * SR)
+    if n <= 0:
+        return np.zeros(0)
+    t = t_axis(n)
+    sig = np.zeros(n)
+    for dt in (-0.0007, 0.0007):
+        f = freq * (1.0 + dt)
+        for k, g, dec in (
+            (1, 1.00, 0.85), (2, 0.16 + 0.34 * bright, 1.45), (3, 0.26 * bright, 2.20),
+            (4, 0.14 * bright, 3.00), (5, 0.08 * bright, 3.80), (6, 0.05 * bright, 4.60),
+        ):
+            sig += g * np.sin(2 * np.pi * f * k * t) * np.exp(-t * dec)
+    sig /= 2.0
+    if hammer > 0:
+        rng = np.random.default_rng(int(freq * 97) % (2 ** 31 - 1))
+        nz = fft_filter(rng.uniform(-1, 1, n), "band", 700.0, order=1, cutoff2=2600.0)
+        sig += hammer * nz * np.exp(-t * 65.0)
+    sig *= (1.0 - np.exp(-t * 420.0))          # 약 5ms 의 부드러운 어택
+    return amp * sig
+
+
 def fm_bell(freq: float, dur: float, amp: float = 0.3, ratio: float = 3.01,
             index: float = 5.5, decay: float = 3.2) -> np.ndarray:
     """FM 벨 — 신비로운 카드팩 · 게이트 사운드"""
@@ -569,140 +598,126 @@ def build_bgm_intro() -> np.ndarray:
 # BGM ② 로비 — 밝고 세련된 판타지+현대 (100 BPM, 4/4, 12마디 = 28.8초)
 # ──────────────────────────────────────────────────────────────
 def build_bgm_lobby() -> np.ndarray:
-    bpm, beats, bars = 100.0, 4, 12
+    """BGM ② 로비 — 잔잔한 앰비언트 + 어쿠스틱 피아노 (72 BPM, 4/4, 8마디 = 26.7초).
+
+    2026-11-21 사용자 요청: "Tcg 게임 bgm 을 잔잔한 음악으로 바꿔줘".
+    이전 버전은 100 BPM 드럼 그루브 + 밝은 벨 멜로디였다. 이제는
+      · 드럼·하이햇·벨을 모두 빼고, 낮게 깔리는 패드 + 부드러운 피아노 아르페지오만 남긴다
+      · 마디마다 피아노 저음이 바닥을 잡고, 가운데는 8분음표 아르페지오가 천천히 흐른다
+      · 5~8마디에 짧은 피아노 선율이 얹혀 단조롭지 않게 한다
+      · 볼륨 피크를 0.70 으로 낮춰(다른 트랙 0.78~0.81) 배경처럼 조용히 깔린다
+    """
+    bpm, beats, bars = 72.0, 4, 8
     beat = 60.0 / bpm
     bar = beat * beats
     bus = Bus(bar * bars, loop=True)
 
+    # Cmaj9 → Am9 → Fmaj9 → G6 (마지막 → 처음이 IV–V–I 로 부드럽게 돌아온다)
     prog = [
-        (["C3", "E4", "G4", "B4"], "C2", ["C4", "E4", "G4", "B4", "D5"]),   # Cmaj7
-        (["A2", "C4", "E4", "G4"], "A1", ["A3", "C4", "E4", "G4", "B4"]),   # Am7
-        (["F2", "A3", "C4", "E4"], "F1", ["F3", "A3", "C4", "E4", "G4"]),   # Fmaj7
-        (["G2", "B3", "D4", "E4"], "G1", ["G3", "B3", "D4", "E4", "A4"]),   # G6
+        (["C3", "E3", "G3", "B3", "D4"], "C2", ["C4", "E4", "G4", "B4", "D5"]),   # Cmaj9
+        (["A2", "C3", "E3", "G3", "B3"], "A1", ["A3", "C4", "E4", "G4", "B4"]),   # Am9
+        (["F2", "A2", "C3", "E3", "G3"], "F1", ["F3", "A3", "C4", "E4", "G4"]),   # Fmaj9
+        (["G2", "B2", "D3", "E3"], "G1", ["G3", "B3", "D4", "E4", "A4"]),         # G6
     ]
 
     for b in range(bars):
-        notes, root, arp_notes = prog[b % 4]
+        notes, root, arp = prog[(b // 2) % 4]
         start = b * bar
 
-        # 따뜻한 패드 (한 마디)
-        for i, nm in enumerate(notes[1:]):
-            bus.add(pad_note(hz(nm), bar * 1.05, amp=0.085, attack=0.22, release=0.5),
-                    start, pan=-0.3 + 0.2 * i)
-        bus.add(sub_drone(hz(root), bar * 1.0, amp=0.13), start)
+        # 낮게 깔리는 따뜻한 패드 — 아주 느린 어택
+        for i, nm in enumerate(notes[2:]):
+            bus.add(pad_note(hz(nm), bar * 1.12, amp=0.040, attack=0.75, release=1.6),
+                    start, pan=-0.35 + 0.3 * i)
+        bus.add(sub_drone(hz(root), bar * 1.02, amp=0.045), start)
 
-        # 하프 아르페지오 — 16분음표 패턴 (루트-5-7-3)
-        pattern = [0, 2, 4, 3, 1, 4, 2, 3]
+        # 피아노 저음 — 마디의 바닥 (1박 · 3박)
+        bus.add(piano_note(hz(root) * 2.0, beat * 2.4, amp=0.20, bright=0.45),
+                start, pan=-0.05)
+        bus.add(piano_note(hz(root) * 2.0, beat * 1.9, amp=0.12, bright=0.42),
+                start + beat * 2.0, pan=-0.05)
+
+        # 피아노 아르페지오 — 8분음표 8개, 위로 흐르는 결
+        pattern = [0, 2, 4, 3, 2, 4, 3, 1]
         for k in range(8):
-            idx = pattern[k]
-            nm = arp_notes[idx % len(arp_notes)]
-            vel = 0.15 if k % 2 == 0 else 0.10
-            bus.add(ks_pluck(hz(nm), beat * 0.72, amp=vel, damp=0.9965, bright=0.6),
-                    start + k * beat * 0.5, pan=-0.25 + 0.12 * (idx % 3))
+            nm = arp[pattern[k] % len(arp)]
+            vel = 0.125 if k % 2 == 0 else 0.085
+            bus.add(piano_note(hz(nm), beat * 1.7, amp=vel, bright=0.5),
+                    start + k * beat * 0.5, pan=-0.22 + 0.1 * (k % 3))
 
-        # 베이스 — 1 · 3박
-        bus.add(sine_bass(hz(root), beat * 0.9, amp=0.30, punch=0.004), start, pan=0.0)
-        bus.add(sine_bass(hz(root), beat * 0.85, amp=0.24, punch=0.004), start + beat * 2, pan=0.0)
-
-        # 드럼 — 가벼운 그루브
-        bus.add(kick(0.3, amp=0.30, f0=110.0, f1=48.0), start, pan=0.0)
-        if b % 4 in (1, 3):
-            bus.add(kick(0.3, amp=0.24, f0=110.0, f1=48.0), start + beat * 2.5, pan=0.0)
-        bus.add(snare(0.2, amp=0.13, seed=40 + b % 4), start + beat, pan=0.06)
-        bus.add(snare(0.2, amp=0.15, seed=41 + b % 4), start + beat * 3, pan=0.06)
-        for k in range(8):
-            bus.add(hat(0.06, amp=0.055 if k % 2 else 0.075, seed=50 + k),
-                    start + k * beat * 0.5, pan=0.28)
-
-        # 벨 카운터 멜로디 — 5~8마디, 9~12마디에서 변화
-        if 4 <= b < 8:
-            mel = [("E5", 0.0), ("G5", 1.0), ("A5", 2.0), ("G5", 3.0)]
+        # 5~8마디 — 짧은 피아노 선율 (한 마디에 두 음만, 숨 쉬는 간격)
+        if b >= 4:
+            mel = (("E5", 0.0), ("D5", 1.5)) if b % 2 == 0 else (("C5", 0.5), ("B4", 2.0))
             for nm, pos in mel:
-                bus.add(fm_bell(hz(nm), 1.3, amp=0.075, ratio=2.0, index=2.4, decay=3.0),
-                        start + pos * beat, pan=0.18)
-        elif b >= 8:
-            mel = [("D5", 0.0), ("E5", 1.5), ("C5", 2.0), ("B4", 3.0)]
-            for nm, pos in mel:
-                bus.add(glock(hz(nm), 1.1, amp=0.06), start + pos * beat, pan=-0.2)
+                bus.add(piano_note(hz(nm), beat * 2.2, amp=0.115, bright=0.55),
+                        start + pos * beat, pan=0.16)
 
-    # 마지막 마디 프레이즈 마무리 (루프 앞 4마디로 자연스럽게 넘어가도록 상승 음형)
-    bus.add(glock(hz("G5"), 1.8, amp=0.07), bar * 11 + beat * 3.0, pan=0.2)
-    bus.add(fm_bell(hz("C6"), 2.0, amp=0.06, ratio=2.0, index=2.0, decay=2.4), bar * 11 + beat * 3.5, pan=-0.15)
+    # 마지막 마디 — 루프 첫 마디로 넘어가는 낮은 피아노 한 음
+    bus.add(piano_note(hz("G3"), beat * 2.6, amp=0.13, bright=0.4), bar * 7 + beat * 3.0, pan=-0.1)
 
-    return finalize_loop(bus, reverb_mix=0.26, low_cut=34.0, high_cut=10000.0, drive=1.1, peak=0.79,
-                         air_shelf_db=-4.2, air_shelf_hz=3600.0)
+    return finalize_loop(bus, reverb_mix=0.46, low_cut=36.0, high_cut=6800.0, drive=1.02, peak=0.70,
+                         air_shelf_db=-6.0, air_shelf_hz=3400.0)
 
 
 # ──────────────────────────────────────────────────────────────
 # BGM ③ 일반 전투 — 박진감 (140 BPM, 4/4, 16마디 = 27.4초)
 # ──────────────────────────────────────────────────────────────
 def build_bgm_battle() -> np.ndarray:
-    bpm, beats, bars = 140.0, 4, 16
+    """BGM ③ 일반 전투 — 잔잔한 긴장 (84 BPM, 4/4, 8마디 = 22.9초).
+
+    2026-11-21 사용자 요청: "Tcg 게임 bgm 을 잔잔한 음악으로".
+    이전 버전은 140 BPM 드럼·톱니 스타브·심벌로 시끄러웠다. 이제는
+      · 드럼·심벌을 전부 빼고 낮은 팀파니(심장 박동처럼 1·3박)만 아주 작게 남긴다
+      · 피아노 저음 오스티나토가 일정한 걸음을 만들고, 그 위에 패드가 두께를 더한다
+      · 5~8마디에 낮은 첼로 선율이 얹혀 긴장을 조금씩 올린다
+      · 볼륨 피크 0.66 — 로비(0.70)보다 살짝 아래, 여전히 배경음 수준
+    """
+    bpm, beats, bars = 84.0, 4, 8
     beat = 60.0 / bpm
     bar = beat * beats
     bus = Bus(bar * bars, loop=True)
 
-    # Em - C - G - D (4마디 × 4)
+    # Am - F - C - G  (4마디 × 2)
     prog = [
-        (["E3", "G3", "B3"], "E2", ["E3", "G3", "B3", "E4"]),
-        (["C3", "E3", "G3"], "C2", ["C3", "E3", "G3", "C4"]),
-        (["G2", "B2", "D3"], "G1", ["G2", "B2", "D3", "G3"]),
-        (["D3", "F#3", "A3"], "D2", ["D3", "F#3", "A3", "D4"]),
+        (["A2", "E3", "A3", "C4"], "A1", ["A3", "C4", "E4", "A4"]),
+        (["F2", "C3", "F3", "A3"], "F1", ["F3", "A3", "C4", "F4"]),
+        (["C3", "G3", "C4", "E4"], "C2", ["C4", "E4", "G4", "C5"]),
+        (["G2", "D3", "G3", "B3"], "G1", ["G3", "B3", "D4", "G4"]),
     ]
 
     for b in range(bars):
         notes, root, arp = prog[b % 4]
         start = b * bar
 
-        # 8분음표 베이스 오스티나토 (루트 · 옥타브)
-        for k in range(8):
-            nm = root if k % 4 in (0, 3) else transpose(root, 12 if k % 2 else 0)
-            amp = 0.30 if k % 4 == 0 else 0.21
-            bus.add(sine_bass(hz(nm), beat * 0.46, amp=amp, punch=0.002), start + k * beat * 0.5)
-
-        # 톱니 스타브 (오프비트 짧은 코드)
-        for k in (1, 3, 5, 7):
-            for i, nm in enumerate(notes):
-                bus.add(saw_lead(hz(nm), beat * 0.24, amp=0.055, cutoff=2600.0, attack=0.004),
-                        start + k * beat * 0.5, pan=-0.25 + 0.25 * i)
-
-        # 드럼
-        bus.add(kick(0.34, amp=0.55, f0=132.0, f1=45.0), start)
-        bus.add(kick(0.32, amp=0.46, f0=132.0, f1=45.0), start + beat * 2)
-        if b % 2 == 1:
-            bus.add(kick(0.3, amp=0.34, f0=132.0, f1=45.0), start + beat * 3.5)
-        bus.add(snare(0.24, amp=0.30, seed=60 + b % 5), start + beat)
-        bus.add(snare(0.24, amp=0.32, seed=61 + b % 5), start + beat * 3)
-        for k in range(8):
-            bus.add(hat(0.06, amp=0.10 if k % 2 else 0.13, open_hat=(k == 7 and b % 4 == 3), seed=70 + k),
-                    start + k * beat * 0.5, pan=0.3)
-        if b % 8 == 0:
-            bus.add(crash(1.4, amp=0.14, seed=80 + b), start, pan=-0.1)
-
-        # 패드 (배경 두께)
+        # 낮은 패드 — 배경 두께
         for i, nm in enumerate(notes):
-            bus.add(pad_note(hz(transpose(nm, 12)), bar * 1.02, amp=0.06, attack=0.12, release=0.25),
-                    start, pan=-0.3 + 0.3 * i)
+            bus.add(pad_note(hz(nm), bar * 1.06, amp=0.045, attack=0.35, release=1.0),
+                    start, pan=-0.3 + 0.2 * i)
+        bus.add(sub_drone(hz(root), bar * 1.0, amp=0.030), start)
 
-        # 리드 리프 — 5~8마디 / 13~16마디
-        if 4 <= b < 8:
-            riff = [("E5", 0.0, 0.5), ("G5", 0.5, 0.5), ("B5", 1.0, 0.75),
-                    ("A5", 2.0, 0.5), ("G5", 2.5, 0.5), ("E5", 3.0, 0.9)]
-            for nm, pos, dur in riff:
-                bus.add(saw_lead(hz(nm), beat * dur, amp=0.11, cutoff=4200.0), start + pos * beat, pan=0.12)
-        elif 12 <= b < 16:
-            riff = [("B4", 0.0, 0.5), ("D5", 0.5, 0.5), ("E5", 1.0, 0.5),
-                    ("G5", 1.5, 0.75), ("F#5", 2.5, 0.5), ("E5", 3.0, 0.9)]
-            for nm, pos, dur in riff:
-                bus.add(saw_lead(hz(nm), beat * dur, amp=0.10, cutoff=4200.0), start + pos * beat, pan=0.12)
+        # 피아노 저음 오스티나토 — 8분음표 4개 (루트 · 5도, 한 옥타브 위 110~220Hz 대)
+        for k, nm in enumerate([root, arp[1], root, arp[2]]):
+            bus.add(piano_note(hz(nm) * 2.0, beat * 1.5,
+                               amp=0.17 if k % 2 == 0 else 0.12, bright=0.45),
+                    start + k * beat, pan=-0.08)
 
-    # 마지막 마디 필인 — 다음 루프 첫 마디로 넘기는 드럼 롤
-    fill_start = bar * 15 + beat * 3.0
-    for i in range(4):
-        bus.add(snare(0.16, amp=0.16 + 0.03 * i, seed=90 + i), fill_start + i * beat * 0.25, pan=0.05)
+        # 낮은 팀파니 — 1박, 후반부는 3박에도 아주 작게
+        bus.add(timpani(hz(transpose("A1", 12)) if b % 4 == 0 else hz(root) * 2.0, 0.9, amp=0.13), start)
+        if b >= 4:
+            bus.add(timpani(hz(root) * 2.0, 0.7, amp=0.075), start + beat * 2.0)
 
-    return finalize_loop(bus, reverb_mix=0.16, low_cut=36.0, high_cut=10500.0, drive=1.35, peak=0.80,
-                         air_shelf_db=-3.4, air_shelf_hz=4000.0)
+        # 5~8마디 — 낮은 첼로 선율
+        if b >= 4:
+            line = [("E4", 0.0, 2.0), ("D4", 2.0, 1.0), ("C4", 3.0, 1.0)] if b % 2 == 0 \
+                else [("C4", 0.0, 1.5), ("B3", 1.5, 1.0), ("A3", 2.5, 1.5)]
+            for nm, pos, length in line:
+                bus.add(pad_note(hz(nm), beat * length * 1.1, amp=0.055, attack=0.12, release=0.5),
+                        start + pos * beat, pan=0.18)
+
+    # 마지막 마디 — 다음 루프 첫 마디(A)로 넘기는 낮은 피아노 한 음
+    bus.add(piano_note(hz("A2"), beat * 2.2, amp=0.13, bright=0.4), bar * 7 + beat * 3.0, pan=-0.1)
+
+    return finalize_loop(bus, reverb_mix=0.38, low_cut=36.0, high_cut=7200.0, drive=1.08, peak=0.66,
+                         air_shelf_db=-5.0, air_shelf_hz=3600.0)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -781,50 +796,45 @@ def build_bgm_boss() -> np.ndarray:
 # SFX
 # ──────────────────────────────────────────────────────────────
 def sfx_click() -> np.ndarray:
-    """UI 버튼·탭 — 따뜻한 중저음 우드 탭 (2026-11-19 재제작).
+    """UI 버튼·탭 — 낮고 묵직한 저음 탭 (2026-11-21 재제작).
 
-    사용자 요청: "메뉴 변경/클릭 시 효과음이 너무 하이톤이라 신경 쓰인다".
-    예전 소리는 1.18kHz·2.38kHz 사인에 고역 노이즈를 얹어 귀를 찌르는 유리 클릭이었다
-    (5kHz 위 에너지 3.0% · 최고 피크 0.96).
-
-    이제는 **속이 빈 목재를 톡 두드린 소리**다:
-      · 195→170Hz 우드 몸통 + 430Hz 2배음(아주 짧게) — 따뜻한 중저음 중심
-      · 700~2.6kHz 대역의 부드러운 타격(나무 표면의 "톡") — 11ms 만에 사라짐
-      · 5.2kHz 저역통과 + 2.6kHz 위 셀프 -2.5dB — 하이톤 자극 제거
-      · 어택 1.5ms · 전체 80ms · 피크 0.55 (다른 SFX 보다 한 단계 작게)
-
-    휴대폰 스피커에서 들리도록 중역 0.5~5kHz 성분은 남겼다(5kHz 위는 1% 미만).
+    사용자 요청: "메뉴 선택이나 전투 승리시 나오는 띠리링 소리는 너무 안 어울려 낮은 톤으로".
+    이전 버전(2026-11-19)은 195Hz 우드 몸통 + 700~2.6kHz 타격으로 "톡" 소리였는데,
+    이제는 **낮은 베이스가 속으로 울리는 소리**로 더 내린다:
+      · 150 → 105Hz 로 떨어지는 저음 몸통(60ms) + 210Hz 2배음(아주 짧게)
+      · 220~1.6kHz 의 짧은 속재질 타격(15ms) — 저음이 뭉개지지 않게만
+      · 1.8kHz 위는 저역통과로 제거 → 고음 '띠' 성분 없음
+      · 어택 1ms · 전체 110ms · 피크 0.62 (다른 SFX 보다 한 단계 작게)
     """
-    dur = 0.08
+    dur = 0.11
     n = int(dur * SR)
     t = t_axis(n)
     rng = np.random.default_rng(11)
 
-    # ① 우드 몸통 — 살짝 떨어지는 피치(195 → 170Hz)
-    pitch = 195.0 - 25.0 * (t / dur)
-    body = np.sin(2 * np.pi * np.cumsum(pitch) / SR) * np.exp(-t * 85.0)
+    # ① 저음 몸통 — 150 → 105Hz 로 살짝 떨어지는 묵직한 울림
+    pitch = 150.0 - 45.0 * (t / dur)
+    body = np.sin(2 * np.pi * np.cumsum(pitch) / SR) * np.exp(-t * 38.0)
 
-    # ② 2배음(430Hz) — 아주 짧게, 몸통에 따뜻한 색을 더한다
-    body += 0.22 * np.sin(2 * np.pi * 430.0 * t) * np.exp(-t * 130.0)
+    # ② 2배음 — 아주 짧게, 저음에 살집을 더한다
+    body += 0.30 * np.sin(2 * np.pi * 210.0 * t) * np.exp(-t * 70.0)
 
-    # ③ 나무 표면 타격 — 중역 노이즈 버스트 (11ms)
-    tick = fft_filter(rng.uniform(-1.0, 1.0, n), "band", 700.0, order=1, cutoff2=2600.0)
-    tick = tick * np.exp(-t * 95.0) * 2.2
+    # ③ 속재질 타격 — 저역대 노이즈 버스트 (15ms)
+    tick = fft_filter(rng.uniform(-1.0, 1.0, n), "band", 220.0, order=1, cutoff2=1600.0)
+    tick = tick * np.exp(-t * 78.0) * 1.7
 
     sig = body + tick
 
-    # ④ 고역 정리 — 5.2kHz 위는 저역통과로 걷어내고 2.6kHz 위는 -2.5dB
-    sig = fft_filter(sig, "low", 5200.0, order=2)
-    sig = high_shelf(sig, freq=2600.0, gain_db=-2.5, span=2000.0)
+    # ④ 고역 정리 — 1.8kHz 위는 저역통과로 걷어낸다(고음 자극 제거)
+    sig = fft_filter(sig, "low", 1800.0, order=2)
 
-    # ⑤ 부드러운 어택(1.5ms) · 끝단 클릭 방지 페이드(5ms)
-    sig *= (1.0 - np.exp(-t * 620.0))
-    k = int(0.005 * SR)
+    # ⑤ 어택(1ms) · 끝단 클릭 방지 페이드(6ms)
+    sig *= (1.0 - np.exp(-t * 900.0))
+    k = int(0.006 * SR)
     sig[-k:] *= np.linspace(1, 0, k)
 
-    # ⑥ 왼쪽을 살짝 먼저 — 나무가 손끝에서 울리는 느낌
-    right = np.concatenate([np.zeros(12), sig[: -12]]) * 0.94
-    return normalize(np.stack([sig, right]), 0.55)
+    # ⑥ 오른쪽을 살짝 늦춰 낮은 울림이 퍼지는 느낌
+    right = np.concatenate([np.zeros(14), sig[: -14]]) * 0.95
+    return normalize(np.stack([sig, right]), 0.62)
 
 
 def sfx_attack() -> np.ndarray:
@@ -945,31 +955,62 @@ def sfx_upgrade() -> np.ndarray:
 
 
 def sfx_victory() -> np.ndarray:
-    """전투 승리 — 장조 팡파르 (브라스 3화음 + 심벌)"""
-    dur = 1.9
+    """전투 승리 — 따뜻하고 묵직한 저음 화음 (2026-11-21 재제작).
+
+    사용자 요청: "전투 승리시 나오는 띠리링 소리는 너무 안 어울려 낮은 톤으로".
+    이전 버전은 브라스 팡파르 + 심벌 + G6·C7·E7 글록 반짝임(고음 '띠리링')이었다.
+    이제는 **낮은 화음이 가슴에 울리는 승리감**으로 바꾼다:
+      · 낮은 베이스(C2 → G1) 가 바닥을 잡고, Cmaj7 화음이 부드럽게 열린다
+      · 낮은 팀파니 2타 (C2 · G1) — 축포 대신 묵직한 심장 박동
+      · 낮은 첼로 스웰이 위를 덮어 따뜻하게 마무리
+      · 글록·심벌·브라스의 8kHz 이상 성분은 넣지 않고 3.6kHz 저역통과로 한 번 더 정리
+    """
+    dur = 2.2
     n = int(dur * SR)
     out = np.zeros(n)
-    # 상행 모티프 C-E-G-C
-    for i, (nm, pos) in enumerate((("C5", 0.0), ("E5", 0.13), ("G5", 0.26), ("C6", 0.40))):
-        seg = brass([hz(nm)], 0.30 if i < 3 else 0.9, amp=0.30, attack=0.008)
-        s = int(pos * SR)
-        out[s:s + min(seg.size, n - s)] += seg[: n - s]
-    # 마지막 화음 (C E G C)
-    chord = [hz(n) for n in ("C4", "E4", "G4", "C5", "E5")]
-    seg = brass(chord, 1.35, amp=0.20, attack=0.02)
-    s = int(0.40 * SR)
-    out[s:s + min(seg.size, n - s)] += seg[: n - s]
-    # 심벌 + 반짝임
-    cr = crash(1.6, amp=0.16, seed=77)
-    out[0:min(cr.size, n)] += cr[: n]
-    for i, nm in enumerate(("G6", "C7", "E7")):
-        s = int((0.45 + i * 0.08) * SR)
-        g = glock(hz(nm), 0.6, amp=0.08)
-        out[s:s + min(g.size, n - s)] += g[: n - s]
-    out = soft_clip(out, 1.3)
+
+    def put(sig: np.ndarray, pos: float, gain: float = 1.0) -> None:
+        s0 = int(pos * SR)
+        if s0 >= n or sig.size == 0:
+            return
+        seg = sig[: n - s0] * gain
+        out[s0:s0 + seg.size] += seg
+
+    # ① 낮은 베이스 — 처음에 한 번, 마지막에 5도로 받친다
+    #    (휴대폰·태블릿 스피커는 100Hz 아래를 거의 못 내므로 0.2 수준으로만 깐다)
+    put(sine_bass(hz("C2"), 1.2, amp=0.20, punch=0.01), 0.0)
+    put(sine_bass(hz("G1"), 1.0, amp=0.14, punch=0.01), 0.55)
+    put(sine_bass(hz("C2"), 1.3, amp=0.12, punch=0.01), 1.05)
+
+    # ② 따뜻한 화음 — Cmaj7 (C3 E3 G3 B3), 낮은 첼로처럼 부드럽게 열린다
+    for i, nm in enumerate(("C3", "E3", "G3", "B3")):
+        put(pad_note(hz(nm), 2.0, amp=0.30, attack=0.10, release=0.6), 0.06 + i * 0.05,
+            gain=1.0)
+    # 한 옥타브 위 화음 — 스피커에서도 들리게 중역을 채운다(밝지 않게, 따뜻한 배음만)
+    for i, nm in enumerate(("C4", "E4", "G4", "B4")):
+        put(pad_note(hz(nm), 1.6, amp=0.16, attack=0.16, release=0.5), 0.20 + i * 0.04)
+        put(piano_note(hz(nm), 1.5, amp=0.14, bright=0.4), 0.24 + i * 0.05)
+    # 낮은 피아노 한 음 — 화음의 중심을 잡아 준다
+    put(piano_note(hz("C3"), 1.8, amp=0.16, bright=0.35), 0.02)
+
+    # ③ 낮은 팀파니 2타 — 축포 대신 묵직한 박동
+    put(timpani(hz("C2") * 2.0, 1.1, amp=0.30), 0.0)
+    put(timpani(hz("G2"), 0.9, amp=0.22), 0.62)
+
+    # ④ 낮은 첼로 스웰 — 위를 덮는 따뜻한 공기
+    swell = np.sin(2 * np.pi * np.cumsum(110 * np.exp(-t_axis(n) * 0.9) + 62) / SR)
+    swell *= (1 - np.exp(-t_axis(n) * 4.0)) * np.exp(-t_axis(n) * 1.1)
+    out += 0.12 * swell
+
+    # ⑤ 정리 — 3.6kHz 위 제거 · 부드러운 클립 · 피크 0.8
+    out = fft_filter(out, "low", 3600.0, order=2)
+    out *= (1 - np.exp(-t_axis(n) * 300.0))
+    k = int(0.01 * SR)
+    out[-k:] *= np.linspace(1, 0, k)
+    out = soft_clip(out, 1.05)
     left = out
-    right = np.concatenate([np.zeros(80), out[: -80]]) * 0.96
-    return normalize(np.stack([left, right]), 0.9)
+    right = np.concatenate([np.zeros(70), out[: -70]]) * 0.96
+    return normalize(np.stack([left, right]), 0.80)
 
 
 def sfx_defeat() -> np.ndarray:
