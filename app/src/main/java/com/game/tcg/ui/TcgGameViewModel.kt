@@ -497,6 +497,13 @@ data class TcgGameState(
      * (해금되지 않은 복장은 기존 규칙대로 친밀도 단계까지만 허용)
      */
     val lobbyOutfits: Map<Int, VisualState> = emptyMap(),
+    /**
+     * 덱 편성 화면에서 열어 둔 캐릭터 시트의 카드 번호 (null = 시트 닫힘) — 2026-11-22 사용자 요청.
+     * 시트에서 그 캐릭터의 **복장 변경**과 **성장·강화 화면 바로가기**를 한 번에 할 수 있다.
+     */
+    val deckSheetCardId: Int? = null,
+    /** 덱 편성 시트에서 잠긴 복장을 눌렀을 때 띄우는 안내 (`🔒 일상 사복 — 친밀도 30 필요`) */
+    val deckOutfitLockMessage: String? = null,
     val gateEnergy: Int = TcgGameViewModel.GATE_ENERGY_START,
     val explorationCount: Int = 0,
     val lastExploration: ExplorationResult? = null,
@@ -721,6 +728,37 @@ data class TcgGameState(
         } else {
             ownedCards.firstOrNull { it.id == selectedCardId }?.bondLevel ?: 0
         }
+
+    /** 카드 번호의 친밀도 (No.3은 현실 파트너 친밀도와 합산) — 덱·로비·도감의 복장 판정 공통 규칙 */
+    fun bondForCard(cardId: Int): Int =
+        if (cardId == 3) {
+            maxOf(partnerBond, ownedCards.firstOrNull { it.id == 3 }?.bondLevel ?: 0)
+        } else {
+            ownedCards.firstOrNull { it.id == cardId }?.bondLevel ?: 0
+        }
+
+    /**
+     * 캐릭터의 지금 복장 — 로비·도감·덱 편성이 함께 쓰는 **캐릭터별 복장 기억**([lobbyOutfits]).
+     * 아직 고른 적이 없으면 전투복이고, 친밀도로 열리지 않은 복장은 그 단계까지로 낮춰 돌려준다.
+     */
+    fun outfitVisual(cardId: Int): VisualState {
+        val remembered = lobbyOutfits[cardId] ?: VisualState.BATTLE
+        val bond = bondForCard(cardId)
+        return if (AffinityRules.isVisualUnlocked(remembered, bond)) remembered
+        else AffinityRules.visualFor(bond)
+    }
+
+    /** 이 친밀도에서 고를 수 있는 복장 목록 (전투·미니어처는 친밀도와 무관하게 항상 열린다) */
+    fun unlockedOutfitVisuals(cardId: Int): List<VisualState> =
+        AffinityRules.unlockedVisuals(bondForCard(cardId))
+
+    /** 덱 편성 시트에서 열어 둔 캐릭터 (null = 시트 닫힘) */
+    val deckSheetCard: TcgCard?
+        get() = deckSheetCardId?.let { id -> ownedCards.firstOrNull { it.id == id } }
+
+    /** 덱 편성 시트 캐릭터의 친밀도 */
+    val deckSheetCardBond: Int
+        get() = deckSheetCardId?.let { bondForCard(it) } ?: 0
 
     /** 차원 균열 에너지 최대치 */
     val gateEnergyMax: Int get() = TcgGameViewModel.GATE_ENERGY_MAX
@@ -1276,12 +1314,7 @@ class TcgGameViewModel(
         }
     }
 
-    private fun bondOf(s: TcgGameState, cardId: Int): Int =
-        if (cardId == 3) {
-            maxOf(s.partnerBond, s.ownedCards.firstOrNull { it.id == 3 }?.bondLevel ?: 0)
-        } else {
-            s.ownedCards.firstOrNull { it.id == cardId }?.bondLevel ?: 0
-        }
+    private fun bondOf(s: TcgGameState, cardId: Int): Int = s.bondForCard(cardId)
 
     // ──────────────────────────────────────────────────────────────
     // 탐색 — 차원 틈새 탐색 · 기억 파편 수색 · 랜덤 조우
@@ -2482,6 +2515,96 @@ class TcgGameViewModel(
         undeployFromParty(member.card.id)
     }
 
+    // ──────────────────────────────────────────────────────────────
+    // 덱 편성 화면 — 편성 캐릭터 시트 (복장 변경 · 성장 바로가기)
+    //   2026-11-22 사용자 요청:
+    //    ① 덱에 편성된 캐릭터의 복장을 덱 편성 화면에서 바로 바꿀 수 있게
+    //    ② 덱 편성 화면에서 캐릭터를 고르면 그 캐릭터가 선택된 채로 성장·강화 화면으로 이동
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 덱 편성 화면에서 편성 슬롯의 캐릭터를 탭해 **캐릭터 시트**를 연다.
+     * 시트는 복장 4종(해금된 것만)과 성장·강화 바로가기, 덱에서 빼기를 담는다.
+     */
+    fun openDeckCharacterSheet(cardId: Int) {
+        updateState { s ->
+            val owned = s.ownedCards.firstOrNull { it.id == cardId }
+                ?: return@updateState s.copy(
+                    statusMessage = "[덱 편성] 아직 계약하지 않은 캐릭터입니다. (도감 #$cardId)"
+                )
+            val name = deckCardName(cardId) ?: owned.name
+            s.copy(
+                deckSheetCardId = cardId,
+                deckOutfitLockMessage = null,
+                statusMessage = "[덱 편성] $name — 복장 변경 · 성장·강화 바로가기"
+            )
+        }
+    }
+
+    /** 덱 편성 캐릭터 시트 닫기 */
+    fun closeDeckCharacterSheet() {
+        updateState { s ->
+            if (s.deckSheetCardId == null && s.deckOutfitLockMessage == null) s
+            else s.copy(deckSheetCardId = null, deckOutfitLockMessage = null)
+        }
+    }
+
+    /**
+     * 덱 편성 화면에서 편성 캐릭터의 **복장**을 바꾼다.
+     *
+     * 로비·도감과 같은 캐릭터별 복장 기억([TcgGameState.lobbyOutfits])을 쓰므로
+     * 여기서 바꾸면 덱 편성 화면·메인 로비·도감에 모두 같은 복장이 보인다.
+     * 잠금 규칙은 기존과 같다 — 일상 30 · 데이트 70 · 미니어처는 항상.
+     */
+    fun selectDeckOutfit(visual: VisualState) {
+        updateState { s ->
+            val cardId = s.deckSheetCardId
+                ?: return@updateState s.copy(statusMessage = "[덱 편성] 복장을 바꿀 캐릭터를 먼저 골라 주세요.")
+            if (s.ownedCards.none { it.id == cardId }) return@updateState s
+            val bond = s.bondForCard(cardId)
+            if (!AffinityRules.isVisualUnlocked(visual, bond)) {
+                val locked = AffinityRules.lockLabel(visual, bond)
+                return@updateState s.copy(
+                    deckOutfitLockMessage = locked,
+                    statusMessage = "[잠금] ${locked ?: visual.displayName}"
+                )
+            }
+            val name = deckCardName(cardId) ?: "#$cardId"
+            s.copy(
+                lobbyOutfits = s.lobbyOutfits + (cardId to visual),
+                // 로비 대표 캐릭터라면 로비 연출도 같은 복장으로
+                lobbyVisual = if (s.lobbyHeroId == cardId) visual else s.lobbyVisual,
+                // 도감에서 그 캐릭터를 보고 있었다면 도감 모습도 함께 맞춘다
+                selectedVisual = if (s.selectedCardId == cardId) visual else s.selectedVisual,
+                deckOutfitLockMessage = null,
+                statusMessage = "[덱 편성] $name — ${visual.displayName} 복장으로 변경"
+            )
+        }
+    }
+
+    /**
+     * 덱 편성 화면 → **성장·강화 화면 바로가기**. 그 캐릭터가 성장 대상으로 선택된 채 열린다.
+     * (카드를 따로 찾지 않고도 바로 강화·연성·장비 화면으로 갈 수 있게 — 2026-11-22 요청)
+     */
+    fun openGrowthFromDeck(cardId: Int) {
+        if (_uiState.value.ownedCards.none { it.id == cardId }) {
+            updateState { s -> s.copy(statusMessage = "[성장] 보유하지 않은 카드입니다. (도감 #$cardId)") }
+            return
+        }
+        selectGrowthCard(cardId)
+        closeDeckCharacterSheet()
+        openScreen(LobbyDestination.GROWTH)
+        val name = deckCardName(cardId) ?: "#$cardId"
+        updateState { s ->
+            s.copy(statusMessage = "[성장] $name — 강화·연성·장비로 전투력을 올리세요.")
+        }
+    }
+
+    /** 캐릭터 표시 이름 (칭호 + 이름 → 프로필 표시 이름 → 카드 이름 순) */
+    private fun deckCardName(cardId: Int): String? =
+        TcgGameViewModel.profileOf(cardId)?.displayName
+            ?: (_uiState.value.ownedCards.firstOrNull { it.id == cardId }?.name)
+
     /** 훈련(연습) — 경험치 +120. 덱 해금(Lv.5/10/15)을 바로 확인할 수 있게 둔 테스트·확인용 경로. */
     fun trainForExp(amount: Int = PlayerProgress.EXP_TRAINING) {
         grantPlayerExp(amount)
@@ -3034,7 +3157,8 @@ class TcgGameViewModel(
             val owned = s.ownedCards.any { it.id == cardId }
             s.copy(
                 selectedCardId = cardId,
-                selectedVisual = VisualState.BATTLE,
+                // 2026-11-22: 덱 편성·로비에서 골라 둔 복장을 도감에서도 그대로 보여 준다 (같은 기억)
+                selectedVisual = s.outfitVisual(cardId),
                 visualLockMessage = null,
                 gazeMessage = null,
                 synthesisMessage = null,
@@ -3053,7 +3177,13 @@ class TcgGameViewModel(
                     statusMessage = "[잠금] ${locked ?: visual.displayName}"
                 )
             }
-            s.copy(selectedVisual = visual, visualLockMessage = null)
+            s.copy(
+                selectedVisual = visual,
+                // 2026-11-22: 도감에서 고른 복장도 캐릭터별 복장 기억에 남겨 덱 편성·로비와 동기화
+                lobbyOutfits = s.lobbyOutfits + (s.selectedCardId to visual),
+                lobbyVisual = if (s.lobbyHeroId == s.selectedCardId) visual else s.lobbyVisual,
+                visualLockMessage = null
+            )
         }
     }
 

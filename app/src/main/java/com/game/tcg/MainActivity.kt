@@ -332,7 +332,12 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                             onOpenBattle = { viewModel.openScreen(LobbyDestination.BATTLE) },
                             onGaze = { viewModel.gazeAtDemonLord() },
                             onPurify = { viewModel.purify() },
-                            onSetLobbyHero = { id -> viewModel.selectLobbyHero(id) }
+                            onSetLobbyHero = { id -> viewModel.selectLobbyHero(id) },
+                            // 2026-11-22: 덱 편성 화면에서 복장 변경 · 성장 화면 바로가기
+                            onOpenDeckCard = { id -> audio.click(); viewModel.openDeckCharacterSheet(id) },
+                            onCloseDeckSheet = { viewModel.closeDeckCharacterSheet() },
+                            onSelectDeckOutfit = { visual -> viewModel.selectDeckOutfit(visual) },
+                            onOpenGrowthFromDeck = { id -> audio.click(); viewModel.openGrowthFromDeck(id) }
                         )
                     }
                 }

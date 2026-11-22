@@ -62,8 +62,16 @@ registry_src = read(SRC / "ui/CharacterArtRegistry.kt")
 roster_ids = sorted({int(m) for m in re.findall(r"^\s*id\s*=\s*(\d+)\s*,", card_catalog, re.M)})
 midboss_ids = sorted({int(m) for m in re.findall(r"^\s*id\s*=\s*(\d+)\s*,", mid_boss, re.M)})
 
-if len(roster_ids) != 180:
-    errors.append(f"CardCatalog 캐릭터 수가 180명이 아님: {len(roster_ids)}명")
+# 로스터 크기 기준은 CardCatalog.ROSTER_SIZE 한 곳에서 읽는다 (하드코딩 금지)
+m = re.search(r"const\s+val\s+ROSTER_SIZE\s*:\s*Int\s*=\s*(\d+)", card_catalog)
+if not m:
+    errors.append("CardCatalog.ROSTER_SIZE 상수를 찾지 못함")
+    ROSTER_SIZE = 0
+else:
+    ROSTER_SIZE = int(m.group(1))
+
+if len(roster_ids) != ROSTER_SIZE:
+    errors.append(f"CardCatalog 캐릭터 수가 ROSTER_SIZE({ROSTER_SIZE})와 다름: {len(roster_ids)}명")
 if len(midboss_ids) != 6:
     errors.append(f"MidBossCatalog 캐릭터 수가 6명이 아님: {len(midboss_ids)}명")
 if set(roster_ids) & set(midboss_ids):
