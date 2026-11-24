@@ -279,6 +279,6 @@ class DeckOutfitAndGrowthShortcutTest {
         val state = vm.uiState.value
         assertNull("슬롯이 비워진다", state.memberAt(target.slotIndex))
         assertTrue(state.battleReserve.any { it.id == target.card.id })
-        assertTrue("카드는 182명 로스터 안에 그대로 있다", CardCatalog.ALL.any { it.id == target.card.id })
+        assertTrue("카드는 192명 로스터 안에 그대로 있다", CardCatalog.ALL.any { it.id == target.card.id })
     }
 }

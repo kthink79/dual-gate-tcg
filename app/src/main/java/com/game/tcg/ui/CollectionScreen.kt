@@ -1,6 +1,8 @@
 package com.game.tcg.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +17,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
@@ -22,10 +26,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +58,11 @@ import com.game.tcg.core.model.VisualState
  *     아래로 길게 스크롤하지 않아도 되고, 선택한 캐릭터가 그대로 이어진다
  *  ④ 목록은 칩 나열 대신 **2:3 썸네일 그리드**(태블릿에서는 열 수 자동 증가)
  *  ⑤ 설명문은 짧은 라벨·아이콘 위주로 정리
+ *
+ * 2026-11-24 사용자 요청 — 보유 캐릭터를 **더 크게·편하게** 감상:
+ *  ⑥ 썸네일 그리드를 2:3 그대로 유지한 채 **크게**(열 수 축소·높이 확대·디코딩 해상도 상향)
+ *  ⑦ 상세 원화를 **좌우 스와이프(HorizontalPager)·‹ › 버튼**으로 보유 캐릭터 연속 탐색
+ *  ⑧ 원화를 누르면 **4종 전체화면 뷰어**(핀치 확대·드래그·더블 탭) — [CharacterArtViewer]
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -88,6 +99,10 @@ fun CollectionScreen(
     val selectedVideoCount = remember(state.selectedCardId) {
         CharacterVideoRegistry.videoCount(context, state.selectedCardId)
     }
+
+    // 🔍 4종 전체화면 뷰어 (2026-11-24) — 원화를 누르면 열린다
+    var viewerOpen by remember { mutableStateOf(false) }
+    var viewerBrowseIds by remember { mutableStateOf<List<Int>>(emptyList()) }
 
     ScreenFrame {
         // ── 머리: 제목 + 보유 수 ──
@@ -171,17 +186,18 @@ fun CollectionScreen(
             accent = TcgColors.Abyss
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val columns = ResponsiveLayout.gridColumns(maxWidth.value)
+                // 2026-11-24: 타일을 크게 — 최소 타일 폭을 올려 열 수를 줄이고(휴대폰 2열) 높이를 키운다
+                val columns = ResponsiveLayout.gridColumns(maxWidth.value, minTileWidthDp = 132f)
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(columns),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(if (maxWidth.value >= 600f) 300.dp else 248.dp)
+                        .height(if (maxWidth.value >= 600f) 460.dp else 356.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(TcgColors.Background)
                         .padding(6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     groups.forEach { group ->
                         if (viewMode != CatalogViewMode.NUMBER) {
@@ -224,7 +240,7 @@ fun CollectionScreen(
                                 dimmed = !owned,
                                 statusBadge = if (owned) null else "미보유",
                                 statusBadgeColor = TcgColors.Line,
-                                targetWidthPx = 200,
+                                targetWidthPx = 360,
                                 onClick = { onSelectCard(item.cardId) }
                             )
                         }
@@ -241,6 +257,12 @@ fun CollectionScreen(
                 isOwned = isOwned,
                 profileTitle = profile?.title,
                 isDemonLordCard = isDemonLordCard,
+                browseIds = shownProfiles.map { it.cardId },
+                onSelectCard = onSelectCard,
+                onOpenViewer = {
+                    viewerBrowseIds = shownProfiles.map { it.cardId }
+                    viewerOpen = true
+                },
                 onSelectVisual = onSelectVisual,
                 onGaze = onGaze,
                 onPurify = onPurify,
@@ -279,6 +301,19 @@ fun CollectionScreen(
             cardId = playingCardId,
             assetPath = playingPath,
             onClose = { videoCardId = null }
+        )
+    }
+
+    // ── 🔍 4종 전체화면 뷰어 (2026-11-24) ──
+    if (viewerOpen) {
+        CharacterArtViewer(
+            cardId = state.selectedCardId,
+            cardName = selected.name,
+            bondLevel = state.selectedCardBond,
+            initialVisual = state.selectedVisual,
+            browseIds = viewerBrowseIds.ifEmpty { state.ownedCardIds.toList() },
+            onSelectCard = onSelectCard,
+            onClose = { viewerOpen = false }
         )
     }
 }
@@ -336,6 +371,9 @@ private fun CatalogTab(
     isOwned: Boolean,
     profileTitle: String?,
     isDemonLordCard: Boolean,
+    browseIds: List<Int>,
+    onSelectCard: (Int) -> Unit,
+    onOpenViewer: () -> Unit,
     onSelectVisual: (VisualState) -> Unit,
     onGaze: () -> Unit,
     onPurify: () -> Unit,
@@ -360,19 +398,68 @@ private fun CatalogTab(
                 .aspectRatio(2f / 3f)
                 .clip(RoundedCornerShape(14.dp))
         ) {
-            CardArtImage(
-                cardId = selected.id,
+            // 2026-11-24 — 좌우 스와이프로 보유 캐릭터를 연속 탐색, 누르면 4종 전체화면 뷰어
+            CharacterCardPager(
+                browseIds = browseIds,
+                selectedId = selected.id,
                 visual = state.selectedVisual,
-                contentDescription = selected.name,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
-                targetWidthPx = 720
+                onSelectCard = onSelectCard,
+                onOpenViewer = { onOpenViewer() },
+                modifier = Modifier.fillMaxSize()
             )
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xDD0B0A12))))
             )
+
+            // ‹ › 빠른 넘기기 (좌우 스와이프와 같은 동작)
+            val browseIndex = browseIds.indexOf(selected.id)
+            if (browseIndex > 0) {
+                CircleNavButton(
+                    label = "‹",
+                    modifier = Modifier.align(Alignment.CenterStart).padding(start = 6.dp)
+                ) { onSelectCard(browseIds[browseIndex - 1]) }
+            }
+            if (browseIndex >= 0 && browseIndex < browseIds.lastIndex) {
+                CircleNavButton(
+                    label = "›",
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 6.dp)
+                ) { onSelectCard(browseIds[browseIndex + 1]) }
+            }
+
+            // 🔍 4종 전체화면 감상
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0xCC120E1C))
+                    .border(1.dp, TcgColors.Gold.copy(alpha = 0.7f), RoundedCornerShape(50))
+                    .clickable { onOpenViewer() }
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            ) {
+                Text("🔍 크게 보기", color = TcgColors.Gold, fontSize = TcgType.TILE_MARK.sp, fontWeight = FontWeight.Bold)
+            }
+
+            // 현재 위치 표시 (몇 번째 / 전체)
+            if (browseIds.isNotEmpty() && browseIndex >= 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color(0xCC120E1C))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        "${browseIndex + 1} / ${browseIds.size}",
+                        color = TcgColors.Muted,
+                        fontSize = TcgType.TILE_MARK.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
             if (!isOwned) {
                 Box(
                     modifier = Modifier
@@ -432,6 +519,13 @@ private fun CatalogTab(
         if (state.visualLockMessage != null) {
             Text(state.visualLockMessage, color = TcgColors.Danger, fontSize = TcgType.LABEL.sp)
         }
+        // 2026-11-24: 4종을 각각 크게 — 원화 탭과 같은 동작의 안내 버튼
+        ActionTile(
+            label = "🔍 ${visualShortLabel(state.selectedVisual)} 원화 크게 보기 · 4종 감상",
+            hint = "핀치 확대 · 더블 탭 · 드래그 이동",
+            accent = TcgColors.Gold,
+            onClick = onOpenViewer
+        )
 
         // 스탯
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -580,5 +674,88 @@ private fun StatChip(label: String, value: String, color: Color, modifier: Modif
     ) {
         Text(label, color = TcgColors.Muted, fontSize = TcgType.TILE_MARK.sp, maxLines = 1)
         Text(value, color = color, fontSize = TcgType.BODY_SMALL.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+/**
+ * 상세 원화 페이저 — 2026-11-24 사용자 요청 "보유 캐릭터들을 다 둘러 볼때 편하게".
+ *
+ * 좌우 스와이프로 다음/이전 캐릭터의 같은 복장을 바로 보여 주고, 페이지가 바뀌면
+ * 선택 캐릭터를 갱신한다(도감·강화·합성 탭이 모두 같은 캐릭터를 쓴다).
+ * 원화를 한 번 누르면 4종 전체화면 뷰어가 열린다.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun CharacterCardPager(
+    browseIds: List<Int>,
+    selectedId: Int,
+    visual: VisualState,
+    onSelectCard: (Int) -> Unit,
+    onOpenViewer: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (browseIds.isEmpty()) {
+        CardArtImage(
+            cardId = selectedId,
+            visual = visual,
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = modifier,
+            targetWidthPx = 720
+        )
+        return
+    }
+    val startIndex = browseIds.indexOf(selectedId).coerceAtLeast(0)
+    // 필터가 바뀌어도 페이지 수가 최신 목록을 따르도록 최신 값을 참조한다
+    val latestIds by rememberUpdatedState(browseIds)
+    val pagerState = rememberPagerState(initialPage = startIndex) { latestIds.size }
+
+    LaunchedEffect(selectedId, browseIds.size) {
+        val target = browseIds.indexOf(selectedId)
+        if (target >= 0 && pagerState.currentPage != target) pagerState.scrollToPage(target)
+    }
+    LaunchedEffect(pagerState.currentPage, browseIds.size) {
+        browseIds.getOrNull(pagerState.currentPage)?.let { id ->
+            if (id != selectedId) onSelectCard(id)
+        }
+    }
+
+    HorizontalPager(
+        state = pagerState,
+        modifier = modifier,
+        pageSpacing = 10.dp
+    ) { page ->
+        val id = browseIds.getOrNull(page) ?: selectedId
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable { onOpenViewer() }
+        ) {
+            CardArtImage(
+                cardId = id,
+                visual = visual,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+                targetWidthPx = 720
+            )
+        }
+    }
+}
+
+/** 원화 위에 얹는 ‹ › 원형 넘기기 버튼 */
+@Composable
+private fun CircleNavButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier = modifier
+            .width(38.dp)
+            .height(38.dp)
+            .clip(RoundedCornerShape(50))
+            .background(Color(0xCC120E1C))
+            .border(1.dp, TcgColors.Violet.copy(alpha = 0.7f), RoundedCornerShape(50))
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = TcgColors.Text, fontSize = TcgType.SECTION.sp, fontWeight = FontWeight.Bold)
     }
 }

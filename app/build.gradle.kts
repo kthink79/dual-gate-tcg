@@ -12,9 +12,9 @@ android {
         applicationId = "com.game.tcg"
         minSdk = 26
         targetSdk = 35
-        // 2026-11-22: 로스터 182명(181 미라 · 182 키라나) · 포즈 교정 3건 · 덱 편성 복장/성장 바로가기
-        versionCode = 2
-        versionName = "0.2.0"
+        // 2026-11-24: 로스터 192명(190~199 신규 10인) · 영상 12편(누적 120) · 캐릭터 관리 갤러리/확대 뷰어
+        versionCode = 3
+        versionName = "0.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

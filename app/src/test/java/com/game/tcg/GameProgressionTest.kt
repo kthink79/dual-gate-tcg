@@ -890,7 +890,7 @@ class GameProgressionTest {
             assertEquals(destination, vm.uiState.value.currentScreen)
             assertTrue(vm.uiState.value.statusMessage.startsWith("[${destination.label}]"))
         }
-        assertEquals("중간 보스는 로비 순환 순서 마지막에 붙는다", 188, TcgGameViewModel.LOBBY_HERO_ORDER.size)
+        assertEquals("중간 보스는 로비 순환 순서 마지막에 붙는다", 198, TcgGameViewModel.LOBBY_HERO_ORDER.size)
         assertEquals((170..175).toList(), TcgGameViewModel.LOBBY_HERO_ORDER.takeLast(6))
     }
 }

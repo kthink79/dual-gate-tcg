@@ -3670,7 +3670,7 @@ class TcgGameViewModel(
         const val DATE_LOOK_UNLOCK_BOND: Int = AffinityRules.DATE_UNLOCK_BOND
 
         /**
-         * 메인 로비 좌우 전환 순서 — 스타팅 3인방 → 나머지 플레이 가능 167인 → 중간 보스 6인.
+         * 메인 로비 좌우 전환 순서 — 스타팅 3인방 → 나머지 플레이 가능 189인 → 중간 보스 6인.
          * (보유하지 않은 카드는 [TcgGameState.lobbyRoster]에서 걸러진다.)
          */
         val LOBBY_HERO_ORDER: List<Int> =

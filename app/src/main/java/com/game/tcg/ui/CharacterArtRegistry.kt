@@ -6,7 +6,7 @@ import com.game.tcg.core.model.VisualState
 /**
  * 카드 번호 + 4종 비주얼 상태 → 드로어블 리소스 매핑 테이블.
  *
- * 2026-11-22 기준 **188명 × 4비주얼 = JPG 752장**
+ * 2026-11-24 기준 **198명 × 4비주얼 = JPG 792장**
  * (`res/drawable-nodpi/char_{번호}_{battle|casual|date|miniature}.jpg`)을 정식 등록했다.
  * 도감·로비·전투·현실 교감·의상 선택의 모든 이미지는 이 표를 통해서만 해석된다.
  * (표에 없는 번호는 null → 호출부가 플레이스홀더로 대체한다.)
@@ -1112,6 +1112,66 @@ object CharacterArtRegistry {
             R.drawable.char_189_casual,
             R.drawable.char_189_date,
             R.drawable.char_189_miniature
+        ),
+        190 to intArrayOf(
+            R.drawable.char_190_battle,
+            R.drawable.char_190_casual,
+            R.drawable.char_190_date,
+            R.drawable.char_190_miniature
+        ),
+        191 to intArrayOf(
+            R.drawable.char_191_battle,
+            R.drawable.char_191_casual,
+            R.drawable.char_191_date,
+            R.drawable.char_191_miniature
+        ),
+        192 to intArrayOf(
+            R.drawable.char_192_battle,
+            R.drawable.char_192_casual,
+            R.drawable.char_192_date,
+            R.drawable.char_192_miniature
+        ),
+        193 to intArrayOf(
+            R.drawable.char_193_battle,
+            R.drawable.char_193_casual,
+            R.drawable.char_193_date,
+            R.drawable.char_193_miniature
+        ),
+        194 to intArrayOf(
+            R.drawable.char_194_battle,
+            R.drawable.char_194_casual,
+            R.drawable.char_194_date,
+            R.drawable.char_194_miniature
+        ),
+        195 to intArrayOf(
+            R.drawable.char_195_battle,
+            R.drawable.char_195_casual,
+            R.drawable.char_195_date,
+            R.drawable.char_195_miniature
+        ),
+        196 to intArrayOf(
+            R.drawable.char_196_battle,
+            R.drawable.char_196_casual,
+            R.drawable.char_196_date,
+            R.drawable.char_196_miniature
+        ),
+        197 to intArrayOf(
+            R.drawable.char_197_battle,
+            R.drawable.char_197_casual,
+            R.drawable.char_197_date,
+            R.drawable.char_197_miniature
+        ),
+        198 to intArrayOf(
+            R.drawable.char_198_battle,
+            R.drawable.char_198_casual,
+            R.drawable.char_198_date,
+            R.drawable.char_198_miniature
+        ),
+        199 to intArrayOf(
+            R.drawable.char_199_battle,
+            R.drawable.char_199_casual,
+            R.drawable.char_199_date,
+            R.drawable.char_199_miniature
         ),
         170 to intArrayOf(
             R.drawable.char_170_battle,

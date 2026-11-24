@@ -17,13 +17,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 188명 카드 자산 검증 — 플레이 가능 182명 + 중간 보스 6명(No.170~175).
+ * 198명 카드 자산 검증 — 플레이 가능 192명 + 중간 보스 6명(No.170~175).
  *
- * - 도감 카탈로그 182명 데이터(이름·칭호·ATK·DEF·속성·코스트·스킬) 완비
+ * - 도감 카탈로그 192명 데이터(이름·칭호·ATK·DEF·속성·코스트·스킬) 완비
  *   (2026-11-19: No.176 하린 · 177 시온 · 185~189 신규 5인 / 2026-11-20: 178 메이린 · 179 린 /
- *    2026-11-21: 180 카일라 / 2026-11-22: 181 미라 · 182 키라나 합류)
+ *    2026-11-21: 180 카일라 / 2026-11-22: 181 미라 · 182 키라나 /
+ *    2026-11-24: 190 월향 · 191 청아 · 192 카구라 · 193 오렐리아 · 194 이졸데 · 195 로잘린 ·
+ *    196 아리아 · 197 엘리시아 · 198 위에친 · 199 하나 합류)
  * - 중간 보스 6명(170~175) 기록·아트(3페어 18장) 등록
- * - 4종 비주얼 리소스 매핑 누락 0건 (188 × 4 = 752장)
+ * - 4종 비주얼 리소스 매핑 누락 0건 (198 × 4 = 792장)
  * - 전체 로스터를 지정한 상태에서 로비 순환 · 도감 필터 · 서약 덱 · 전투 편성 · 탐색 조우
  *
  * (게임 시작은 2026-11-16 사용자 확정으로 **저코스트 3장**만 보유한다 —
@@ -41,19 +43,20 @@ class FullRoster170Test {
     // ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `카탈로그는 1번부터 169번 그리고 신규 12인과 184번까지 정확히 182명이다`() {
+    fun `카탈로그는 1번부터 169번 그리고 신규 22인과 184번까지 정확히 192명이다`() {
         val expected = (1..169).toList() +
-            listOf(176, 177, 178, 179, 180, 181, 182, 184, 185, 186, 187, 188, 189)
+            listOf(176, 177, 178, 179, 180, 181, 182, 184, 185, 186, 187, 188, 189) +
+            (190..199).toList()
 
-        assertEquals(182, CardCatalog.ALL.size)
+        assertEquals(192, CardCatalog.ALL.size)
         assertEquals(expected, CardCatalog.ALL.map { it.id })
-        assertEquals(182, CardCatalog.ROSTER_SIZE)
+        assertEquals(192, CardCatalog.ROSTER_SIZE)
         assertEquals("플레이 가능 로스터에 중간 보스는 없다", 0,
             CardCatalog.ALL.count { it.isMidBoss })
     }
 
     @Test
-    fun `182명 전원이 이름 칭호 스탯 속성 스킬을 갖추고 전체 이름이 겹치지 않는다`() {
+    fun `192명 전원이 이름 칭호 스탯 속성 스킬을 갖추고 전체 이름이 겹치지 않는다`() {
         val all = CardCatalog.ALL
 
         all.forEach { record ->
@@ -68,8 +71,8 @@ class FullRoster170Test {
         }
 
         assertEquals(
-            "카드에 표시되는 '칭호 + 이름'은 182명 모두 달라야 구분된다",
-            182,
+            "카드에 표시되는 '칭호 + 이름'은 192명 모두 달라야 구분된다",
+            192,
             all.map { it.fullName }.toSet().size
         )
         assertEquals(
@@ -78,21 +81,24 @@ class FullRoster170Test {
             all.map { it.element }.toSet()
         )
         assertEquals(
-            "플레이 가능 182명은 친밀도 0에서 합류한다 (2026-11-16 개편 — 전투 출전으로 30/70/100 해금)",
+            "플레이 가능 192명은 친밀도 0에서 합류한다 (2026-11-16 개편 — 전투 출전으로 30/70/100 해금)",
             0,
             all.map { it.bondSeed }.toSet().single()
         )
     }
 
     @Test
-    fun `신규 배치는 155~169 와 신규 12인이고 기존 155인과 합쳐 182명이다`() {
+    fun `신규 배치는 155~169 와 신규 22인이고 기존 155인과 합쳐 192명이다`() {
         assertEquals(listOf(155, 169), listOf(CardCatalog.NEW_WAVE_RANGE.first, CardCatalog.NEW_WAVE_RANGE.last))
-        // 155~169(15) + 176·177·185~189(7) + 178·179(2) + 180(1) + 181·182(2) = 27
-        assertEquals(27, CardCatalog.NEW_WAVE_IDS.size)
+        // 155~169(15) + 176·177·185~189(7) + 178·179(2) + 180(1) + 181·182(2) + 190~199(10) = 37
+        assertEquals(37, CardCatalog.NEW_WAVE_IDS.size)
         assertEquals(155, CardCatalog.LEGACY_IDS.size)
-        assertEquals(182, CardCatalog.NEW_WAVE_IDS.size + CardCatalog.LEGACY_IDS.size)
+        assertEquals(192, CardCatalog.NEW_WAVE_IDS.size + CardCatalog.LEGACY_IDS.size)
         assertEquals(155, CardCatalog.newWave().first().id)
-        assertEquals(listOf(176, 177, 178, 179, 180, 181, 182, 185, 186, 187, 188, 189), CardCatalog.NEW_WAVE_IDS.filter { it !in 155..169 })
+        assertEquals(
+            listOf(176, 177, 178, 179, 180, 181, 182, 185, 186, 187, 188, 189) + (190..199).toList(),
+            CardCatalog.NEW_WAVE_IDS.filter { it !in 155..169 }
+        )
 
         // 2026-11-19 신규 7인 — 이름·칭호·속성·스탯
         val fresh = mapOf(
@@ -107,7 +113,17 @@ class FullRoster170Test {
             186 to ("솔레나" to "태양빛의 무희 무투가"),
             187 to ("니바라" to "빙결 별빛의 천문 마도사"),
             188 to ("비트리아" to "무지갯빛 유리 기사"),
-            189 to ("아라냐" to "가시장미의 수호자")
+            189 to ("아라냐" to "가시장미의 수호자"),
+            190 to ("월향" to "홍월의 비단 무희"),
+            191 to ("청아" to "옥비단의 치파오 여제"),
+            192 to ("카구라" to "밤매화의 여우불 술사"),
+            193 to ("오렐리아" to "샴페인 궁정의 황금 여제"),
+            194 to ("이졸데" to "사파이어 가면의 베네치아 세이렌"),
+            195 to ("로잘린" to "벨벳 장미의 파리 야상"),
+            196 to ("아리아" to "황혼의 궁수"),
+            197 to ("엘리시아" to "달빛 유혹"),
+            198 to ("위에친" to "밤꽃의 여인"),
+            199 to ("하나" to "벚꽃의 검성")
         )
         fresh.forEach { (id, expected) ->
             val record = CardCatalog.require(id)
@@ -143,6 +159,39 @@ class FullRoster170Test {
         assertEquals(3900, CardCatalog.require(188).def)
         assertEquals(4100, CardCatalog.require(189).atk)
         assertEquals(3500, CardCatalog.require(189).def)
+        assertEquals(4400, CardCatalog.require(190).atk)
+        assertEquals(3400, CardCatalog.require(190).def)
+        assertEquals(Element.FIRE, CardCatalog.require(190).element)
+        assertEquals(6, CardCatalog.require(190).baseCost)
+        assertEquals("월하 유혹 · 적 전체 [매혹] 1턴, 화염 아군 공격력 +25%", CardCatalog.require(190).skill)
+        assertEquals(4300, CardCatalog.require(191).atk)
+        assertEquals(3600, CardCatalog.require(191).def)
+        assertEquals(Element.WIND, CardCatalog.require(191).element)
+        assertEquals(4500, CardCatalog.require(192).atk)
+        assertEquals(3300, CardCatalog.require(192).def)
+        assertEquals(Element.DARK, CardCatalog.require(192).element)
+        assertEquals(4400, CardCatalog.require(193).atk)
+        assertEquals(3500, CardCatalog.require(193).def)
+        assertEquals(Element.LIGHT, CardCatalog.require(193).element)
+        assertEquals(4300, CardCatalog.require(194).atk)
+        assertEquals(3600, CardCatalog.require(194).def)
+        assertEquals(Element.ICE, CardCatalog.require(194).element)
+        assertEquals(4500, CardCatalog.require(195).atk)
+        assertEquals(3300, CardCatalog.require(195).def)
+        assertEquals(Element.DARK, CardCatalog.require(195).element)
+        assertEquals(6200, CardCatalog.require(196).atk)
+        assertEquals(5200, CardCatalog.require(196).def)
+        assertEquals(7, CardCatalog.require(196).baseCost)
+        assertEquals("달빛 화살(Moonlight Arrow) · 적 유닛 2피해, 야수일 경우 4피해", CardCatalog.require(196).skill)
+        assertEquals(6600, CardCatalog.require(197).atk)
+        assertEquals(5400, CardCatalog.require(197).def)
+        assertEquals(8, CardCatalog.require(197).baseCost)
+        assertEquals(4200, CardCatalog.require(198).atk)
+        assertEquals(5200, CardCatalog.require(198).def)
+        assertEquals(6, CardCatalog.require(198).baseCost)
+        assertEquals(6400, CardCatalog.require(199).atk)
+        assertEquals(5800, CardCatalog.require(199).def)
+        assertEquals(7, CardCatalog.require(199).baseCost)
         assertEquals(CharacterArtRegistry.visualCount, CharacterArtRegistry.visualCount)
     }
 
@@ -214,7 +263,7 @@ class FullRoster170Test {
     // ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `188명의 4종 비주얼 752장이 모두 리소스로 연결되어 있다`() {
+    fun `198명의 4종 비주얼 792장이 모두 리소스로 연결되어 있다`() {
         val allIds = CardCatalog.ALL.map { it.id } + MidBossCatalog.ALL.map { it.id }
         var mapped = 0
         allIds.forEach { id ->
@@ -226,8 +275,8 @@ class FullRoster170Test {
                 mapped++
             }
         }
-        assertEquals("188명 × 4비주얼 = 752장", 752, mapped)
-        assertEquals(188, CharacterArtRegistry.registeredCardCount)
+        assertEquals("198명 × 4비주얼 = 792장", 792, mapped)
+        assertEquals(198, CharacterArtRegistry.registeredCardCount)
         assertEquals(allIds.toSet(), CharacterArtRegistry.registeredCardIds)
         assertNull("등록되지 않은 번호는 null", CharacterArtRegistry.resId(999, VisualState.BATTLE))
     }
@@ -246,20 +295,20 @@ class FullRoster170Test {
     // ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `전체 로스터를 지정하면 188명이 보유 목록에 오른다`() {
+    fun `전체 로스터를 지정하면 198명이 보유 목록에 오른다`() {
         val state = fullRosterViewModel().uiState.value
 
-        assertEquals(188, state.ownedCards.size)
-        assertEquals(188, state.lobbyRoster.size)
+        assertEquals(198, state.ownedCards.size)
+        assertEquals(198, state.lobbyRoster.size)
         assertEquals(state.ownedCards.map { it.id }.toSet(), state.lobbyRoster.toSet())
-        assertEquals(182, TcgGameViewModel.profiles().size)
+        assertEquals(192, TcgGameViewModel.profiles().size)
     }
 
     @Test
     fun `로비 좌우 전환은 보유 캐릭터를 한 바퀴 순환한다`() {
         val vm = fullRosterViewModel()
         val roster = vm.uiState.value.lobbyRoster
-        assertEquals(188, roster.size)
+        assertEquals(198, roster.size)
 
         val startIndex = roster.indexOf(vm.uiState.value.lobbyHeroId)
         roster.drop(startIndex + 1).forEach { expected ->
@@ -286,11 +335,11 @@ class FullRoster170Test {
     }
 
     @Test
-    fun `도감 프로필은 전체 182명이고 신규 27인 기존 155인으로 나뉜다`() {
+    fun `도감 프로필은 전체 192명이고 신규 37인 기존 155인으로 나뉜다`() {
         val profiles = TcgGameViewModel.profiles()
 
-        assertEquals(182, profiles.size)
-        assertEquals(27, profiles.count { CardCatalog.isNewWave(it.cardId) })
+        assertEquals(192, profiles.size)
+        assertEquals(37, profiles.count { CardCatalog.isNewWave(it.cardId) })
         assertEquals(155, profiles.count { !CardCatalog.isNewWave(it.cardId) })
         assertEquals(155, CardCatalog.legacy().size)
         assertTrue(CardCatalog.legacy().all { !CardCatalog.isNewWave(it.id) })
@@ -319,12 +368,12 @@ class FullRoster170Test {
     }
 
     @Test
-    fun `서약 덱은 보유한 188명을 카드로 편성 목록에 올린다`() {
+    fun `서약 덱은 보유한 198명을 카드로 편성 목록에 올린다`() {
         val state = fullRosterViewModel().uiState.value
         val characters = state.ownedCards.filter { it.category.isCharacter }
 
-        assertEquals(188, characters.size)
-        assertEquals("1캐릭터 1장 유일 원칙", 188, characters.map { it.id }.toSet().size)
+        assertEquals(198, characters.size)
+        assertEquals("1캐릭터 1장 유일 원칙", 198, characters.map { it.id }.toSet().size)
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -389,8 +438,8 @@ class FullRoster170Test {
     // ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `탐색 랜덤 조우는 보유 로스터 182명을 대상으로 한다`() {
-        // 판정 64 → r<70 조우 분기, index = (탐색 횟수 0 + 64) % 182 = 64 → 카탈로그 65번
+    fun `탐색 랜덤 조우는 보유 로스터 192명을 대상으로 한다`() {
+        // 판정 64 → r<70 조우 분기, index = (탐색 횟수 0 + 64) % 192 = 64 → 카탈로그 65번
         val vm = TcgGameViewModel(
             explorationEngine = ExplorationEngine { 64 },
             initialOwnedCardIds = CardCatalog.ALL.map { it.id }
@@ -409,15 +458,15 @@ class FullRoster170Test {
     }
 
     @Test
-    fun `조우 연출은 182명 각각 다른 인연을 걸 수 있다`() {
-        val encountered = (0..181).map { count ->
+    fun `조우 연출은 192명 각각 다른 인연을 걸 수 있다`() {
+        val encountered = (0..191).map { count ->
             ExplorationEngine { 64 }.explore(
                 ExplorationMode.ENCOUNTER,
                 com.game.tcg.core.engine.ExplorationContext(explorationCount = count)
             )
         }
 
-        assertEquals(182, encountered.map { it.companionCardId }.toSet().size)
+        assertEquals(192, encountered.map { it.companionCardId }.toSet().size)
         assertEquals(CardCatalog.ALL.map { it.id }.toSet(), encountered.map { it.companionCardId }.toSet())
         assertTrue(encountered.all { it.title.startsWith("인연 조우 · ") })
     }

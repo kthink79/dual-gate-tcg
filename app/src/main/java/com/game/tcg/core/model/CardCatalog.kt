@@ -3,9 +3,10 @@ package com.game.tcg.core.model
 /**
  * 카드 도감의 정식 등록 기록 (이름·칭호·속성·ATK·DEF·코스트·스킬).
  *
- * 2026-11-22 기준 **182명 전원**을 이 표 하나에 등록한다.
- * (No.1~169 + No.176·177·178·179·180·181·182·185~189 신규 12인 + No.184 아메넷 = 182명,
- *  캐릭터당 전투·일상·데이트·미니어처 4종 비주얼 = JPG 728장 + 중간 보스 6인 24장)
+ * 2026-11-24 기준 **192명 전원**을 이 표 하나에 등록한다.
+ * (No.1~169 + No.176·177·178·179·180·181·182·185~189 신규 12인 + No.184 아메넷
+ *  + No.190~199 신규 10인 = 192명,
+ *  캐릭터당 전투·일상·데이트·미니어처 4종 비주얼 = JPG 768장 + 중간 보스 6인 24장)
  *
  * 도감·서약·덱·로비·전투·탐색은 모두 이 카탈로그를 단일 진실 원천으로 쓴다.
  * 이름·칭호는 배치별 제작 기록(프롬프트 전체집 · 명단 문서 · 제작 보고)에서 그대로 옮겼고,
@@ -54,11 +55,12 @@ data class CharacterRecord(
 }
 
 /**
- * 도감 카탈로그 — 182명 전원.
+ * 도감 카탈로그 — 192명 전원.
  *
  * 로스터 구성: No.1~169 + No.176 · No.177 + No.185~189(2026-11-19 신규 7인)
  *  + No.178 메이린 · No.179 린(2026-11-20 신규 2인) + No.180 카일라(2026-11-21 신규)
- *  + No.181 미라 · No.182 키라나(2026-11-22 신규 2인) + No.184(아메넷) = 182명.
+ *  + No.181 미라 · No.182 키라나(2026-11-22 신규 2인) + No.184(아메넷)
+ *  + No.190~199(2026-11-24 신규 10인: 월향·청아·카구라·오렐리아·이졸데·로잘린·아리아·엘리시아·위에친·하나) = 192명.
  * (No.170~175는 중간 보스, No.183은 삭제 요청으로 로스터에서 제외되어 참조도 남기지 않는다.)
  */
 object CardCatalog {
@@ -69,23 +71,25 @@ object CardCatalog {
     /** 3대 마왕 (No.112 릴리스 · No.113 카밀라 · No.114 모르가나) */
     val DEMON_LORD_IDS: List<Int> = listOf(112, 113, 114)
 
-    /** 2026-11-15 이후 합류한 신규 배치 (No.155~169 → 2026-11-19 에 176·177·185~189 → 2026-11-20 에 178·179 → 2026-11-21 에 180 → 2026-11-22 에 181·182 추가) */
+    /** 2026-11-15 이후 합류한 신규 배치 (No.155~169 → 2026-11-19 에 176·177·185~189 → 2026-11-20 에 178·179 → 2026-11-21 에 180 → 2026-11-22 에 181·182 → 2026-11-24 에 190~199 추가) */
     val NEW_WAVE_RANGE: IntRange = 155..169
 
-    /** 도감·덱 'NEW' 표시 대상 — 155~169 + 2026-11-19 신규 7인(176·177·185~189) + 2026-11-20 신규 2인(178·179) + 2026-11-21 신규(180) + 2026-11-22 신규 2인(181·182) */
+    /** 도감·덱 'NEW' 표시 대상 — 155~169 + 2026-11-19 신규 7인(176·177·185~189) + 2026-11-20 신규 2인(178·179) + 2026-11-21 신규(180) + 2026-11-22 신규 2인(181·182) + 2026-11-24 신규 10인(190~199) */
     val NEW_WAVE_IDS: List<Int> =
-        NEW_WAVE_RANGE.toList() + listOf(176, 177, 178, 179, 180, 181, 182, 185, 186, 187, 188, 189)
+        NEW_WAVE_RANGE.toList() +
+            listOf(176, 177, 178, 179, 180, 181, 182, 185, 186, 187, 188, 189) +
+            (190..199).toList()
 
     private val NEW_WAVE_SET: Set<Int> = NEW_WAVE_IDS.toSet()
 
     /** 기존 155인 (No.1~154 + No.184 아메넷) */
     val LEGACY_IDS: List<Int> = (1..154).toList() + 184
 
-    /** 전체 로스터 크기 — 2026-11-22 신규 2인(181 미라 · 182 키라나) 합류로 182명 */
-    const val ROSTER_SIZE: Int = 182
+    /** 전체 로스터 크기 — 2026-11-24 신규 10인(No.190~199) 합류로 192명 */
+    const val ROSTER_SIZE: Int = 192
 
     /**
-     * 합류 시점 친밀도 — 182명 전원이 **0**에서 시작한다(2026-11-16 개편).
+     * 합류 시점 친밀도 — 192명 전원이 **0**에서 시작한다(2026-11-16 개편).
      *
      * 예전에는 50으로 일괄 시작해서 일상·데이트 룩이 처음부터 열려 있었고,
      * 해금 진행이 실제로 작동하지 않았다. 이제는 0에서 시작해
@@ -94,7 +98,7 @@ object CardCatalog {
      */
     const val ROSTER_BOND_SEED: Int = 0
 
-    // ── 182명 등록 기록 ────────────────────────────────────────────
+    // ── 192명 등록 기록 ────────────────────────────────────────────
     private val RECORDS: List<CharacterRecord> = listOf(
         // ── 🌅 창세의 계약자 — 스타팅 · 초기 50종 (No.1~50) ──
         CharacterRecord(
@@ -2121,6 +2125,122 @@ object CardCatalog {
             skill = "예언의 장막 · 아군 전체 성광 실드, 다음 턴 공격력 +20%",
             bondSeed = ROSTER_BOND_SEED,
         ),
+
+        // ── 🌸 동양 매혹 3인 (No.190~192 · 2026-11-23 제작) ──
+        CharacterRecord(
+            id = 190,
+            name = "월향",
+            title = "홍월의 비단 무희",
+            element = Element.FIRE,
+            atk = 4400,
+            def = 3400,
+            baseCost = 6,
+            skill = "월하 유혹 · 적 전체 [매혹] 1턴, 화염 아군 공격력 +25%",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 191,
+            name = "청아",
+            title = "옥비단의 치파오 여제",
+            element = Element.WIND,
+            atk = 4300,
+            def = 3600,
+            baseCost = 6,
+            skill = "옥비단 결계 · 아군 전체 바람 실드, 적 전체 공격력 -20%",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 192,
+            name = "카구라",
+            title = "밤매화의 여우불 술사",
+            element = Element.DARK,
+            atk = 4500,
+            def = 3300,
+            baseCost = 6,
+            skill = "여우불 현혹 · 적 2명 [현혹] 2스택, 어둠 아군 HP 회복",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+
+        // ── 🌹 서양 매혹 3인 (No.193~195 · 2026-11-23 제작) ──
+        CharacterRecord(
+            id = 193,
+            name = "오렐리아",
+            title = "샴페인 궁정의 황금 여제",
+            element = Element.LIGHT,
+            atk = 4400,
+            def = 3500,
+            baseCost = 6,
+            skill = "황금 왈츠 · 아군 빛 속성 공격력 +30%, 적 전체 [매혹] 1턴",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 194,
+            name = "이졸데",
+            title = "사파이어 가면의 베네치아 세이렌",
+            element = Element.ICE,
+            atk = 4300,
+            def = 3600,
+            baseCost = 6,
+            skill = "청옥의 초대 · 적 전체 [빙결] 1턴, 빙결 아군 방어력 +25%",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 195,
+            name = "로잘린",
+            title = "벨벳 장미의 파리 야상",
+            element = Element.DARK,
+            atk = 4500,
+            def = 3300,
+            baseCost = 6,
+            skill = "핏빛 왈츠 · 적 2명 [흡혈] 2스택, 어둠 아군 HP 회복",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+
+        // ── 🌙 달빛 서약 4인 (No.196~199 · 2026-11-24 제작) ──
+        CharacterRecord(
+            id = 196,
+            name = "아리아",
+            title = "황혼의 궁수",
+            element = Element.LIGHT,
+            atk = 6200,
+            def = 5200,
+            baseCost = 7,
+            skill = "달빛 화살(Moonlight Arrow) · 적 유닛 2피해, 야수일 경우 4피해",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 197,
+            name = "엘리시아",
+            title = "달빛 유혹",
+            element = Element.DARK,
+            atk = 6600,
+            def = 5400,
+            baseCost = 8,
+            skill = "달빛 유혹(Lunar Seduction) · 등장 시 카드 2장 드로우, 달 토큰 보유 시 적 유닛 전체 1턴 매혹",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 198,
+            name = "위에친",
+            title = "밤꽃의 여인",
+            element = Element.WIND,
+            atk = 4200,
+            def = 5200,
+            baseCost = 6,
+            skill = "비단 달빛(Silken Moonlight) · 출전 시 카드 2장 드로우, 달 토큰 보유 시 모든 적 유닛 -1/-1 부여",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
+        CharacterRecord(
+            id = 199,
+            name = "하나",
+            title = "벚꽃의 검성",
+            element = Element.FIRE,
+            atk = 6400,
+            def = 5800,
+            baseCost = 7,
+            skill = "벚꽃 일섬(Sakura Blade) · 출전 시 모든 적 유닛 피해 2, 벚꽃 토큰 보유 시 카드 1장 드로우",
+            bondSeed = ROSTER_BOND_SEED,
+        ),
     )
 
     /** 전체 등록 기록 (도감 번호 오름차순) */
@@ -2147,7 +2267,7 @@ object CardCatalog {
             skill = "샘플 카드"
         )
 
-    /** 신규 배치 27인 */
+    /** 신규 배치 37인 */
     fun newWave(): List<CharacterRecord> = NEW_WAVE_IDS.map { require(it) }
 
     /** 기존 155인 */
@@ -2159,7 +2279,7 @@ object CardCatalog {
     /** 마왕 3인 */
     fun demonLords(): List<CharacterRecord> = DEMON_LORD_IDS.map { require(it) }
 
-    /** 합류(보유) 상태로 시작하는 카드 — 182명 전원 */
+    /** 합류(보유) 상태로 시작하는 카드 — 192명 전원 */
     fun initialOwnedRecords(): List<CharacterRecord> = ALL
 
     /** 아직 계약하지 않은 카드 (신규 연성 대상) */
