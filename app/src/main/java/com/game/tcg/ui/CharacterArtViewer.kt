@@ -1,6 +1,8 @@
 package com.game.tcg.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -73,6 +75,11 @@ fun CharacterArtViewer(
     val prevId = if (index > 0) browseIds[index - 1] else null
     val nextId = if (index >= 0 && index < browseIds.lastIndex) browseIds[index + 1] else null
 
+    // 영상 오버레이와 같은 방식 — 화면(상태바·뒤로가기 바 포함) 전체를 덮는 전체화면 다이얼로그
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -194,6 +201,7 @@ fun CharacterArtViewer(
                 }
             }
         }
+    }
     }
 }
 
