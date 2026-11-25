@@ -276,16 +276,45 @@ class CharacterVideoTest {
                 CardCatalog.ALL.any { it.id == cardId }
             )
         }
-        // 1:N — 한 캐릭터에 테이크 2편
+        // 1:N — 한 캐릭터에 테이크 2편 (116 은 2026-11-26 에 세 번째 테이크가 붙어 3편 이상)
         assertEquals(
-            "No.116 · No.61 은 2편",
+            "No.116 · No.61 은 2편 이상",
             listOf("character_videos/116.mp4", "character_videos/116_2.mp4"),
-            index.videosFor(116)
+            index.videosFor(116).take(2)
         )
+        assertTrue("No.116 테이크", index.videoCount(116) >= 2)
         assertTrue(index.videoCount(61) >= 2)
         assertTrue("16번은 기존 1편 + 신규 1편", index.videoCount(16) >= 2)
         listOf(116, 61, 16).forEach { assertTrue("No.$it 는 1:N", it in index.multiVideoCardIds) }
         assertTrue("등록 영상은 70편 이상", index.size >= 70)
+    }
+
+    @Test
+    fun `2026-11-26 추가 10편(111~120)이 프레임 대조로 확정한 번호 그대로 탑재됐다`() {
+        val names = assetsDir().listFiles()?.filter { it.isFile }?.map { it.name } ?: emptyList()
+        val index = CharacterVideoIndex.fromFileNames(names)
+
+        // Tcg_video 신규 업로드 10편(카드 이름판·ATK/DEF ↔ char_{번호}_battle.jpg 대조로 확정)
+        //  - f32aa690 → No.111 엘레나(사막 은하수 천문학자) · 97ba3564 → No.112 릴리스
+        //  - 7c9aee1e → No.113 카밀라 · 44142a5e → No.114 모르가나 · b08f2233 → No.115 서설현
+        //  - 1cd24ee8 → No.116 미코토 · 0fb2aa46 → No.117 리엔위 · b44f3e3f → No.118 안잘리
+        //  - 4f478da9 → No.119 아마라 · 75600d54 → No.120 자흐라
+        val fresh = listOf(111, 112, 113, 114, 115, 116, 117, 118, 119, 120)
+        fresh.forEach { cardId ->
+            assertTrue("No.$cardId 등장 영상이 없다", index.hasVideo(cardId))
+            assertTrue(
+                "No.$cardId 는 카드 카탈로그에 있어야 한다",
+                CardCatalog.ALL.any { it.id == cardId }
+            )
+        }
+        // 신규 캐릭터는 정식 이름이 대표, 이미 테이크가 있던 114·116 은 뒤에 붙는다
+        listOf(111, 112, 113, 115, 117, 118, 119, 120).forEach { cardId ->
+            assertEquals("character_videos/$cardId.mp4", index.videoFor(cardId))
+        }
+        assertEquals("character_videos/114.mp4", index.videoFor(114))
+        assertTrue("114 는 2편", index.videoCount(114) >= 2)
+        assertTrue("116 은 3편", index.videoCount(116) >= 3)
+        assertTrue("등록 영상은 130편 이상", index.size >= 130)
     }
 
     // ── 5. BGM 일시정지 · 복구 ────────────────────────────────────
