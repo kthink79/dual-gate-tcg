@@ -13,8 +13,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // 2026-11-24: 로스터 192명(190~199 신규 10인) · 영상 12편(누적 120) · 캐릭터 관리 갤러리/확대 뷰어
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

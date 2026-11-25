@@ -6,7 +6,7 @@ import com.game.tcg.core.model.VisualState
 /**
  * 카드 번호 + 4종 비주얼 상태 → 드로어블 리소스 매핑 테이블.
  *
- * 2026-11-24 기준 **198명 × 4비주얼 = JPG 792장**
+ * 2026-11-26 기준 **199명 × 4비주얼 = JPG 796장**
  * (`res/drawable-nodpi/char_{번호}_{battle|casual|date|miniature}.jpg`)을 정식 등록했다.
  * 도감·로비·전투·현실 교감·의상 선택의 모든 이미지는 이 표를 통해서만 해석된다.
  * (표에 없는 번호는 null → 호출부가 플레이스홀더로 대체한다.)
@@ -1172,6 +1172,12 @@ object CharacterArtRegistry {
             R.drawable.char_199_casual,
             R.drawable.char_199_date,
             R.drawable.char_199_miniature
+        ),
+        200 to intArrayOf(
+            R.drawable.char_200_battle,
+            R.drawable.char_200_casual,
+            R.drawable.char_200_date,
+            R.drawable.char_200_miniature
         ),
         170 to intArrayOf(
             R.drawable.char_170_battle,

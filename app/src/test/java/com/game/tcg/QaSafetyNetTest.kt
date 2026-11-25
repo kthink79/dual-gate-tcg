@@ -250,16 +250,16 @@ class QaSafetyNetTest {
     }
 
     // ======================================================================
-    // 4. 아트 레지스트리 — 198명 × 4비주얼, 누락 0
+    // 4. 아트 레지스트리 — 199명 × 4비주얼, 누락 0
     // ======================================================================
 
     @Test
-    fun `아트 레지스트리는 플레이 192명과 중간 보스 6명을 모두 덮는다`() {
+    fun `아트 레지스트리는 플레이 193명과 중간 보스 6명을 모두 덮는다`() {
         val registry = com.game.tcg.ui.CharacterArtRegistry
         val roster = CardCatalog.ALL.map { it.id }.toSet()
         val bosses = com.game.tcg.core.model.MidBossCatalog.ALL.map { it.id }.toSet()
 
-        assertEquals("198명", 198, registry.registeredCardCount)
+        assertEquals("199명", 199, registry.registeredCardCount)
         assertEquals(roster + bosses, registry.registeredCardIds)
         (roster + bosses).forEach { id ->
             assertTrue("#$id 아트 등록", registry.hasArt(id))
@@ -268,7 +268,7 @@ class QaSafetyNetTest {
                 com.game.tcg.core.model.VisualState.entries.all { registry.resId(id, it) != null }
             )
         }
-        assertEquals("등록 198명 × 4 = 792장", 792, registry.registeredCardCount * 4)
+        assertEquals("등록 199명 × 4 = 796장", 796, registry.registeredCardCount * 4)
     }
 
     /** 편성된 모든 카드는 반드시 보유 목록에 있어야 한다 (상태 일관성 불변식) */
