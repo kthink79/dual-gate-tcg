@@ -317,11 +317,11 @@ fun CharacterVideoEntranceStage(
             Text(
                 "NO.$cardId · $name",
                 color = TcgColors.Text,
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.weight(1f))
-            stepLabel?.let { Text(it, color = TcgColors.Muted, fontSize = 12.sp) }
+            stepLabel?.let { Text(it, color = TcgColors.Muted, fontSize = TcgType.LABEL.sp) }
         }
 
         Column(
@@ -365,7 +365,7 @@ fun CharacterVideoEntranceStage(
                 Text(
                     "「${record.title}」",
                     color = TcgColors.Gold.copy(alpha = 0.9f),
-                    fontSize = 12.sp
+                    fontSize = TcgType.LABEL.sp
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -387,13 +387,13 @@ fun CharacterVideoEntranceStage(
                 .clickable { onSkip() }
                 .padding(horizontal = 14.dp, vertical = 7.dp)
         ) {
-            Text("SKIP ▸", color = TcgColors.Gold, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+            Text("SKIP ▸", color = TcgColors.Gold, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.ExtraBold)
         }
 
         Text(
             "화면을 탭하면 카드로 넘어갑니다",
             color = TcgColors.Muted.copy(alpha = 0.75f),
-            fontSize = 12.sp,
+            fontSize = TcgType.LABEL.sp,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 22.dp)

@@ -67,6 +67,7 @@ import com.game.tcg.ui.ScenarioScreen
 import com.game.tcg.ui.StageScreen
 import com.game.tcg.ui.TcgColors
 import com.game.tcg.ui.TcgGameViewModel
+import com.game.tcg.ui.TcgType
 import com.game.tcg.persistence.FileSaveStore
 import com.game.tcg.persistence.SaveStore
 import java.io.File
@@ -475,7 +476,7 @@ private fun LobbyBackBar(
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("← 메인 로비", color = TcgColors.Violet, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("← 메인 로비", color = TcgColors.Violet, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -485,7 +486,7 @@ private fun LobbyBackBar(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
             )
-            Text(screen.tagline, color = TcgColors.Muted, fontSize = 9.sp)
+            Text(screen.tagline, color = TcgColors.Muted, fontSize = TcgType.TILE_MARK.sp)
         }
         Spacer(Modifier.width(5.dp))
         AudioToggleRow(audio = audio, settings = audioSettings)
@@ -511,7 +512,7 @@ private fun TcgStatusBar(message: String) {
         Text(
             message,
             color = TcgColors.Muted,
-            fontSize = 9.sp,
+            fontSize = TcgType.TILE_MARK.sp,
             maxLines = 2,
             lineHeight = 13.sp,
             modifier = Modifier.weight(1f)
@@ -568,7 +569,7 @@ private fun AudioToggleButton(label: String, enabled: Boolean, onClick: () -> Un
         Text(
             label,
             color = if (enabled) TcgColors.Violet else TcgColors.Muted,
-            fontSize = 9.sp,
+            fontSize = TcgType.TILE_MARK.sp,
             fontWeight = FontWeight.Bold
         )
     }

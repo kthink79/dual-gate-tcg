@@ -91,7 +91,7 @@ fun AutoBattleBar(
             Text(
                 BattleAutoDecor.autoLabel(isAuto),
                 color = if (isAuto) Color(0xFF06210B) else Color(0xFFEDE7F6),
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 fontWeight = FontWeight.Black,
                 maxLines = 1
             )
@@ -119,7 +119,7 @@ fun AutoBattleBar(
             Text(
                 "⏩ ${speed.label}",
                 color = if (speed == BattleSpeed.X2) Color(0xFF2B1600) else Color(0xFFEDE7F6),
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 fontWeight = FontWeight.Black,
                 maxLines = 1
             )
@@ -128,7 +128,7 @@ fun AutoBattleBar(
         Text(
             hint,
             color = Color(0xCCFFFFFF),
-            fontSize = 10.sp,
+            fontSize = TcgType.TILE_MARK.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             modifier = Modifier.weight(1f)
@@ -245,7 +245,7 @@ fun BattleCutInOverlay(
                         .border(1.dp, Color.White.copy(alpha = 0.8f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(elementGlyph(cutIn.element), fontSize = 12.sp)
+                    Text(elementGlyph(cutIn.element), fontSize = TcgType.LABEL.sp)
                 }
                 if (cutIn.ultimate) {
                     Box(
@@ -258,7 +258,7 @@ fun BattleCutInOverlay(
                             )
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     ) {
-                        Text("ULTIMATE", color = Color(0xFF2B1600), fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        Text("ULTIMATE", color = Color(0xFF2B1600), fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.Black)
                     }
                 }
             }
@@ -289,7 +289,7 @@ fun BattleCutInOverlay(
                 Text(
                     cutIn.subtitle,
                     color = Color(0xEEFFFFFF),
-                    fontSize = 12.sp,
+                    fontSize = TcgType.LABEL.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1
                 )
@@ -389,7 +389,7 @@ fun BattleDamageNumber(
                 Text(
                     badge,
                     color = color,
-                    fontSize = 10.sp,
+                    fontSize = TcgType.TILE_MARK.sp,
                     fontWeight = FontWeight.Black,
                     maxLines = 1
                 )

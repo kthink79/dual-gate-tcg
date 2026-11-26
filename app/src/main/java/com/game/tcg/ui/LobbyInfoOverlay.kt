@@ -100,7 +100,7 @@ fun LobbyInfoOverlay(
                         .clickable { onClose() }
                         .padding(horizontal = 12.dp, vertical = 5.dp)
                 ) {
-                    Text("닫기 ✕", color = TcgColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("닫기 ✕", color = TcgColors.Muted, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -117,23 +117,23 @@ fun LobbyInfoOverlay(
                     Text(
                         section.title,
                         color = TcgColors.Violet,
-                        fontSize = 12.sp,
+                        fontSize = TcgType.LABEL.sp,
                         fontWeight = FontWeight.Bold
                     )
                     section.entries.forEach { entry ->
                         Row(verticalAlignment = Alignment.Top) {
-                            Text(entry.icon, fontSize = 12.sp)
+                            Text(entry.icon, fontSize = TcgType.LABEL.sp)
                             Spacer(Modifier.width(7.dp))
                             Text(
                                 entry.label,
                                 color = TcgColors.Muted,
-                                fontSize = 12.sp,
+                                fontSize = TcgType.LABEL.sp,
                                 modifier = Modifier.width(78.dp)
                             )
                             Text(
                                 entry.value,
                                 color = entry.tone.color(),
-                                fontSize = 12.sp,
+                                fontSize = TcgType.LABEL.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.weight(1f)
                             )
@@ -168,7 +168,7 @@ fun LobbyInfoOverlay(
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text("경보", color = TcgColors.Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("경보", color = TcgColors.Gold, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.Bold)
                     alerts.forEach { alert ->
                         val color = if (alert.isUrgent) TcgColors.Danger else TcgColors.Gold
                         Row(
@@ -181,16 +181,16 @@ fun LobbyInfoOverlay(
                                 .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("⚠", fontSize = 12.sp)
+                            Text("⚠", fontSize = TcgType.LABEL.sp)
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 alert.label,
                                 color = color,
-                                fontSize = 12.sp,
+                                fontSize = TcgType.LABEL.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.weight(1f)
                             )
-                            Text("${alert.destination.icon} ${alert.destination.label} ›", color = TcgColors.Muted, fontSize = 12.sp)
+                            Text("${alert.destination.icon} ${alert.destination.label} ›", color = TcgColors.Muted, fontSize = TcgType.LABEL.sp)
                         }
                     }
                 }
@@ -212,7 +212,7 @@ fun LobbyInfoOverlay(
             Text(
                 "💾 진행 자동 저장 — 상태가 바뀔 때마다 저장되어 앱을 닫아도 이어집니다.",
                 color = TcgColors.Muted,
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 lineHeight = 14.sp
             )
             Spacer(Modifier.height(6.dp))
@@ -264,7 +264,7 @@ fun LobbyToggleChip(label: String, active: Boolean, onClick: () -> Unit) {
         Text(
             label,
             color = if (active) TcgColors.Violet else TcgColors.Muted,
-            fontSize = 12.sp,
+            fontSize = TcgType.LABEL.sp,
             fontWeight = FontWeight.SemiBold
         )
     }

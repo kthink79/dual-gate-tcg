@@ -149,7 +149,7 @@ fun MainLobbyScreen(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Text(if (muted) "🔇" else "🔊", fontSize = 12.sp)
+                Text(if (muted) "🔇" else "🔊", fontSize = TcgType.LABEL.sp)
             }
             // 📊 정보 — 상세 정보·설정·경보·인트로 다시보기·새 게임이 모두 여기로
             val alertCount = LobbyInfoPanel.alertCount(state)
@@ -167,12 +167,12 @@ fun MainLobbyScreen(
                     Text(
                         LobbyInfoPanel.BUTTON_LABEL,
                         color = if (urgent) TcgColors.Danger else TcgColors.Text,
-                        fontSize = 12.sp,
+                        fontSize = TcgType.LABEL.sp,
                         fontWeight = FontWeight.Bold
                     )
                     if (alertCount > 0) {
                         Spacer(Modifier.width(3.dp))
-                        Text("$alertCount", color = infoColor, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("$alertCount", color = infoColor, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
             }
@@ -188,7 +188,7 @@ fun MainLobbyScreen(
             Text(
                 "이세계",
                 color = TcgColors.Violet.copy(alpha = 0.9f),
-                fontSize = 11.sp,
+                fontSize = TcgType.LABEL.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.width(62.dp),
                 textAlign = TextAlign.Center
@@ -208,7 +208,7 @@ fun MainLobbyScreen(
             Text(
                 "현실",
                 color = TcgColors.Gold.copy(alpha = 0.9f),
-                fontSize = 11.sp,
+                fontSize = TcgType.LABEL.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.width(62.dp),
                 textAlign = TextAlign.Center
@@ -241,7 +241,7 @@ fun MainLobbyScreen(
             Text(
                 profile?.title ?: hero.skillText,
                 color = TcgColors.Violet.copy(alpha = 0.95f),
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 fontWeight = FontWeight.SemiBold
             )
             // 호감도 · 전투력 · 상태 (한 줄)
@@ -323,7 +323,7 @@ fun MainLobbyScreen(
                 "대표 캐릭터 ${rosterIndex + 1}/${roster.size} · 일상 ${TcgGameViewModel.CASUAL_LOOK_UNLOCK_BOND} / " +
                     "데이트 ${TcgGameViewModel.DATE_LOOK_UNLOCK_BOND} 해금 · 전투 출전 1회 +${AffinityRules.BATTLE_WIN_GAIN}",
                 color = TcgColors.Muted.copy(alpha = 0.8f),
-                fontSize = 11.sp
+                fontSize = TcgType.LABEL.sp
             )
         }
 
@@ -375,7 +375,7 @@ private fun LobbySummaryChip(label: String, color: Color) {
             .border(1.dp, color.copy(alpha = 0.55f), RoundedCornerShape(50))
             .padding(horizontal = 7.dp, vertical = 3.dp)
     ) {
-        Text(label, color = color, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(label, color = color, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
@@ -397,7 +397,7 @@ private fun LobbyRailButton(item: LobbyDestination, onClick: () -> Unit) {
         Text(
             item.label,
             color = TcgColors.Text,
-            fontSize = 12.sp,
+            fontSize = TcgType.LABEL.sp,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
             lineHeight = 12.sp
@@ -418,6 +418,6 @@ private fun HeroCycleButton(label: String, onClick: () -> Unit) {
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = TcgColors.Violet, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = TcgColors.Violet, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.Bold)
     }
 }

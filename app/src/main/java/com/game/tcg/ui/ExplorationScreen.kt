@@ -8,22 +8,25 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,18 +45,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.game.tcg.core.engine.ExplorationMode
+import com.game.tcg.core.engine.ExplorationResult
 import com.game.tcg.core.model.TcgCard
 
 /**
  * 좌측 서브메뉴 「🧭 탐색」 — 차원 틈새 탐색 · 기억 파편 수색 · 랜덤 조우.
  *
- * 2026-11-16 사용자 요청("텍스트 위주라 게임성이 부족하다") 반영:
- *  - **파견 파티 초상화 스트립**(전열 우선)
- *  - 탐색 구역을 **배경 일러스트 카드**로 — 소모 차원력 · 예상 보상 배지
- *  - 조우/전투/보물 발견 결과 카드에 **실제 캐릭터 일러스트와 보상 아이콘**
+ * 2026-11-26 사용자 요청 「메뉴 아이콘 중심·설명문 축소·글자 확대·종스크롤 최소화」:
+ *  - 파견 파티를 **초상화 1줄**로 압축(에너지는 머리 배지로)
+ *  - 탐색 구역 3곳의 2~3줄 설명문을 걷어내고 **구역 아이콘 · 보상 아이콘 · 탐색 버튼**만 배치해
+ *    세 칸을 나란히 — 무스크롤 한 화면
+ *  - 결과 서사는 화면 아래로 쌓지 않고 **결과 오버레이**로 띄운다(닫으면 사라진다)
+ *  - 파편 현황·기록은 아이콘 탭(🧭 탐색 / 🌙 파편 / 📜 기록)으로 분리
+ *  - 글씨는 [TcgType] 기준(제목 24 · 섹션 18 · 본문 15 · 배지 13) 이상만 쓴다
  */
 @Composable
 fun ExplorationScreen(
@@ -73,206 +82,128 @@ fun ExplorationScreen(
         )
     }
 
-    ScreenFrame {
-        // ── ① 파견 파티 + 차원 균열 에너지 ──
-        SectionCard(
-            title = "파견 파티",
-            badge = "⚡ ${state.gateEnergy}/${state.gateEnergyMax}",
-            accent = TcgColors.Mana
-        ) {
-            PartyPortraitStrip(state = state)
-            StatBar(
-                ratio = state.gateEnergy.toFloat() / state.gateEnergyMax,
-                color = TcgColors.Mana,
-                height = 9
-            )
-            Text(
-                "탐색 1회당 에너지 ${ExplorationMode.RIFT.energyCost} 소모 · 이계 전투 승리 시 +${TcgGameViewModel.GATE_ENERGY_RECOVERY} 회복 " +
-                    "(최대 ${state.gateEnergyMax}) · 누적 탐색 ${state.explorationCount}회",
-                color = TcgColors.Muted,
-                fontSize = 12.sp,
-                lineHeight = 14.sp
-            )
+    // 0 탐색 · 1 파편 · 2 기록
+    var tab by remember { mutableIntStateOf(0) }
+
+    // ── 결과 오버레이 — 새 결과가 도착했을 때만 연다 ──
+    var shownResult by remember { mutableStateOf(state.lastExploration) }
+    var resultOpen by remember { mutableStateOf(false) }
+    val lastResult = state.lastExploration
+    LaunchedEffect(lastResult) {
+        if (lastResult != null && lastResult !== shownResult) {
+            shownResult = lastResult
+            resultOpen = true
+        }
+    }
+
+    CompactFrame {
+        // ── 머리 1줄: 제목 + 차원 에너지 + 누적 ──
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("탐색", color = TcgColors.Text, fontSize = TcgType.TITLE.sp, fontWeight = FontWeight.Black)
+            Spacer(Modifier.width(8.dp))
+            Pill("⚡ ${state.gateEnergy}/${state.gateEnergyMax}", TcgColors.Mana)
+            Spacer(Modifier.weight(1f))
+            Pill("누적 ${state.explorationCount}회", TcgColors.Violet)
         }
 
-        // ── ② 탐색 구역 3곳 ──
-        SectionCard(title = "탐색 구역", badge = "3곳", accent = TcgColors.Violet) {
-            ExplorationDecor.zones().forEach { zone ->
-                ExplorationZoneCard(
-                    zone = zone,
-                    enabled = state.gateEnergy >= zone.mode.energyCost && staging == null,
-                    onClick = { stagingMode = zone.mode }
-                )
-            }
-            if (state.gateEnergy < ExplorationMode.RIFT.energyCost) {
-                Text(
-                    "차원 균열 에너지가 모두 소진되었습니다. 이계 전투에서 승리하면 회복됩니다.",
-                    color = TcgColors.Danger,
-                    fontSize = 12.sp,
-                    lineHeight = 14.sp
-                )
-            }
-        }
+        TcgIconTabBar(
+            tabs = listOf("🧭" to "탐색", "🌙" to "파편", "📜" to "기록"),
+            selectedIndex = tab,
+            accent = TcgColors.Violet
+        ) { tab = it }
 
-        // ── ③ 마지막 탐색 결과 ──
-        val result = state.lastExploration
-        if (result != null) {
-            val artId = ExplorationDecor.resultArtCardId(
-                result = result,
-                fallbackCardId = state.lobbyHeroId
-            )
-            SectionCard(
-                title = "${ExplorationDecor.resultIcon(result)} ${result.title}",
-                badge = result.mode.displayName,
-                accent = if (result.startsBattle) TcgColors.Danger else TcgColors.Heal
-            ) {
-                if (artId != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(190.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                    ) {
-                        CardArtImage(
-                            cardId = artId,
-                            visual = ExplorationDecor.resultVisual(result),
-                            contentDescription = ExplorationDecor.resultCompanionLabel(result) ?: "탐색 결과",
-                            contentScale = ContentScale.Crop,
-                            // 가로로 긴 배너라 가운데 크롭하면 머리가 잘린다 — 상단 기준으로 자른다
-                            alignment = Alignment.TopCenter,
-                            modifier = Modifier.fillMaxSize(),
-                            targetWidthPx = 720
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Brush.verticalGradient(listOf(Color(0x1A000000), Color(0xDD0B0A12))))
-                        )
-                        val label = ExplorationDecor.resultCompanionLabel(result)
-                        if (label != null) {
-                            Row(
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Pill("👤 조우", TcgColors.Gold, filled = true)
-                                Spacer(Modifier.width(6.dp))
-                                Text(label, color = TcgColors.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-                Box(
+        when (tab) {
+            // ── 🧭 탐색: 파티 1줄 + 구역 3칸 (무스크롤) ──
+            0 -> {
+                PartyPortraitStrip(state = state)
+                StatBar(
+                    ratio = state.gateEnergy.toFloat() / state.gateEnergyMax,
+                    color = TcgColors.Mana,
+                    height = 6
+                )
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(TcgColors.SurfaceAlt)
-                        .padding(12.dp)
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    ExplorationDecor.zones().forEach { zone ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            ExplorationZoneTile(
+                                zone = zone,
+                                enabled = state.gateEnergy >= zone.mode.energyCost && staging == null,
+                                onClick = { stagingMode = zone.mode }
+                            )
+                        }
+                    }
+                }
+                if (state.gateEnergy < ExplorationMode.RIFT.energyCost) {
                     Text(
-                        result.narrative,
-                        color = TcgColors.Text.copy(alpha = 0.9f),
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp
+                        "⚡ 소진 — 이계 전투 승리로 회복",
+                        color = TcgColors.Danger,
+                        fontSize = TcgType.LABEL.sp,
+                        maxLines = 1
                     )
                 }
-                // 보상 배지
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    ExplorationDecor.rewardBadges(result).forEach { badge ->
-                        Pill(badge, TcgColors.Heal)
-                    }
-                    if (result.bondGained > 0) Pill("❤ +${result.bondGained}", TcgColors.Gold)
-                    if (result.temptationGained > 0) Pill("🌫 +${result.temptationGained}", TcgColors.Danger)
-                }
-                if (result.startsBattle) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Pill("조우", TcgColors.Danger, filled = true)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            "${result.enemyName} · HP ${result.enemyMaxHp} · 공격력 ${result.enemyAtk} " +
-                                "(${result.enemyElement.displayName})",
-                            color = TcgColors.Danger,
-                            fontSize = 12.sp
-                        )
+            }
+
+            // ── 🌙 파편: 기억이 지워진 동료 (필요할 때만 스크롤) ──
+            1 -> Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val targets = state.memoryResetCards
+                if (targets.isEmpty()) {
+                    Text(
+                        "🌙 지금은 기억이 지워진 동료가 없습니다.",
+                        color = TcgColors.Muted,
+                        fontSize = TcgType.BODY_SMALL.sp
+                    )
+                } else {
+                    targets.forEach { card ->
+                        MemoryFragmentRow(card = card)
                     }
                     ActionTile(
-                        label = "⚔ 이계 전투에서 교전",
-                        hint = "조우한 상대가 전장에 세팅되어 있습니다",
-                        accent = TcgColors.Danger,
-                        onClick = onOpenBattle
+                        label = "🌙 회상 이벤트 열기",
+                        hint = "파편 3/3 달성 +",
+                        accent = TcgColors.Abyss,
+                        onClick = onOpenCollection
                     )
                 }
             }
-        }
 
-        // ── ④ 기억 파편 현황 ──
-        SectionCard(title = "기억의 잔향 · 파편 수색", badge = "기억 파편", accent = TcgColors.Abyss) {
-            val targets = state.memoryResetCards
-            if (targets.isEmpty()) {
-                Text(
-                    "지금은 기억이 지워진 동료가 없어 파편이 맺히지 않습니다. " +
-                        "이계 전투에서 동료가 쓰러졌다가 환생 재획득하면 '기억이 지워진 동료'가 되어 " +
-                        "파편 수색이 의미를 갖습니다.",
-                    color = TcgColors.Muted,
-                    fontSize = 12.sp,
-                    lineHeight = 15.sp
-                )
-            } else {
-                targets.forEach { card ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .width(34.dp)
-                                .height(44.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .border(1.dp, TcgColors.Abyss.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                        ) {
-                            CardArtImage(
-                                cardId = card.id,
-                                visual = com.game.tcg.core.model.VisualState.CASUAL_CUTE,
-                                contentDescription = card.name,
-                                contentScale = ContentScale.Crop,
-                                alignment = Alignment.TopCenter,
-                                modifier = Modifier.fillMaxSize(),
-                                targetWidthPx = 160
-                            )
-                        }
-                        Spacer(Modifier.width(7.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(card.name, color = TcgColors.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "기억 파편 ${card.memoryFragments}/${TcgCard.MEMORY_FRAGMENT_TARGET} · 친밀도 ${card.bondLevel}/100",
-                                color = TcgColors.Muted,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                    StatBar(
-                        ratio = card.memoryFragments.toFloat() / TcgCard.MEMORY_FRAGMENT_TARGET,
-                        color = TcgColors.Abyss,
-                        height = 6
-                    )
+            // ── 📜 기록 ──
+            else -> Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    LogBox(state.explorationLog, maxLines = 12)
                 }
                 ActionTile(
-                    label = "🃏 캐릭터 관리에서 회상 이벤트 열기",
-                    hint = "파편 3/3 달성 시 기억 복원 · 스탯 보너스",
-                    accent = TcgColors.Violet,
-                    onClick = onOpenCollection
+                    label = "🏙 현실 소환으로",
+                    hint = "일상·데이트 룩 해금",
+                    accent = TcgColors.Gold,
+                    onClick = onOpenRealWorld
                 )
             }
         }
+    }
 
-        // ── ⑤ 탐색 기록 ──
-        SectionCard(title = "탐색 기록", accent = TcgColors.Muted) {
-            LogBox(state.explorationLog, maxLines = 6)
-            ActionTile(
-                label = "🏙 현실 소환으로 이동",
-                hint = "전투 출전으로 오른 친밀도로 일상·데이트 룩을 해금하세요",
-                accent = TcgColors.Gold,
-                onClick = onOpenRealWorld
-            )
-        }
+    // ── 새 결과 오버레이 (서사를 화면 아래로 쌓지 않는다) ──
+    val result = lastResult
+    if (resultOpen && result != null) {
+        ExplorationResultOverlay(
+            state = state,
+            result = result,
+            onOpenBattle = onOpenBattle,
+            onClose = { resultOpen = false }
+        )
     }
 
     // ── 탐색 진행 연출 오버레이 — 일상복 캐릭터가 화면에 서고 게이지가 차오른다 ──
@@ -297,6 +228,278 @@ private fun ExploreStageTone(mode: ExplorationMode) = when (mode) {
     ExplorationMode.ENCOUNTER -> com.game.tcg.core.model.Element.LIGHT
 }
 
+// ============================================================================
+// 🧭 탐색 구역 타일 — 아이콘 · 보상 아이콘 · 탐색 버튼만 (설명문 없음)
+// ============================================================================
+
+@Composable
+private fun ExplorationZoneTile(
+    zone: ExplorationDecor.Zone,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val tone = zone.tone.color()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .alpha(if (enabled) 1f else 0.5f)
+            .clip(RoundedCornerShape(14.dp))
+            .border(1.dp, tone.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
+            .clickable(enabled = enabled) { onClick() }
+    ) {
+        // 배경 일러스트 위에 어두운 스크림 — 글씨 대비 확보
+        ResourceArtImage(
+            resId = zone.backdropResId,
+            contentDescription = zone.mode.displayName,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.TopCenter,
+            modifier = Modifier.fillMaxSize(),
+            targetWidthPx = 480
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(listOf(Color(0xD90B0A12), Color(0x990B0A12), Color(0xF20B0A12)))
+                )
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(zone.mode.icon, fontSize = TcgType.TITLE.sp)
+            Text(
+                zone.mode.displayName,
+                color = TcgColors.Text,
+                fontSize = TcgType.BODY_SMALL.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Pill("⚡ -${zone.mode.energyCost}", TcgColors.Mana)
+            Spacer(Modifier.weight(1f))
+            // 보상은 아이콘만 (설명 없음)
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                zone.expectedRewards.forEach { reward ->
+                    Text(
+                        reward.substringBefore(" "),
+                        fontSize = TcgType.BODY_SMALL.sp,
+                        maxLines = 1
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(50))
+                    .background(if (enabled) tone.copy(alpha = 0.92f) else TcgColors.SurfaceAlt)
+                    .padding(vertical = 5.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    if (enabled) "탐색 ▶" else "⚡ 부족",
+                    color = if (enabled) Color(0xFF120E1C) else TcgColors.Muted,
+                    fontSize = TcgType.LABEL.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+// ============================================================================
+// 🎁 탐색 결과 오버레이
+// ============================================================================
+
+@Composable
+private fun ExplorationResultOverlay(
+    state: TcgGameState,
+    result: ExplorationResult,
+    onOpenBattle: () -> Unit,
+    onClose: () -> Unit
+) {
+    val artId = ExplorationDecor.resultArtCardId(result = result, fallbackCardId = state.lobbyHeroId)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TcgColors.Background.copy(alpha = 0.98f))
+            // 아래 화면으로 탭이 새지 않게
+            .pointerInput(Unit) { detectTapGestures { } }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${ExplorationDecor.resultIcon(result)} ${result.title}",
+                    color = TcgColors.Text,
+                    fontSize = TcgType.TITLE.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Pill(result.mode.displayName, if (result.startsBattle) TcgColors.Danger else TcgColors.Heal)
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(TcgColors.SurfaceAlt)
+                        .border(1.dp, TcgColors.Line, RoundedCornerShape(50))
+                        .clickable { onClose() }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text("✕", color = TcgColors.Text, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            if (artId != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .border(
+                            1.5.dp,
+                            if (result.startsBattle) TcgColors.Danger else TcgColors.Heal,
+                            RoundedCornerShape(16.dp)
+                        )
+                ) {
+                    CardArtImage(
+                        cardId = artId,
+                        visual = ExplorationDecor.resultVisual(result),
+                        contentDescription = ExplorationDecor.resultCompanionLabel(result) ?: "탐색 결과",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize(),
+                        targetWidthPx = 900
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(listOf(Color.Transparent, Color(0x33000000), Color(0xF20B0A12)))
+                            )
+                    )
+                    val label = ExplorationDecor.resultCompanionLabel(result)
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        if (label != null) {
+                            Pill("👤 $label", TcgColors.Gold, filled = true)
+                        }
+                        Text(
+                            result.narrative,
+                            color = TcgColors.Text.copy(alpha = 0.94f),
+                            fontSize = TcgType.BODY_SMALL.sp,
+                            lineHeight = TcgType.BODY.sp,
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    result.narrative,
+                    color = TcgColors.Text.copy(alpha = 0.94f),
+                    fontSize = TcgType.BODY_SMALL.sp,
+                    lineHeight = TcgType.BODY.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                )
+            }
+
+            // 보상 배지 한 줄
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                ExplorationDecor.rewardBadges(result).take(4).forEach { badge ->
+                    Pill(badge, TcgColors.Heal)
+                }
+                if (result.bondGained > 0) Pill("❤ +${result.bondGained}", TcgColors.Gold)
+                if (result.temptationGained > 0) Pill("🌫 +${result.temptationGained}", TcgColors.Danger)
+            }
+
+            if (result.startsBattle) {
+                ActionTile(
+                    label = "⚔ 교전 — ${result.enemyName}",
+                    hint = "HP ${result.enemyMaxHp} · ATK ${result.enemyAtk} · ${result.enemyElement.displayName}",
+                    accent = TcgColors.Danger,
+                    onClick = {
+                        onClose()
+                        onOpenBattle()
+                    }
+                )
+            } else {
+                ActionTile(
+                    label = "✓ 확인",
+                    hint = null,
+                    accent = TcgColors.Heal,
+                    onClick = onClose
+                )
+            }
+        }
+    }
+}
+
+/** 기억 파편 1명 — 초상화 + 파편 게이지 (설명문 없음) */
+@Composable
+private fun MemoryFragmentRow(card: TcgCard) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .width(36.dp)
+                    .aspectRatio(CardLayoutRules.TILE_ASPECT)
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(1.dp, TcgColors.Abyss.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+            ) {
+                CardArtImage(
+                    cardId = card.id,
+                    visual = com.game.tcg.core.model.VisualState.CASUAL_CUTE,
+                    contentDescription = card.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                    targetWidthPx = 160
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(card.name, color = TcgColors.Text, fontSize = TcgType.BODY_SMALL.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "🌙 ${card.memoryFragments}/${TcgCard.MEMORY_FRAGMENT_TARGET} · ❤ ${card.bondLevel}",
+                    color = TcgColors.Muted,
+                    fontSize = TcgType.LABEL.sp,
+                    maxLines = 1
+                )
+            }
+        }
+        StatBar(
+            ratio = card.memoryFragments.toFloat() / TcgCard.MEMORY_FRAGMENT_TARGET,
+            color = TcgColors.Abyss,
+            height = 6
+        )
+    }
+}
+
+// ============================================================================
+// 연출 오버레이 · 파티 스트립
+// ============================================================================
+
 /**
  * 탐색 진행 연출 — 배경 장면 위로 일상복 동료가 차례로 들어서고,
  * 진행 게이지와 단계 문구가 함께 흘러간다.
@@ -309,7 +512,6 @@ private fun ExplorationProgressOverlay(
     tone: Color,
     onFinished: () -> Unit
 ) {
-    val steps = remember(mode) { ExplorationStaging.steps(mode) }
     val progress = remember { Animatable(0f) }
     var revealed by remember { mutableIntStateOf(0) }
     val finished by rememberUpdatedState(onFinished)
@@ -335,7 +537,6 @@ private fun ExplorationProgressOverlay(
             // 연출 중 아래 화면(스크롤·버튼)으로 탭이 새지 않도록 입력을 소비한다
             .pointerInput(Unit) { detectTapGestures { } }
     ) {
-        // 태블릿·가로 화면에서도 원화가 잘리지 않도록 앰비언트 + 2:3 프레임으로 그린다
         AmbientResourceBackdrop(
             resId = backdropResId,
             contentDescription = mode.displayName,
@@ -360,7 +561,6 @@ private fun ExplorationProgressOverlay(
         ) {
             Pill("${mode.icon} ${mode.displayName} 탐색 중", tone, filled = true)
             Spacer(Modifier.height(10.dp))
-            // 일상복 캐릭터 스트립 — 차례로 슬라이드 인
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.Bottom
@@ -390,8 +590,7 @@ private fun ExplorationProgressOverlay(
                             cardId = id,
                             visual = ExplorationStaging.stagingVisual,
                             contentDescription = TcgGameViewModel.profileOf(id)?.displayName ?: "동료",
-                            contentScale = ContentScale.Crop,
-                            alignment = Alignment.TopCenter,
+                            contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize(),
                             targetWidthPx = 320
                         )
@@ -402,9 +601,9 @@ private fun ExplorationProgressOverlay(
             Text(
                 ExplorationStaging.messageAt(mode, progress.value),
                 color = TcgColors.Text,
-                fontSize = 13.sp,
+                fontSize = TcgType.BODY_SMALL.sp,
                 fontWeight = FontWeight.SemiBold,
-                lineHeight = 18.sp
+                lineHeight = TcgType.BODY.sp
             )
             Spacer(Modifier.height(8.dp))
             StatBar(ratio = progress.value, color = tone, height = 9)
@@ -412,150 +611,72 @@ private fun ExplorationProgressOverlay(
             Text(
                 "${(progress.value * 100).toInt()}%",
                 color = TcgColors.Muted,
-                fontSize = 11.sp
+                fontSize = TcgType.LABEL.sp
             )
         }
     }
 }
 
-/** 파견 파티 초상화 스트립 — 전열 3명이 앞에 온다 */
+/** 파견 파티 초상화 1줄 — 전열 3명이 앞에 온다 */
 @Composable
 private fun PartyPortraitStrip(state: TcgGameState) {
     val ids = ExplorationDecor.partyStrip(state)
     val frontIds = state.party.filter { it.isFrontRow }.sortedBy { it.slotIndex }.map { it.card.id }
     if (ids.isEmpty()) {
-        Text("출전 덱이 비어 있습니다 — 「서약·덱」에서 편성하세요.", color = TcgColors.Muted, fontSize = 12.sp)
+        Text(
+            "출전 덱이 비어 있습니다 — 「서약·덱」에서 편성하세요.",
+            color = TcgColors.Muted,
+            fontSize = TcgType.LABEL.sp
+        )
         return
     }
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(78.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
         items(ids, key = { it }) { id ->
             val card = state.ownedCards.firstOrNull { it.id == id } ?: TcgGameViewModel.characterCard(id)
             val isFront = frontIds.contains(id)
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
                     modifier = Modifier
-                        .width(52.dp)
-                        .height(66.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .width(44.dp)
+                        .fillMaxHeight(0.82f)
+                        .clip(RoundedCornerShape(9.dp))
                         .border(
                             if (isFront) 1.5.dp else 1.dp,
                             if (isFront) TcgColors.Gold else TcgColors.Line,
-                            RoundedCornerShape(10.dp)
+                            RoundedCornerShape(9.dp)
                         )
                 ) {
                     CardArtImage(
                         cardId = id,
                         visual = card.currentVisual,
                         contentDescription = card.name,
-                        contentScale = ContentScale.Crop,
-                        alignment = Alignment.TopCenter,
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize(),
-                        targetWidthPx = 200
+                        targetWidthPx = 180
                     )
                     if (isFront) {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopStart)
-                                .padding(2.dp)
-                                .clip(RoundedCornerShape(4.dp))
+                                .padding(1.dp)
+                                .clip(RoundedCornerShape(3.dp))
                                 .background(TcgColors.Gold)
                                 .padding(horizontal = 3.dp)
                         ) {
-                            Text("전", color = Color(0xFF120E1C), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text("전", color = Color(0xFF120E1C), fontSize = TcgType.TILE_MARK.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
-                Spacer(Modifier.height(2.dp))
                 Text(
                     card.name.take(4),
                     color = TcgColors.Muted,
-                    fontSize = 11.sp,
+                    fontSize = TcgType.TILE_MARK.sp,
                     maxLines = 1
-                )
-            }
-        }
-    }
-}
-
-/** 탐색 구역 카드 — 배경 일러스트 + 소모 차원력 + 예상 보상 배지 */
-@Composable
-private fun ExplorationZoneCard(
-    zone: ExplorationDecor.Zone,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(122.dp)
-            .alpha(if (enabled) 1f else 0.55f)
-            .clip(RoundedCornerShape(14.dp))
-            .border(1.dp, zone.tone.color().copy(alpha = 0.55f), RoundedCornerShape(14.dp))
-            .clickable(enabled = enabled) { onClick() }
-    ) {
-        ResourceArtImage(
-            resId = zone.backdropResId,
-            contentDescription = zone.mode.displayName,
-            contentScale = ContentScale.Crop,
-            alignment = Alignment.TopCenter,
-            modifier = Modifier.fillMaxSize(),
-            targetWidthPx = 720
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(Color(0xE60B0A12), Color(0x990B0A12), Color(0x330B0A12))
-                    )
-                )
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(11.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(zone.mode.icon, fontSize = 15.sp)
-                    Spacer(Modifier.width(5.dp))
-                    Text(
-                        zone.mode.displayName,
-                        color = TcgColors.Text,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    Pill("⚡ -${zone.mode.energyCost}", TcgColors.Mana)
-                }
-                Text(
-                    zone.mode.description,
-                    color = TcgColors.Muted,
-                    fontSize = 12.sp,
-                    lineHeight = 13.sp
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    zone.expectedRewards.forEach { reward ->
-                        Pill(reward, zone.tone.color())
-                    }
-                }
-            }
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(zone.tone.color().copy(alpha = if (enabled) 0.9f else 0.3f))
-                    .padding(horizontal = 12.dp, vertical = 7.dp)
-            ) {
-                Text(
-                    if (enabled) "탐색 ▶" else "⚡ 부족",
-                    color = Color(0xFF120E1C),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
                 )
             }
         }

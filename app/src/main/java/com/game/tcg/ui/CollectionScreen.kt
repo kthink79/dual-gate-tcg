@@ -17,12 +17,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -41,8 +42,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.game.tcg.core.engine.AffinityRules
 import com.game.tcg.core.model.DeckRules
 import com.game.tcg.core.model.TcgCard
@@ -51,18 +55,14 @@ import com.game.tcg.core.model.VisualState
 /**
  * 탭 3 — 🃏 도감 · 성장 (도감 / 강화 / 합성)
  *
- * 2026-11-19 사용자 요청(스크린샷 피드백) 전면 개편:
- *  ① '신규 15인 / 기존 155인 / 보스 6' 구분 버튼 **삭제**
- *  ② 5줄 필터 버튼을 **콤보박스(보기/속성/성급) + '보유만' 1줄**로 축약
- *  ③ 도감에서 캐릭터를 고르면 **상단 서브 탭 [도감][강화][합성]** 으로 바로 전환 —
- *     아래로 길게 스크롤하지 않아도 되고, 선택한 캐릭터가 그대로 이어진다
- *  ④ 목록은 칩 나열 대신 **2:3 썸네일 그리드**(태블릿에서는 열 수 자동 증가)
- *  ⑤ 설명문은 짧은 라벨·아이콘 위주로 정리
+ * 2026-11-26 사용자 요청 「메뉴 아이콘 중심·설명문 축소·글자 확대·종스크롤 최소화」:
+ *  ① 상단 서브 탭을 **아이콘 중심 탭**(📖 도감 / ⚒ 강화 / 🧪 합성)으로 축소 — 긴 라벨·설명 없음
+ *  ② 캐릭터를 고르면 아래로 길게 붙던 상세 카드를 **모달(전환 뷰)** 로 분리 —
+ *     그리드가 화면 높이를 그대로 쓰고, 상세는 전체 화면 모달에서 스크롤한다
+ *  ③ 그리드 아래에는 선택 캐릭터 **한 줄 스트립**(초상화·이름·상세 버튼)만 남긴다
+ *  ④ 글씨는 [TcgType] 기준(제목 24 · 섹션 18 · 본문 15 · 배지 13) 이상만 쓴다
  *
- * 2026-11-24 사용자 요청 — 보유 캐릭터를 **더 크게·편하게** 감상:
- *  ⑥ 썸네일 그리드를 2:3 그대로 유지한 채 **크게**(열 수 축소·높이 확대·디코딩 해상도 상향)
- *  ⑦ 상세 원화를 **좌우 스와이프(HorizontalPager)·‹ › 버튼**으로 보유 캐릭터 연속 탐색
- *  ⑧ 원화를 누르면 **4종 전체화면 뷰어**(핀치 확대·드래그·더블 탭) — [CharacterArtViewer]
+ * (이전 2026-11-19 · 11-24 개편의 필터 콤보박스·큰 2:3 썸네일·원화 페이저·4종 뷰어는 유지)
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -104,8 +104,40 @@ fun CollectionScreen(
     var viewerOpen by remember { mutableStateOf(false) }
     var viewerBrowseIds by remember { mutableStateOf<List<Int>>(emptyList()) }
 
-    ScreenFrame {
-        // ── 머리: 제목 + 보유 수 ──
+    // 🗂 상세 모달 — 2026-11-26: 그리드 아래에 길게 붙던 상세 카드를 모달로 분리
+    var detailOpen by remember { mutableStateOf(false) }
+
+    // ── 필터 상태 (콤보박스 1줄) ──
+    val allProfiles = TcgGameViewModel.profiles()
+    val ownedIds = state.ownedCardIds
+    var viewModeIndex by remember { mutableIntStateOf(0) }
+    var elementIndex by remember { mutableIntStateOf(0) }
+    var starIndex by remember { mutableIntStateOf(0) }
+    var ownedOnly by remember { mutableStateOf(false) }
+    val viewMode = CatalogViewMode.entries[viewModeIndex.coerceIn(0, CatalogViewMode.entries.size - 1)]
+    val elementFilter = CollectionCatalog.elementAt(elementIndex)
+    val starFilter = CollectionCatalog.starAt(starIndex)
+    val starOf: (Int) -> Int = { id -> state.ownedCards.firstOrNull { it.id == id }?.starLevel ?: 1 }
+
+    val shownProfiles = CollectionCatalog.orderForManagement(
+        profiles = CollectionCatalog.applyFilters(
+            profiles = allProfiles,
+            element = elementFilter,
+            star = starFilter,
+            ownedOnly = ownedOnly,
+            ownedIds = ownedIds,
+            starOf = starOf
+        ),
+        ownedIds = ownedIds,
+        starOf = starOf
+    )
+    val groups = CollectionCatalog.group(shownProfiles, viewMode, starOf)
+
+    // ── 서브 탭 (📖 도감 / ⚒ 강화 / 🧪 합성) ──
+    var hubTab by remember { mutableStateOf(CharacterHubTab.CATALOG) }
+
+    CompactFrame {
+        // ── 머리 1줄: 제목 + 보유 수 + 선택 번호 ──
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("도감·성장", color = TcgColors.Text, fontSize = TcgType.TITLE.sp, fontWeight = FontWeight.Black)
             Spacer(Modifier.width(8.dp))
@@ -114,33 +146,14 @@ fun CollectionScreen(
             Pill("#${selected.id}", elementColor(selected.element))
         }
 
-        // ── ① 콤보박스 1줄 (보기 기준 / 속성 / 성급 / 보유만) ──
-        val allProfiles = TcgGameViewModel.profiles()
-        val ownedIds = state.ownedCardIds
-        var viewModeIndex by remember { mutableIntStateOf(0) }
-        var elementIndex by remember { mutableIntStateOf(0) }
-        var starIndex by remember { mutableIntStateOf(0) }
-        var ownedOnly by remember { mutableStateOf(false) }
-        val viewMode = CatalogViewMode.entries[viewModeIndex.coerceIn(0, CatalogViewMode.entries.size - 1)]
-        val elementFilter = CollectionCatalog.elementAt(elementIndex)
-        val starFilter = CollectionCatalog.starAt(starIndex)
-        val starOf: (Int) -> Int = { id -> state.ownedCards.firstOrNull { it.id == id }?.starLevel ?: 1 }
+        // ── ① 아이콘 중심 서브 탭 ──
+        TcgIconTabBar(
+            tabs = listOf("📖" to "도감", "⚒" to "강화", "🧪" to "합성"),
+            selectedIndex = hubTab.ordinal,
+            accent = TcgColors.Violet
+        ) { hubTab = CharacterHubTab.entries[it] }
 
-        val shownProfiles = CollectionCatalog.orderForManagement(
-            profiles = CollectionCatalog.applyFilters(
-                profiles = allProfiles,
-                element = elementFilter,
-                star = starFilter,
-                ownedOnly = ownedOnly,
-                ownedIds = ownedIds,
-                starOf = starOf
-            ),
-            ownedIds = ownedIds,
-            starOf = starOf
-        )
-        val groups = CollectionCatalog.group(shownProfiles, viewMode, starOf)
-
-        // 좁은 화면에서는 자연스럽게 한 줄 더 접히도록 FlowRow (넓은 화면은 1줄)
+        // ── ② 필터 1줄 (보기 / 속성 / 성급 / 보유) ──
         androidx.compose.foundation.layout.FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -170,120 +183,134 @@ fun CollectionScreen(
             TcgToggleChip(label = "보유", checked = ownedOnly) { ownedOnly = it }
         }
 
-        // ── ② 서브 탭 (도감 / 강화 / 합성) ──
-        var hubTab by remember { mutableStateOf(CharacterHubTab.CATALOG) }
-        TcgTabBar(
-            tabs = CharacterHubTab.entries.map { it.label },
-            selectedIndex = hubTab.ordinal,
-            accent = TcgColors.Violet,
-            onSelect = { hubTab = CharacterHubTab.entries[it] }
-        )
-
-        // ── ③ 캐릭터 썸네일 그리드 (선택하면 세 탭이 모두 이 캐릭터를 쓴다) ──
-        SectionCard(
-            title = "캐릭터",
-            badge = CollectionCatalog.countLabel(shownProfiles.size, allProfiles.size, state.ownedCards.size),
-            accent = TcgColors.Abyss
-        ) {
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                // 2026-11-24: 타일을 크게 — 최소 타일 폭을 올려 열 수를 줄이고(휴대폰 2열) 높이를 키운다
-                val columns = ResponsiveLayout.gridColumns(maxWidth.value, minTileWidthDp = 132f)
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(columns),
+        when (hubTab) {
+            // ── 📖 도감: 그리드가 남는 높이를 모두 쓴다 (상세는 모달) ──
+            CharacterHubTab.CATALOG -> {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(if (maxWidth.value >= 600f) 460.dp else 356.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
                         .background(TcgColors.Background)
-                        .padding(6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .border(1.dp, TcgColors.Line, RoundedCornerShape(14.dp))
                 ) {
-                    groups.forEach { group ->
-                        if (viewMode != CatalogViewMode.NUMBER) {
-                            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(Color(group.tint).copy(alpha = 0.16f))
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        group.title,
-                                        color = Color(group.tint),
-                                        fontSize = TcgType.LABEL.sp,
-                                        fontWeight = FontWeight.Bold
+                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                        val columns = ResponsiveLayout.gridColumns(maxWidth.value, minTileWidthDp = 128f)
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(columns),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            groups.forEach { group ->
+                                if (viewMode != CatalogViewMode.NUMBER) {
+                                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Color(group.tint).copy(alpha = 0.16f))
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                group.title,
+                                                color = Color(group.tint),
+                                                fontSize = TcgType.LABEL.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(Modifier.weight(1f))
+                                            Text("${group.entries.size}", color = TcgColors.Muted, fontSize = TcgType.LABEL.sp)
+                                        }
+                                    }
+                                }
+                                items(group.entries, key = { it.cardId }) { item ->
+                                    val owned = item.cardId in ownedIds
+                                    val star = starOf(item.cardId)
+                                    val record = com.game.tcg.core.model.CardCatalog.find(item.cardId)
+                                    val power = ((record?.atk ?: 0) + (record?.def ?: 0)) / 100
+                                    DuelCardTile(
+                                        cardId = item.cardId,
+                                        visual = VisualState.BATTLE,
+                                        element = item.element,
+                                        starLevel = star,
+                                        power = power,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .aspectRatio(CardLayoutRules.TILE_ASPECT),
+                                        highlighted = item.cardId == state.selectedCardId,
+                                        dimmed = !owned,
+                                        statusBadge = if (owned) null else "미보유",
+                                        statusBadgeColor = TcgColors.Line,
+                                        targetWidthPx = 360,
+                                        onClick = {
+                                            onSelectCard(item.cardId)
+                                            detailOpen = true
+                                        }
                                     )
-                                    Spacer(Modifier.weight(1f))
-                                    Text("${group.entries.size}", color = TcgColors.Muted, fontSize = TcgType.LABEL.sp)
                                 }
                             }
                         }
-                        items(group.entries, key = { it.cardId }) { item ->
-                            val owned = item.cardId in ownedIds
-                            val star = starOf(item.cardId)
-                            // 카드 모서리의 전투력 = 카탈로그 ATK+DEF (없으면 0)
-                            val record = com.game.tcg.core.model.CardCatalog.find(item.cardId)
-                            val power = ((record?.atk ?: 0) + (record?.def ?: 0)) / 100
-                            DuelCardTile(
-                                cardId = item.cardId,
-                                visual = VisualState.BATTLE,
-                                element = item.element,
-                                starLevel = star,
-                                power = power,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(CardLayoutRules.TILE_ASPECT),
-                                highlighted = item.cardId == state.selectedCardId,
-                                dimmed = !owned,
-                                statusBadge = if (owned) null else "미보유",
-                                statusBadgeColor = TcgColors.Line,
-                                targetWidthPx = 360,
-                                onClick = { onSelectCard(item.cardId) }
-                            )
-                        }
                     }
+                }
+
+                // 선택 캐릭터 한 줄 스트립 — 상세는 모달로
+                SelectedStrip(
+                    state = state,
+                    card = selected,
+                    isOwned = isOwned,
+                    countLabel = CollectionCatalog.countLabel(shownProfiles.size, allProfiles.size, state.ownedCards.size),
+                    onOpenDetail = { detailOpen = true }
+                )
+            }
+
+            // ── ⚒ 강화 / 🧪 합성: 스크롤 본문 ──
+            else -> Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SelectedHeadline(state, selected, isOwned)
+                if (hubTab == CharacterHubTab.UPGRADE) {
+                    UpgradeSection(state, selected, onUpgrade, onOpenShop)
+                } else {
+                    SynthesisSection(state, selected, onCraft, onTranscend)
                 }
             }
         }
+    }
 
-        // ── ④ 탭 내용 ──
-        when (hubTab) {
-            CharacterHubTab.CATALOG -> CatalogTab(
-                state = state,
-                selected = selected,
-                isOwned = isOwned,
-                profileTitle = profile?.title,
-                isDemonLordCard = isDemonLordCard,
-                browseIds = shownProfiles.map { it.cardId },
-                onSelectCard = onSelectCard,
-                onOpenViewer = {
-                    viewerBrowseIds = shownProfiles.map { it.cardId }
-                    viewerOpen = true
-                },
-                onSelectVisual = onSelectVisual,
-                onGaze = onGaze,
-                onPurify = onPurify,
-                onMemoryRecall = onMemoryRecall,
-                onSetLobbyHero = onSetLobbyHero,
-                onDeployToParty = onDeployToParty,
-                onUndeployFromParty = onUndeployFromParty,
-                videoCount = selectedVideoCount,
-                onReplayVideo = { videoTick += 1; videoCardId = state.selectedCardId },
-                onCraftNew = onCraftNew,
-                onLimitBreak = onLimitBreak
-            )
-            CharacterHubTab.UPGRADE -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SelectedHeadline(state, selected, isOwned)
-                UpgradeSection(state, selected, onUpgrade, onOpenShop)
-            }
-            CharacterHubTab.SYNTHESIS -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SelectedHeadline(state, selected, isOwned)
-                SynthesisSection(state, selected, onCraft, onTranscend)
-            }
-        }
+    // ── 🗂 캐릭터 상세 모달 (2026-11-26) ──
+    if (detailOpen) {
+        CatalogDetailDialog(
+            onClose = { detailOpen = false },
+            state = state,
+            selected = selected,
+            isOwned = isOwned,
+            profileTitle = profile?.title,
+            isDemonLordCard = isDemonLordCard,
+            browseIds = shownProfiles.map { it.cardId },
+            onSelectCard = onSelectCard,
+            onOpenViewer = {
+                viewerBrowseIds = shownProfiles.map { it.cardId }
+                viewerOpen = true
+            },
+            onSelectVisual = onSelectVisual,
+            onGaze = onGaze,
+            onPurify = onPurify,
+            onMemoryRecall = onMemoryRecall,
+            onSetLobbyHero = onSetLobbyHero,
+            onDeployToParty = onDeployToParty,
+            onUndeployFromParty = onUndeployFromParty,
+            videoCount = selectedVideoCount,
+            onReplayVideo = { videoTick += 1; videoCardId = state.selectedCardId },
+            onCraftNew = onCraftNew,
+            onLimitBreak = onLimitBreak
+        )
     }
 
     // ── 🎬 등장 영상 전체 화면 ──
@@ -315,6 +342,162 @@ fun CollectionScreen(
             onSelectCard = onSelectCard,
             onClose = { viewerOpen = false }
         )
+    }
+}
+
+/**
+ * 캐릭터 상세 모달 — 예전에는 그리드 아래로 길게 붙던 상세 카드를 전환 뷰로 옮겼다.
+ * 그리드가 화면 전체 높이를 쓰고, 상세는 여기서만 스크롤한다.
+ */
+@Composable
+private fun CatalogDetailDialog(
+    onClose: () -> Unit,
+    state: TcgGameState,
+    selected: TcgCard,
+    isOwned: Boolean,
+    profileTitle: String?,
+    isDemonLordCard: Boolean,
+    browseIds: List<Int>,
+    onSelectCard: (Int) -> Unit,
+    onOpenViewer: () -> Unit,
+    onSelectVisual: (VisualState) -> Unit,
+    onGaze: () -> Unit,
+    onPurify: () -> Unit,
+    onMemoryRecall: (Int) -> Unit,
+    onSetLobbyHero: (Int) -> Unit,
+    onDeployToParty: (Int, Int) -> Unit,
+    onUndeployFromParty: (Int) -> Unit,
+    videoCount: Int,
+    onReplayVideo: () -> Unit,
+    onCraftNew: () -> Unit,
+    onLimitBreak: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(TcgColors.Background.copy(alpha = 0.98f))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 모달 머리 — 이름·번호 + 닫기 (설명문 없음)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "#${selected.id} ${selected.name}",
+                        color = TcgColors.Text,
+                        fontSize = TcgType.TITLE.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Pill(if (isOwned) "${selected.starLevel}★" else "미보유", elementColor(selected.element))
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(TcgColors.SurfaceAlt)
+                            .border(1.dp, TcgColors.Line, RoundedCornerShape(50))
+                            .clickable { onClose() }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("✕ 닫기", color = TcgColors.Text, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    CatalogTab(
+                        state = state,
+                        selected = selected,
+                        isOwned = isOwned,
+                        profileTitle = profileTitle,
+                        isDemonLordCard = isDemonLordCard,
+                        browseIds = browseIds,
+                        onSelectCard = onSelectCard,
+                        onOpenViewer = onOpenViewer,
+                        onSelectVisual = onSelectVisual,
+                        onGaze = onGaze,
+                        onPurify = onPurify,
+                        onMemoryRecall = onMemoryRecall,
+                        onSetLobbyHero = onSetLobbyHero,
+                        onDeployToParty = onDeployToParty,
+                        onUndeployFromParty = onUndeployFromParty,
+                        videoCount = videoCount,
+                        onReplayVideo = onReplayVideo,
+                        onCraftNew = onCraftNew,
+                        onLimitBreak = onLimitBreak
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 그리드 아래 한 줄 — 선택 캐릭터 초상화 · 이름 · 상세 버튼 */
+@Composable
+private fun SelectedStrip(
+    state: TcgGameState,
+    card: TcgCard,
+    isOwned: Boolean,
+    countLabel: String,
+    onOpenDetail: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(TcgColors.SurfaceAlt)
+            .clickable { onOpenDetail() }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(40.dp)
+                .aspectRatio(CardLayoutRules.TILE_ASPECT)
+                .clip(RoundedCornerShape(7.dp))
+                .border(1.dp, elementColor(card.element).copy(alpha = 0.7f), RoundedCornerShape(7.dp))
+        ) {
+            CardArtImage(
+                cardId = card.id,
+                visual = card.currentVisual,
+                contentDescription = card.name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+                targetWidthPx = 160
+            )
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(
+                "#${card.id} ${card.name}",
+                color = TcgColors.Text,
+                fontSize = TcgType.BODY_SMALL.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                "$countLabel · ${if (isOwned) "❤ ${card.bondLevel}" else "미보유"}",
+                color = TcgColors.Muted,
+                fontSize = TcgType.LABEL.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Pill("상세 ▸", TcgColors.Gold, filled = true)
     }
 }
 

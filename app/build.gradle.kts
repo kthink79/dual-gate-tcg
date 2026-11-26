@@ -12,9 +12,9 @@ android {
         applicationId = "com.game.tcg"
         minSdk = 26
         targetSdk = 35
-        // 2026-11-24: 로스터 192명(190~199 신규 10인) · 영상 12편(누적 120) · 캐릭터 관리 갤러리/확대 뷰어
-        versionCode = 4
-        versionName = "0.4.0"
+        // 2026-11-27: 메뉴 아이콘 중심 UI 개편(아이콘 탭·글자 확대·무스크롤) · 영상 8편(121~128, 누적 138편)
+        versionCode = 5
+        versionName = "0.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

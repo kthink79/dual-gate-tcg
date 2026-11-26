@@ -236,7 +236,7 @@ fun IntroStoryScreen(
             Text(
                 state.stepLabel,
                 color = TcgColors.Muted,
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(Modifier.width(10.dp))
@@ -251,7 +251,7 @@ fun IntroStoryScreen(
                 Text(
                     "SKIP ▸",
                     color = TcgColors.Text,
-                    fontSize = 12.sp,
+                    fontSize = TcgType.LABEL.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.6.sp
                 )
@@ -270,7 +270,7 @@ fun IntroStoryScreen(
             Text(
                 "— ${scene.act} · ${scene.id.label} —",
                 color = accent,
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.6.sp,
                 modifier = Modifier
@@ -292,7 +292,7 @@ fun IntroStoryScreen(
             Text(
                 scene.subtitle,
                 color = accent.copy(alpha = 0.92f),
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .alpha(titleAlpha)
@@ -302,7 +302,7 @@ fun IntroStoryScreen(
             Text(
                 scene.narration,
                 color = TcgColors.Text.copy(alpha = 0.88f),
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 lineHeight = 19.sp,
                 modifier = Modifier
                     .alpha(bodyAlpha)
@@ -338,7 +338,7 @@ fun IntroStoryScreen(
                 Text(
                     "장면 ${state.sceneIndex + 1} / ${IntroScript.sceneCount}",
                     color = TcgColors.Muted,
-                    fontSize = 12.sp
+                    fontSize = TcgType.LABEL.sp
                 )
             }
 
@@ -381,14 +381,14 @@ fun IntroStoryScreen(
                     Text(
                         IntroAdvancePolicy.TAP_PROMPT,
                         color = TcgColors.Text.copy(alpha = 0.7f + 0.3f * pulsing),
-                        fontSize = 12.sp,
+                        fontSize = TcgType.LABEL.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
                         IntroAdvancePolicy.sceneCounter(state),
                         color = accent,
-                        fontSize = 12.sp,
+                        fontSize = TcgType.LABEL.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }

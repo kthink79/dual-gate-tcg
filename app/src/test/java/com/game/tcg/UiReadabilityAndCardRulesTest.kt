@@ -70,6 +70,22 @@ class UiReadabilityAndCardRulesTest {
         assertTrue(TcgType.SECTION > TcgType.BODY)
     }
 
+    /**
+     * 2026-11-26 사용자 요층 「메뉴 글자 확대」 — 제목 20~24 · 본문 14~16 · 배지 13~14 로 상향됐는지.
+     * 예전엔 본문 14 · 보조 13 · 배지 12 였다.
+     */
+    @Test
+    fun `메뉴 개편으로 글자 크기가 제목 20~24 · 본문 14~16 · 배지 13~14 로 상향됐다`() {
+        assertTrue("확대 스케일 구간을 벗어났다", TcgType.withinExpandedScale())
+        assertTrue(TcgType.TITLE in TcgType.TITLE_RANGE)
+        assertTrue(TcgType.BODY in TcgType.BODY_RANGE)
+        assertTrue(TcgType.LABEL in TcgType.LABEL_RANGE)
+        assertTrue("배지·버튼은 13sp 이상", TcgType.LABEL >= 13f)
+        assertTrue("본문은 15sp 이상", TcgType.BODY >= 15f)
+        assertTrue("카드 타일 표식은 12sp 이상", TcgType.TILE_MARK >= 12f)
+        assertTrue("제목이 배지의 1.6배 이상", TcgType.TITLE >= TcgType.LABEL * 1.6f)
+    }
+
     // ──────────────────────────────────────────────────────────────
     // 2. 카드 규격 (2:3 · 12장 · Fit)
     // ──────────────────────────────────────────────────────────────

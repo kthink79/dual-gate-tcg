@@ -116,14 +116,14 @@ fun ScenarioScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Pill("릴리(가면) 친밀도", TcgColors.Abyss)
                     Spacer(Modifier.width(6.dp))
-                    Text("${state.lilyFamiliarity}/100", color = TcgColors.Abyss, fontSize = 12.sp)
+                    Text("${state.lilyFamiliarity}/100", color = TcgColors.Abyss, fontSize = TcgType.LABEL.sp)
                 }
             }
             if (state.defenseBonusPercent > 0 || state.intelBonusPercent > 0) {
                 Text(
                     "전투 보정 — 방어 +${state.defenseBonusPercent}% · 급소 피해 +${state.intelBonusPercent}%",
                     color = TcgColors.Heal,
-                    fontSize = 12.sp
+                    fontSize = TcgType.LABEL.sp
                 )
             }
         }
@@ -181,7 +181,7 @@ private fun ScenarioBanner(state: TcgGameState, step: StoryStep) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Pill("목표", TcgColors.Gold)
                     Spacer(Modifier.width(6.dp))
-                    Text(step.objective, color = TcgColors.Gold.copy(alpha = 0.9f), fontSize = 12.sp)
+                    Text(step.objective, color = TcgColors.Gold.copy(alpha = 0.9f), fontSize = TcgType.LABEL.sp)
                 }
                 Spacer(Modifier.height(7.dp))
                 StatBar(
@@ -247,13 +247,13 @@ private fun CompanionDialogue(
             Text(
                 body,
                 color = TcgColors.Text.copy(alpha = 0.9f),
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 lineHeight = 17.sp
             )
             Text(
                 "▸ $objective",
                 color = TcgColors.Gold.copy(alpha = 0.85f),
-                fontSize = 12.sp
+                fontSize = TcgType.LABEL.sp
             )
         }
     }
@@ -279,7 +279,7 @@ private fun TrustRiftEventCard(
                 "[홀림] 스택이 2 이상 쌓이면 아우렐리아가 눈치채고 추궁하는 긴급 교차 이벤트가 열립니다. " +
                     "(도감에서 마왕 카드를 응시하거나 일상 잠입 이벤트를 겪으면 스택이 쌓입니다.)",
                 color = TcgColors.Muted,
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 lineHeight = 15.sp
             )
         }
@@ -326,7 +326,7 @@ private fun TrustRiftEventCard(
                         "「요즘 눈빛이 흔들리고 있어요… 그 카페의 릴리라는 사람 때문인가요?」\n" +
                         "「저는 계약자님의 방패입니다. 방패에게조차 말하지 못할 일이 생긴 거라면… 그게 더 아픕니다.」",
                     color = TcgColors.Text.copy(alpha = 0.9f),
-                    fontSize = 12.sp,
+                    fontSize = TcgType.LABEL.sp,
                     lineHeight = 17.sp
                 )
             }
@@ -356,7 +356,7 @@ private fun TrustRiftEventCard(
                 Text(
                     if (state.trustRiftChoice == "RIFT_A_CONFESS") "A · 솔직한 고백" else "B · 숨김",
                     color = TcgColors.Text,
-                    fontSize = 12.sp
+                    fontSize = TcgType.LABEL.sp
                 )
             }
             if (state.trustRiftMessage != null) {
@@ -370,7 +370,7 @@ private fun TrustRiftEventCard(
                     Text(
                         state.trustRiftMessage,
                         color = TcgColors.Text.copy(alpha = 0.9f),
-                        fontSize = 12.sp,
+                        fontSize = TcgType.LABEL.sp,
                         lineHeight = 17.sp
                     )
                 }
@@ -380,7 +380,7 @@ private fun TrustRiftEventCard(
                     (if (state.frontRowDefensePenaltyPercent > 0)
                         " · 다음 전투 전열 방어 -${state.frontRowDefensePenaltyPercent}% 예약됨" else ""),
                 color = TcgColors.Muted,
-                fontSize = 12.sp
+                fontSize = TcgType.LABEL.sp
             )
         }
     }
@@ -411,13 +411,13 @@ private fun Chapter2PreludeCard(
                     "(현재 ${state.storyStepIndex + 1}/5화)"
             },
             color = TcgColors.Text.copy(alpha = if (unlocked) 0.88f else 0.6f),
-            fontSize = 12.sp,
+            fontSize = TcgType.LABEL.sp,
             lineHeight = 19.sp
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Pill("목표", TcgColors.Violet)
             Spacer(Modifier.width(6.dp))
-            Text(node.objective, color = TcgColors.Violet, fontSize = 12.sp)
+            Text(node.objective, color = TcgColors.Violet, fontSize = TcgType.LABEL.sp)
         }
         if (unlocked) {
             ActionTile(
@@ -444,7 +444,7 @@ private fun Chapter2PreludeCard(
                 Text(
                     state.chapter2Message,
                     color = TcgColors.Text.copy(alpha = 0.9f),
-                    fontSize = 12.sp,
+                    fontSize = TcgType.LABEL.sp,
                     lineHeight = 16.sp
                 )
             }
@@ -473,7 +473,7 @@ private fun EventCard(
             Text(
                 event.scene,
                 color = TcgColors.Text.copy(alpha = 0.88f),
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 lineHeight = 18.sp
             )
         }
@@ -495,7 +495,7 @@ private fun EventCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Pill("선택 완료", TcgColors.Heal)
                 Spacer(Modifier.width(6.dp))
-                Text(chosen?.label ?: "선택", color = TcgColors.Text, fontSize = 12.sp)
+                Text(chosen?.label ?: "선택", color = TcgColors.Text, fontSize = TcgType.LABEL.sp)
             }
             if (resultText != null) {
                 Box(
@@ -505,7 +505,7 @@ private fun EventCard(
                         .background(accent.copy(alpha = 0.12f))
                         .padding(12.dp)
                 ) {
-                    Text(resultText, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = 12.sp, lineHeight = 17.sp)
+                    Text(resultText, color = TcgColors.Text.copy(alpha = 0.9f), fontSize = TcgType.LABEL.sp, lineHeight = 17.sp)
                 }
             }
         }
@@ -557,7 +557,7 @@ fun ChoiceCard(
             Text(
                 label,
                 color = if (enabled) TcgColors.Text else TcgColors.Muted,
-                fontSize = 12.sp,
+                fontSize = TcgType.LABEL.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

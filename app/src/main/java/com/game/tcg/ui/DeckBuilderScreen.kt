@@ -159,7 +159,7 @@ fun DeckBuilderScreen(
                         .padding(horizontal = 11.dp, vertical = 6.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("⚔", color = Color.White, fontSize = 12.sp)
+                        Text("⚔", color = Color.White, fontSize = TcgType.LABEL.sp)
                         Spacer(Modifier.width(4.dp))
                         Text(
                             "${state.deckDisplayPower}",

@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -36,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -105,6 +107,170 @@ fun ScreenFrame(content: @Composable ColumnScope.() -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
             content = content
         )
+    }
+}
+
+/**
+ * 스크롤 없이 한 화면에 담는 본문 — 2026-11-26 사용자 요청
+ * 「소환·교감·해금을 세로로 쌓지 말고 탭으로 나눠 스크롤 없이 한 화면에」.
+ *
+ * [ScreenFrame] 과 같은 폭 제한·여백을 쓰되 **verticalScroll 을 두지 않는다**.
+ * 각 화면은 `Modifier.weight(1f)` 로 남는 높이를 그림·그리드에 넘겨
+ * 어떤 화면비에서도 스크롤 없이 들어간다(넘칠 때만 내부 목록이 스크롤).
+ */
+@Composable
+fun CompactFrame(content: @Composable ColumnScope.() -> Unit) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TcgColors.Background)
+    ) {
+        val contentMaxWidth = ResponsiveLayout.contentMaxWidthDp(maxWidth.value).dp
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .widthIn(max = contentMaxWidth)
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            content = content
+        )
+    }
+}
+
+/**
+ * 아이콘 중심 탭 바 — 2026-11-26 사용자 요청
+ * 「상·하단 중복 설명 문구를 걷어내고 아이콘 + 짧은 1~2단어 라벨로」.
+ *
+ * 각 탭은 `아이콘(위) · 라벨(아래)` 두 줄짜리 작은 칸이고, 글씨는 [TcgType.LABEL] 이상이다.
+ */
+@Composable
+fun TcgIconTabBar(
+    tabs: List<Pair<String, String>>,
+    selectedIndex: Int,
+    modifier: Modifier = Modifier,
+    accent: Color = TcgColors.Violet,
+    onSelect: (Int) -> Unit
+) {
+    if (tabs.isEmpty()) return
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF120E1C))
+            .border(1.dp, TcgColors.Line, RoundedCornerShape(14.dp))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        tabs.forEachIndexed { index, (icon, label) ->
+            val selected = index == selectedIndex
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(
+                        if (selected) accent.copy(alpha = 0.92f) else Color(0xFF1E1830)
+                    )
+                    .clickable { onSelect(index) }
+                    .padding(vertical = 5.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(1.dp)
+            ) {
+                Text(icon, fontSize = TcgType.ICON.sp, color = if (selected) Color(0xFF120E1C) else TcgColors.Text)
+                Text(
+                    label,
+                    color = if (selected) Color(0xFF120E1C) else TcgColors.Muted,
+                    fontSize = TcgType.LABEL.sp,
+                    fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 초상화 아이콘 타일 — 2026-11-26 사용자 요청
+ * 「세로 리스트를 3~4열 초상화 아이콘 그리드로 압축」.
+ *
+ * 2:3 원본 비율 그대로(Fit) 그려 얼굴이 잘리지 않고, 선택·잠금 상태만 테두리로 알린다.
+ */
+@Composable
+fun PortraitIconTile(
+    cardId: Int,
+    visual: VisualState,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    badge: String? = null,
+    selected: Boolean = false,
+    locked: Boolean = false,
+    accent: Color = TcgColors.Violet,
+    contentDescription: String? = null,
+    onClick: () -> Unit
+) {
+    val borderColor = when {
+        selected -> TcgColors.Gold
+        locked -> TcgColors.Line
+        else -> accent.copy(alpha = 0.55f)
+    }
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable { onClick() },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(CardLayoutRules.TILE_ASPECT)
+                .clip(RoundedCornerShape(9.dp))
+                .background(TcgColors.SurfaceAlt)
+                .border(if (selected) 2.dp else 1.dp, borderColor, RoundedCornerShape(9.dp))
+        ) {
+            CardArtImage(
+                cardId = cardId,
+                visual = visual,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+                targetWidthPx = 220
+            )
+            if (locked) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xB30B0A12)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("🔒", fontSize = TcgType.ICON.sp)
+                }
+            }
+            if (badge != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(2.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xCC120E1C))
+                        .padding(horizontal = 3.dp, vertical = 1.dp)
+                ) {
+                    Text(badge, color = TcgColors.Gold, fontSize = TcgType.TILE_MARK.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+            }
+        }
+        if (label != null) {
+            Text(
+                label,
+                color = if (selected) TcgColors.Gold else TcgColors.Muted,
+                fontSize = TcgType.TILE_MARK.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 

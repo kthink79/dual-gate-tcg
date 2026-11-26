@@ -635,7 +635,7 @@ private fun EnemyTile(
                     .background(Color(0xCC00E5FF))
                     .padding(horizontal = 4.dp, vertical = 1.dp)
             ) {
-                Text("⚔", color = Color(0xFF120E1C), fontSize = 9.sp, fontWeight = FontWeight.Black)
+                Text("⚔", color = Color(0xFF120E1C), fontSize = TcgType.TILE_MARK.sp, fontWeight = FontWeight.Black)
             }
         }
     }
@@ -694,7 +694,7 @@ private fun VsBar(
                     maxLines = 1
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("⚔", fontSize = 10.sp)
+                    Text("⚔", fontSize = TcgType.TILE_MARK.sp)
                     Spacer(Modifier.width(3.dp))
                     Text(
                         "$enemyPower",
@@ -758,7 +758,7 @@ private fun VsBar(
                         fontSize = TcgType.TILE_MARK.sp
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text("⚔", fontSize = 10.sp)
+                    Text("⚔", fontSize = TcgType.TILE_MARK.sp)
                     Spacer(Modifier.width(3.dp))
                     Text(
                         "$myPower",
