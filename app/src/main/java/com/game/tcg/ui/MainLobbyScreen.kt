@@ -89,6 +89,8 @@ fun MainLobbyScreen(
     ) {
         // 태블릿·대화면 배율 — 휴대폰(짧은 변 ≤420dp)은 1.0 이라 기존 화면과 동일
         val uiScale = ResponsiveLayout.uiScale(maxWidth.value, maxHeight.value)
+        // 2026-11-28 v0.6.1 — 높이가 낮은 가로 모드(폰 가로 등)에서는 하단 패널·좌우 레일이 겹친다
+        val short = ResponsiveLayout.isShortViewport(maxHeight.value)
 
         // ── 중앙 대형 캐릭터 아트 (화면의 주인공) — 가로 화면에서도 머리 잘림 없이 ──
         AmbientCharacterBackdrop(
@@ -120,16 +122,24 @@ fun MainLobbyScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .padding(horizontal = 8.dp, vertical = if (short) 4.dp else 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // 좁은 화면에서도 재화 4종 + 정보 버튼이 한 줄에 들어가도록 제목은 아이콘만 남긴다
-            LobbySummaryChip("🎴", TcgColors.Violet)
-            LobbyInfoPanel.topSummary(state).forEach { entry ->
-                LobbySummaryChip(entry.line, entry.tone.color())
+            // 좁은 화면에서도 🔊·📊 가 밀려나지 않도록 요약 칩 줄만 가로 스크롤에 담는다
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // 좁은 화면에서도 재화 4종 + 정보 버튼이 한 줄에 들어가도록 제목은 아이콘만 남긴다
+                LobbySummaryChip("🎴", TcgColors.Violet)
+                LobbyInfoPanel.topSummary(state).forEach { entry ->
+                    LobbySummaryChip(entry.line, entry.tone.color())
+                }
             }
-            Spacer(Modifier.weight(1f))
             // 작은 음소거 아이콘 — 누르면 BGM·SFX 를 함께 끄고 켠다
             Box(
                 modifier = Modifier
@@ -179,11 +189,12 @@ fun MainLobbyScreen(
         }
 
         // ── 좌측 레일 · 이세계 모험 ──
+        // 높이가 낮은 가로 모드에서는 가운데 정렬하면 하단 캐릭터 패널과 겹친다 — 상단에 붙인다
         Column(
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .align(if (short) Alignment.TopStart else Alignment.CenterStart)
+                .padding(start = 6.dp, top = if (short) 34.dp else 0.dp),
+            verticalArrangement = Arrangement.spacedBy(if (short) 6.dp else 8.dp)
         ) {
             Text(
                 "이세계",
@@ -201,9 +212,9 @@ fun MainLobbyScreen(
         // ── 우측 레일 · 현실 관리 ──
         Column(
             modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .align(if (short) Alignment.TopEnd else Alignment.CenterEnd)
+                .padding(end = 6.dp, top = if (short) 34.dp else 0.dp),
+            verticalArrangement = Arrangement.spacedBy(if (short) 6.dp else 8.dp)
         ) {
             Text(
                 "현실",
@@ -223,9 +234,9 @@ fun MainLobbyScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = if (short) 4.dp else 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(if (short) 2.dp else 4.dp)
         ) {
             // 이름 + 칭호 (한 덩어리로)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -234,16 +245,18 @@ fun MainLobbyScreen(
                 Text(
                     profile?.displayName ?: hero.name,
                     color = TcgColors.Text,
-                    fontSize = 21.sp,
+                    fontSize = if (short) 18.sp else 21.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
-            Text(
-                profile?.title ?: hero.skillText,
-                color = TcgColors.Violet.copy(alpha = 0.95f),
-                fontSize = TcgType.LABEL.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            if (!short) {
+                Text(
+                    profile?.title ?: hero.skillText,
+                    color = TcgColors.Violet.copy(alpha = 0.95f),
+                    fontSize = TcgType.LABEL.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
             // 호감도 · 전투력 · 상태 (한 줄)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Pill("❤ ${state.lobbyHeroBond}/100", TcgColors.Gold)
@@ -258,7 +271,6 @@ fun MainLobbyScreen(
             Box(modifier = Modifier.width(170.dp)) {
                 StatBar(ratio = state.lobbyHeroBond / 100f, color = TcgColors.Gold, height = 5)
             }
-
             // 4종 비주얼 전환 (전투 · 일상 · 데이트 · 미니어처)
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -319,12 +331,14 @@ fun MainLobbyScreen(
                 Spacer(Modifier.width(8.dp))
                 HeroCycleButton("▶") { onCycleHero(1) }
             }
-            Text(
-                "대표 캐릭터 ${rosterIndex + 1}/${roster.size} · 일상 ${TcgGameViewModel.CASUAL_LOOK_UNLOCK_BOND} / " +
-                    "데이트 ${TcgGameViewModel.DATE_LOOK_UNLOCK_BOND} 해금 · 전투 출전 1회 +${AffinityRules.BATTLE_WIN_GAIN}",
-                color = TcgColors.Muted.copy(alpha = 0.8f),
-                fontSize = TcgType.LABEL.sp
-            )
+            if (!short) {
+                Text(
+                    "대표 캐릭터 ${rosterIndex + 1}/${roster.size} · 일상 ${TcgGameViewModel.CASUAL_LOOK_UNLOCK_BOND} / " +
+                        "데이트 ${TcgGameViewModel.DATE_LOOK_UNLOCK_BOND} 해금 · 전투 출전 1회 +${AffinityRules.BATTLE_WIN_GAIN}",
+                    color = TcgColors.Muted.copy(alpha = 0.8f),
+                    fontSize = TcgType.LABEL.sp
+                )
+            }
         }
 
         }

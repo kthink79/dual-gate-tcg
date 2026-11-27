@@ -376,11 +376,24 @@ private fun CatalogDetailDialog(
         onDismissRequest = onClose,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Box(
+        // 2026-11-28 v0.6.1 — 가로 모드 보완
+        //  · 다이얼로그는 프레임 밖(전체 화면)이라 태블릿 가로에서 원화가 `fillMaxWidth` 로
+        //    폭을 다 먹어 높이 1900dp 짜리 거대한 카드가 됐다(스크롤을 한참 내려야 정보가 보인다).
+        //  · 화면이 가로로 넓으면 원화를 **화면 높이에 맞춰** 줄여 한눈에 들어오게 한다.
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .background(TcgColors.Background.copy(alpha = 0.98f))
         ) {
+            val wide = ResponsiveLayout.isLandscape(maxWidth.value, maxHeight.value)
+            val artWidth = if (wide) {
+                minOf(
+                    (maxHeight * 0.58f) * ResponsiveLayout.ART_ASPECT,
+                    maxWidth * 0.46f
+                )
+            } else {
+                null
+            }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -437,7 +450,8 @@ private fun CatalogDetailDialog(
                         videoCount = videoCount,
                         onReplayVideo = onReplayVideo,
                         onCraftNew = onCraftNew,
-                        onLimitBreak = onLimitBreak
+                        onLimitBreak = onLimitBreak,
+                        artWidth = artWidth
                     )
                 }
             }
@@ -567,7 +581,9 @@ private fun CatalogTab(
     videoCount: Int,
     onReplayVideo: () -> Unit,
     onCraftNew: () -> Unit,
-    onLimitBreak: () -> Unit
+    onLimitBreak: () -> Unit,
+    /** 가로 모드에서 원화가 화면을 넘지 않는 폭 — null 이면 예전처럼 폭을 가득 채운다 */
+    artWidth: androidx.compose.ui.unit.Dp? = null
 ) {
     // ── 카드 상세 (2:3 원본 비율 유지) ──
     SectionCard(
@@ -576,9 +592,16 @@ private fun CatalogTab(
         accent = elementColor(selected.element)
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(2f / 3f)
+            modifier = (if (artWidth != null) {
+                Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .width(artWidth)
+                    .aspectRatio(2f / 3f)
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(2f / 3f)
+            })
                 .clip(RoundedCornerShape(14.dp))
         ) {
             // 2026-11-24 — 좌우 스와이프로 보유 캐릭터를 연속 탐색, 누르면 4종 전체화면 뷰어

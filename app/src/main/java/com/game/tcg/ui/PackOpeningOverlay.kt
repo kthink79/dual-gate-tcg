@@ -13,16 +13,20 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,7 +39,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
@@ -340,30 +343,45 @@ private fun RevealStage(
 ) {
     val draw: PackDraw = opening.currentDraw ?: return
     val card = TcgGameViewModel.characterCard(draw.cardId)
-    Row(
-        modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.Center
-    ) {
-        Column(
+
+    // 2026-11-28 v0.6.1 — 가로 모드·태블릿 보완
+    //  · 예전에는 카드 크기를 **기기 화면**(LocalConfiguration) 배율로 잡았다. 태블릿 가로에서
+    //    uiScale 이 1.8 로 커져 424×636dp 카드가 2:3 프레임(533×800)에 들어가지 못하고
+    //    하단 버튼이 화면 밖으로 밀렸다 → 무대 **컨테이너** 크기 기준으로 바꾼다.
+    //  · 높이가 모자라면 카드를 줄이고, 그래도 넘치면 이 영역만 스크롤한다(버튼은 항상 보이게).
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val short = ResponsiveLayout.isShortViewport(maxHeight.value)
+        val uiScale = ResponsiveLayout.uiScale(maxWidth.value, maxHeight.value)
+        val topPad = if (short) 48.dp else 62.dp
+        val availW = (maxWidth - 36.dp).coerceAtLeast(120.dp)
+        val availH = (maxHeight - topPad - 8.dp).coerceAtLeast(160.dp)
+        // 이름 · 등급 칩 · 진행 표시 · 버튼 자리
+        val infoReserve = if (short) 164.dp else 196.dp
+        val cardWidth = minOf(
+            (236f * uiScale).dp,
+            availW,
+            ((availH - infoReserve).coerceAtLeast(96.dp)) * ResponsiveLayout.ART_ASPECT
+        ).coerceAtLeast(96.dp)
+
+        // 세로로 긴 화면에서는 카드 한 장이 가운데 오도록, 넘칠 때만 이 영역이 스크롤된다.
+        Box(
             modifier = Modifier
+                .fillMaxSize()
                 .padding(horizontal = 18.dp)
-                .padding(top = 62.dp, bottom = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(top = topPad, bottom = 8.dp),
+            contentAlignment = Alignment.Center
         ) {
-            // 태블릿 대화면에서 카드가 작게 몰리지 않도록 화면 크기 배율을 곱하고,
-            // 높이는 2:3 비율로 맞춘다(원화 잘림 없음 — ContentScale.Fit)
-            val uiScale = ResponsiveLayout.uiScale(
-                LocalConfiguration.current.screenWidthDp.toFloat(),
-                LocalConfiguration.current.screenHeightDp.toFloat()
-            )
-            PackRevealCard(
-                draw = draw,
-                modifier = Modifier
-                    .width((236f * uiScale).dp)
-                    .aspectRatio(ResponsiveLayout.ART_ASPECT)
-                    .scale(0.9f + 0.1f * reveal)
-            )
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                PackRevealCard(
+                    draw = draw,
+                    modifier = Modifier
+                        .width(cardWidth)
+                        .aspectRatio(ResponsiveLayout.ART_ASPECT)
+                        .scale(0.9f + 0.1f * reveal)
+                )
 
             Spacer(Modifier.height(14.dp))
 
@@ -438,6 +456,7 @@ private fun RevealStage(
                         accent = TcgColors.Violet,
                         onClick = onRevealAll
                     )
+                }
                 }
             }
         }
@@ -533,11 +552,15 @@ private fun SummaryStage(
     onOpenGrowth: () -> Unit,
     onOpenCollection: () -> Unit
 ) {
+    // 2026-11-28 v0.6.1 — 높이가 낮은 가로 화면에서는 상단 여백을 줄이고,
+    // 카드 줄은 남는 높이 안에서 스크롤한다(하단 버튼이 화면 밖으로 밀리지 않게).
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val short = ResponsiveLayout.isShortViewport(maxHeight.value)
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
-            .padding(top = 58.dp, bottom = 12.dp),
+            .padding(top = if (short) 44.dp else 58.dp, bottom = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -559,11 +582,12 @@ private fun SummaryStage(
         }
         Spacer(Modifier.height(12.dp))
 
-        // 카드 그리드 (한 줄에 3장)
+        // 카드 그리드 (한 줄에 3장) — 남는 높이 안에서 스크롤
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             opening.draws.chunked(3).forEach { row ->
@@ -635,5 +659,6 @@ private fun SummaryStage(
                 onClick = onClose
             )
         }
+    }
     }
 }

@@ -142,4 +142,64 @@ object ResponsiveLayout {
         val byHeight = containerHeightDp * aspect
         return if (byHeight < containerWidthDp) byHeight else containerWidthDp
     }
+
+    // ── 등장 영상 TextureView 변환 (2026-11-28 v0.6.1 태블릿 비율 버그) ─────────
+
+    /**
+     * [android.view.TextureView.setTransform] 에 넣을 (scaleX, scaleY).
+     *
+     * TextureView 는 `setTransform` 을 주지 않으면(항등원) 영상을 **뷰 크기 전체로 늘려**
+     * 그린다. 그래서 변환은 '뷰 대비 배율'이어야 한다 — 예전 코드처럼
+     * `viewWidth / videoWidth`(픽셀 비율)를 곱하면 태블릿 고해상도 뷰에서 영상이
+     * 1.5~2배로 확대돼 잘리거나 찌그러졌다(사용자 제보).
+     *
+     * 반환값은 가운데를 기준으로 줄이는 배율이다(한 축은 항상 1 — 레터박스).
+     *  - 영상이 뷰보다 **가로로 길면** 가로를 꽉 채우고 세로를 줄인다
+     *  - 세로로 길면 세로를 꽉 채우고 가로를 줄인다
+     */
+    fun videoFitScale(
+        viewWidthDp: Float,
+        viewHeightDp: Float,
+        videoWidthPx: Float,
+        videoHeightPx: Float
+    ): Pair<Float, Float> {
+        if (viewWidthDp <= 0f || viewHeightDp <= 0f || videoWidthPx <= 0f || videoHeightPx <= 0f) {
+            return 1f to 1f
+        }
+        val viewAspect = viewWidthDp / viewHeightDp
+        val videoAspect = videoWidthPx / videoHeightPx
+        return if (videoAspect > viewAspect) {
+            1f to (viewAspect / videoAspect)
+        } else {
+            (videoAspect / viewAspect) to 1f
+        }
+    }
+
+    /**
+     * 컨테이너 안에 들어가면서 영상 비율을 유지하는 (폭, 높이) — dp 단위 값.
+     *
+     * 16:9 만 오던 시절의 [fitVideoWidthDp] 를 비율 일반형으로 넓힌 것.
+     * 2:3 · 9:16 같은 세로 영상이 와도 무대가 그 비율대로 커져 레터박스 여백이 사라진다.
+     */
+    fun fitVideoSizeDp(
+        containerWidthDp: Float,
+        containerHeightDp: Float,
+        aspect: Float
+    ): Pair<Float, Float> {
+        if (containerWidthDp <= 0f || containerHeightDp <= 0f || aspect <= 0f) return 0f to 0f
+        val width = fitVideoWidthDp(containerWidthDp, containerHeightDp, aspect)
+        return width to (width / aspect)
+    }
+
+    // ── 짧은 화면(가로 모드) 판정 ──────────────────────────────────────────
+
+    /** 높이가 이보다 낮으면 '한 화면에 다 넣기'보다 스크롤·축소가 유리한 가로 모드로 본다 */
+    const val SHORT_VIEWPORT_DP: Float = 560f
+
+    /** 높이가 좁은 화면(폰 가로 480dp·태블릿 가로 프레임 등)인지 */
+    fun isShortViewport(heightDp: Float): Boolean = heightDp > 0f && heightDp < SHORT_VIEWPORT_DP
+
+    /** 가로로 넓고 낮은 화면(폰 가로·태블릿 가로 다이얼로그)인지 */
+    fun isWideAndShort(widthDp: Float, heightDp: Float): Boolean =
+        isLandscape(widthDp, heightDp) && isShortViewport(heightDp)
 }

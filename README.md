@@ -5,6 +5,25 @@
 
 ---
 
+## 🆕 2026-11-28 업데이트 — v0.6.1 · 태블릿 등장 영상 비율 버그 수정 & 가로 모드 전수 보완
+
+> 사용자 제보(태블릿 실기 테스트) 2건 — ① "카드 등장 동영상 비율이 전혀 맞지 않는다" ② "가로 모드에서 일부 화면이 맞지 않는다"
+
+- **① 등장 영상 비율 버그 (핵심)** — `CharacterVideoPlayback.refit()`
+  - **원인**: `TextureView` 는 `setTransform` 을 주지 않으면 영상을 **뷰 크기 전체로 늘려** 그립니다(항등원 = 폭·높이 모두 꽉 채움). 그런데 기존 코드는 `scale = min(viewWidth/videoWidth, viewHeight/videoHeight)` 라는 **픽셀 비율**을 곱하고 있었습니다. 태블릿처럼 뷰 해상도가 큰 기기에서는 이 값이 1.5~2배가 되어 영상이 확대되며 잘리고, 원래의 찌그러짐도 그대로 남았습니다.
+  - **수정**: 배율을 **뷰 대비 비율**로 계산합니다 — `videoAspect > viewAspect` 이면 `(1, viewAspect/videoAspect)`, 아니면 `(videoAspect/viewAspect, 1)` 을 `setScale(scaleX, scaleY, viewWidth/2, viewHeight/2)` 로 가운데 기준 적용. 계산은 순수 함수 `ResponsiveLayout.videoFitScale()` 로 빼서 기기별 값으로 단위 테스트합니다(픽셀 비율을 곱하지 않음을 고정).
+  - **무대가 영상 실제 비율을 따라감**: `CharacterVideoSurface(onVideoAspect=…)` 가 `onPrepared` 의 `videoWidth/videoHeight` 를 부모에 알리고, 무대 박스가 16:9 고정 → 실제 비율(16:9 · 2:3 · 9:16)로 다시 잡힙니다. 탑재 143편 중 **12편이 2:3·9:16 세로 영상**(105·107·19·196_2·197·23·24·25·27·66·87·90)이라 좌우 여백이 크게 비던 문제도 함께 해소됩니다.
+  - **가로 모드 무대 배치**: 상단 60dp 고정 패딩·텍스트 232dp 예약을 화면 높이에 따라 컴팩트(38dp·116dp)로 줄이고, 가로로 넓은 화면(`maxWidth > 520dp` 이고 폭>높이)에서는 **영상 왼쪽 · 이름/칭호/스탯 오른쪽 2단**으로 배치했습니다. 중앙 컬럼은 `verticalScroll` 이라 어떤 비율에서도 잘리지 않습니다.
+- **② 가로 모드 레이아웃 전수 보완**
+  - **팩 개봉 · 카드 1장 연출** (`PackOpeningOverlay`): 카드 크기를 **기기 화면**(`LocalConfiguration`) 배율로 잡던 것을 무대 **컨테이너** 크기 기준으로 바꿨습니다. 태블릿 가로에서 uiScale 1.8 → 424×636dp 카드가 2:3 프레임(533×800)을 넘어 하단 버튼이 밀리던 문제를 해결하고, 높이가 모자라면 카드를 줄이고 영역만 스크롤합니다.
+  - **팩 개봉 · 전체 결과** (`SummaryStage`): 카드 줄이 고정 148dp 로 쌓여 낮은 화면에서 하단 "강화·합성 / 도감 / 닫기" 버튼을 밀어내던 문제 → 카드 영역만 `verticalScroll`, 상단 여백도 높이에 따라 축소.
+  - **도감 상세 모달** (`CatalogDetailDialog`): 전체 화면 다이얼로그에서 원화가 `fillMaxWidth` 로 폭을 다 먹어 세로로 1900dp 가 되던 문제 → 가로 모드에서는 원화를 **화면 높이의 58%** 로 제한해 한눈에 들어오게 했습니다.
+  - **메인 로비** (`MainLobbyScreen`): 높이가 낮은 가로 모드에서 좌우 레일(가운데 정렬)이 하단 캐릭터 패널과 겹치던 문제 → 레일을 상단에 붙이고, 하단 패널의 칭호·해금 안내 줄을 접습니다. 좁은 폭에서 상단 재화 칩이 🔊·📊 버튼을 밀어내지 않도록 칩 줄만 가로 스크롤로 감쌌습니다.
+  - **점검 결과 그대로 둔 화면**: `StageScreen`·`GrowthScreen`·`PackShopScreen`·`ScenarioScreen`(스크롤 프레임), `DeckScreen`·`DeckBuilderScreen`·`CollectionScreen`·`ExplorationScreen`·`RealWorldScreen`(가중치 그리드), `BattleScreen`(가중치 그리드 + 고정 컨트롤 바), `BattleResultOverlay`·`IntroStoryScreen`(스크롤/가중치), `CharacterArtViewer`(가중치 + Fit) — 모두 높이가 좁아지면 가중치 영역이 줄어들 뿐 화면을 넘치지 않아 추가 수정 없이 동작합니다(코드 확인 기준).
+- **검증**: `testDebugUnitTest` **456건 통과**(v0.6.1 신규 6건 — TextureView 배율·세로 영상·무대 크기·짧은 화면 판정) · `qa_resource_integrity.py` 통과(로스터 193명 · 아트 796장 · 영상 143편/136명 · 누락 0). `versionCode 7 / versionName 0.6.1`.
+
+---
+
 ## 🆕 2026-11-27 업데이트 ② — v0.6.0 · 전 화면 하단 클릭 여유 · DECK 아이콘 탭 3분할 · 💎 다이아 사용처 4종
 
 - **전 화면 하단 클릭 여유 확보** (사용자 요청 「최하단 버튼/타일 클릭이 편하도록」)

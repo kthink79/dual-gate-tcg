@@ -127,4 +127,90 @@ class ResponsiveTabletLayoutTest {
         // 값이 0 이하이면 0 (레이아웃 붕괴 방지)
         assertEquals(0f, ResponsiveLayout.fitVideoWidthDp(0f, 100f), 0.01f)
     }
+
+    // ── 2026-11-28 v0.6.1 — 태블릿 등장 영상 비율 ────────
+
+    @Test
+    fun `TextureView 변환은 뷰 대비 배율이다 - 픽셀 비율을 곱하면 태블릿에서 확대된다`() {
+        // 회귀 방지: 예전 코드는 viewWidth/videoWidth(픽셀 비율)를 곱해 태블릿에서 1.5~2배 확대됐다.
+        // 16:9 영상(720×406) · 16:9 뷰(360×203) → 배율 1,1 그대로 (픽셀 비율 0.5 를 곱하면 안 된다)
+        val same = ResponsiveLayout.videoFitScale(360f, 203f, 720f, 406f)
+        assertEquals(1f, same.first, 0.01f)
+        assertEquals(1f, same.second, 0.01f)
+
+        // 태블릿 무대(1000×562dp)에 720×406 → 역시 1,1 (뷰 해상도가 커도 배율은 1)
+        val tablet = ResponsiveLayout.videoFitScale(1000f, 562f, 720f, 406f)
+        assertEquals(1f, tablet.first, 0.01f)
+        assertEquals(1f, tablet.second, 0.01f)
+    }
+
+    @Test
+    fun `영상이 뷰보다 가로로 길면 가로를 채우고 세로를 줄인다`() {
+        // 정사각 뷰(400×400)에 16:9 영상 → 폭 꽉, 높이는 9,16 비율로 56.25%
+        val (sx, sy) = ResponsiveLayout.videoFitScale(400f, 400f, 720f, 406f)
+        assertEquals(1f, sx, 0.01f)
+        assertEquals(400f * 406f / 720f / 400f, sy, 0.01f)
+        // 그려지는 영상도 16:9 를 유지한다 (찌그러짐 없음)
+        val drawnW = 400f * sx
+        val drawnH = 400f * sy
+        assertEquals(16f / 9f, drawnW / drawnH, 0.02f)
+    }
+
+    @Test
+    fun `세로 영상 2대3과 9대16도 범위 안에 맞춘다`() {
+        // 2:3 영상은 정사각 뷰에서 높이를 채우고 폭을 줄인다
+        val (sx1, sy1) = ResponsiveLayout.videoFitScale(400f, 400f, 720f, 1080f)
+        assertEquals(2f / 3f, sx1, 0.01f)
+        assertEquals(1f, sy1, 0.01f)
+
+        // 9:16 영상도 같은 규칙
+        val (sx2, sy2) = ResponsiveLayout.videoFitScale(400f, 400f, 540f, 960f)
+        assertEquals(540f / 960f, sx2, 0.01f)
+        assertEquals(1f, sy2, 0.01f)
+
+        // 16:9 영상이 세로로 긴 뷰(400×800)에 → 폭 꽉, 높이 28%
+        val (sx3, sy3) = ResponsiveLayout.videoFitScale(400f, 800f, 720f, 406f)
+        assertEquals(1f, sx3, 0.01f)
+        assertEquals((400f / 800f) / (720f / 406f), sy3, 0.01f)
+    }
+
+    @Test
+    fun `값이 없으면 1,1 로 되돌려 레이아웃이 붕괴하지 않는다`() {
+        assertEquals(1f to 1f, ResponsiveLayout.videoFitScale(0f, 400f, 720f, 406f))
+        assertEquals(1f to 1f, ResponsiveLayout.videoFitScale(400f, 0f, 720f, 406f))
+        assertEquals(1f to 1f, ResponsiveLayout.videoFitScale(400f, 400f, 0f, 406f))
+        assertEquals(1f to 1f, ResponsiveLayout.videoFitScale(400f, 400f, 720f, 0f))
+    }
+
+    @Test
+    fun `무대 크기는 컨테이너 안에서 영상 비율을 유지한다`() {
+        // 320×480 폰 가로 프레임에 2:3 세로 영상 → 폭 320, 높이 480 이 아니라 높이 제한 안에서
+        val (w1, h1) = ResponsiveLayout.fitVideoSizeDp(304f, 300f, 2f / 3f)
+        assertEquals(200f, w1, 0.1f)
+        assertEquals(300f, h1, 0.1f)
+
+        // 16:9 영상이 낮은 컨테이너에 → 폭이 줄고 높이가 꽉
+        val (w2, h2) = ResponsiveLayout.fitVideoSizeDp(1200f, 200f, 16f / 9f)
+        assertEquals(355.55f, w2, 0.1f)
+        assertEquals(200f, h2, 0.1f)
+
+        // 넓은 폭이 기준이 되는 경우
+        val (w3, h3) = ResponsiveLayout.fitVideoSizeDp(300f, 800f, 16f / 9f)
+        assertEquals(300f, w3, 0.1f)
+        assertEquals(168.75f, h3, 0.1f)
+
+        // 값이 0 이하 → 0,0
+        assertEquals(0f to 0f, ResponsiveLayout.fitVideoSizeDp(0f, 300f, 16f / 9f))
+    }
+
+    @Test
+    fun `높이가 낮은 가로 모드를 짧은 화면으로 판정한다`() {
+        assertTrue("폰 가로 411dp 높이", ResponsiveLayout.isShortViewport(411f))
+        assertTrue("폰 가로 480dp", ResponsiveLayout.isShortViewport(480f))
+        assertFalse("기준값 560dp 는 짧지 않다", ResponsiveLayout.isShortViewport(560f))
+        assertFalse("태블릿 800dp", ResponsiveLayout.isShortViewport(800f))
+        assertFalse("값 없음", ResponsiveLayout.isShortViewport(0f))
+        assertTrue(ResponsiveLayout.isWideAndShort(866f, 411f))
+        assertFalse(ResponsiveLayout.isWideAndShort(411f, 866f))
+    }
 }

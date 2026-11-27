@@ -12,10 +12,11 @@ android {
         applicationId = "com.game.tcg"
         minSdk = 26
         targetSdk = 35
-        // 2026-11-27 v0.6.0: 전 화면 하단 클릭 여백·DECK 서약/정화 아이콘 탭 3분할·💎 다이아 사용처 4종
-        //                  + 등장 영상 5편(129·130·131·133·134, 누적 143편)
-        versionCode = 6
-        versionName = "0.6.0"
+        // 2026-11-28 v0.6.1: 태블릿 등장 영상 TextureView 비율 버그 수정 + 가로 모드 레이아웃 전수 보완
+        //                  (등장 영상 무대 실제 비율·2단 배치, 팩 개봉 카드 크기·결과 스크롤,
+        //                   도감 상세 모달 원화 높이 제한, 로비 좁은 화면 대응)
+        versionCode = 7
+        versionName = "0.6.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
