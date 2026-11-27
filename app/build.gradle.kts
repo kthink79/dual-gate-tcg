@@ -12,9 +12,10 @@ android {
         applicationId = "com.game.tcg"
         minSdk = 26
         targetSdk = 35
-        // 2026-11-27: 메뉴 아이콘 중심 UI 개편(아이콘 탭·글자 확대·무스크롤) · 영상 8편(121~128, 누적 138편)
-        versionCode = 5
-        versionName = "0.5.0"
+        // 2026-11-27 v0.6.0: 전 화면 하단 클릭 여백·DECK 서약/정화 아이콘 탭 3분할·💎 다이아 사용처 4종
+        //                  + 등장 영상 5편(129·130·131·133·134, 누적 143편)
+        versionCode = 6
+        versionName = "0.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

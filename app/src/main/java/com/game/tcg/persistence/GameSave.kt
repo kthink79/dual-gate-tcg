@@ -41,6 +41,11 @@ data class GameSave(
     val partnerBond: Int = 0,
     val partnerVisual: String = "BATTLE",
     val dateLookUnlocked: Boolean = false,
+    /**
+     * 💎로 미리 연 데이트 룩 캐릭터 번호들 — 2026-11-27 v0.6.0.
+     * 친밀도 70 규칙과 별개로 **영구히** 열린 복장이라 저장에 남긴다.
+     */
+    val dateLookUnlockedIds: List<Int> = emptyList(),
     val ultimateUnlocked: Boolean = false,
     val frontRowDefensePenaltyPercent: Int = 0,
     val trustRiftChoice: String? = null,

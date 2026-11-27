@@ -50,6 +50,7 @@ fun PackShopScreen(
     onOpenPack: (String) -> Unit,
     onOpenGrowth: () -> Unit,
     onOpenCollection: () -> Unit,
+    onOpenDiamondShop: () -> Unit = {},
     onTearPack: () -> Unit = {},
     onRevealNextDraw: () -> Unit = {},
     onRevealAllDraws: () -> Unit = {},
@@ -87,6 +88,16 @@ fun PackShopScreen(
                 lineHeight = 19.sp
             )
             PackResourceRow(state)
+
+            // 2026-11-27 v0.6.0 — 💎 다이아 사용처 4종 진입 (지정 소환·충전·교환·데이트 룩)
+            SectionCard(title = "💎 다이아 교환소", badge = "보유 ${state.gems}", accent = TcgColors.Mana) {
+                ActionTile(
+                    label = "💎 다이아로 교환 · 소환",
+                    hint = "지정 소환 5 · 충전 3 · 교환 2 · 데이트 룩 4",
+                    accent = TcgColors.Mana,
+                    onClick = onOpenDiamondShop
+                )
+            }
 
             // ── 진열 탭 ──
             TcgTabBar(

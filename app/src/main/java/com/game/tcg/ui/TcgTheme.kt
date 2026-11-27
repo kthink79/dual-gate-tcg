@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.game.tcg.core.model.ScreenComfort
 import com.game.tcg.core.model.Element
 import com.game.tcg.core.model.VisualState
 
@@ -103,7 +105,15 @@ fun ScreenFrame(content: @Composable ColumnScope.() -> Unit) {
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                // 2026-11-27 v0.6.0 — 하단 클릭 여유: 내비게이션 바 인셋 + 추가 여백
+                .navigationBarsPadding()
+                .padding(
+                    start = 14.dp,
+                    end = 14.dp,
+                    top = 12.dp,
+                    bottom = (ScreenComfort.SCROLL_FRAME_BOTTOM_MARGIN_DP +
+                        ScreenComfort.NAV_BAR_EXTRA_MARGIN_DP).dp
+                ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             content = content
         )
@@ -132,10 +142,15 @@ fun CompactFrame(content: @Composable ColumnScope.() -> Unit) {
                 .widthIn(max = contentMaxWidth)
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
+                // 2026-11-27 v0.6.0 — 하단 클릭 여유: 내비게이션 바 인셋을 피해 최하단 버튼을 누를 수 있게
+                .navigationBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            content = content
-        )
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            content()
+            // 맨 아래 클릭 여유 — 마지막 타일·버튼이 내비게이션 바에 가리지 않는다
+            Spacer(Modifier.height(ScreenComfort.COMPACT_FRAME_BOTTOM_MARGIN_DP.dp))
+        }
     }
 }
 

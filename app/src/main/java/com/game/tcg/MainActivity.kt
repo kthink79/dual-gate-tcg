@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.game.tcg.core.engine.DiamondShopEngine
 import com.game.tcg.core.engine.IntroStoryEngine
 import com.game.tcg.core.model.VisualState
 import com.game.tcg.audio.AudioManager
@@ -54,6 +55,7 @@ import com.game.tcg.ui.BattleScreen
 import com.game.tcg.ui.CardArtImage
 import com.game.tcg.ui.CollectionScreen
 import com.game.tcg.ui.DeckBuilderScreen
+import com.game.tcg.ui.DiamondShopOverlay
 import com.game.tcg.ui.ExplorationScreen
 import com.game.tcg.ui.GrowthScreen
 import com.game.tcg.ui.IntroStoryScreen
@@ -144,11 +146,12 @@ fun TcgApp(viewModel: TcgGameViewModel) {
     // 그 외에는 메인 로비로 복귀
     BackHandler(
         enabled = isIntroPlaying || state.packOpening.isActive || state.isInfoPanelOpen ||
-            screen != LobbyDestination.LOBBY
+            state.isDiamondShopOpen || screen != LobbyDestination.LOBBY
     ) {
         audio.click()
         when {
             isIntroPlaying -> viewModel.skipIntro()
+            state.isDiamondShopOpen -> viewModel.closeDiamondShop()
             state.packOpening.isActive -> viewModel.closePackOpening()
             state.isInfoPanelOpen -> viewModel.closeInfoPanel()
             else -> viewModel.backToLobby()
@@ -266,6 +269,7 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                         LobbyDestination.SHOP -> PackShopScreen(
                             state = state,
                             onOpenPack = { packId -> viewModel.openPack(packId) },
+                            onOpenDiamondShop = { audio.click(); viewModel.openDiamondShop() },
                             onOpenGrowth = { viewModel.openScreen(LobbyDestination.GROWTH) },
                             onOpenCollection = { viewModel.openScreen(LobbyDestination.COLLECTION) },
                             onTearPack = { viewModel.tearPackSeal() },
@@ -295,7 +299,12 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                             onInteract = { activity -> viewModel.interactRealWorld(activity) },
                             onBondMemoryPartner = { id -> viewModel.bondMemoryResetPartner(id) },
                             onSummon = { id -> viewModel.summonToReality(id) },
-                            onSelectSummonCard = { id -> viewModel.selectSummonCard(id) }
+                            onSelectSummonCard = { id -> viewModel.selectSummonCard(id) },
+                            // 2026-11-27 v0.6.0 — 💎 지정 소환 (다이아 교환소 1번 탭으로 바로)
+                            onOpenDiamondShop = {
+                                audio.click()
+                                viewModel.openDiamondShop(DiamondShopEngine.Tab.TARGET_SUMMON.ordinal)
+                            }
                         )
                         LobbyDestination.COLLECTION -> CollectionScreen(
                             state = state,
@@ -356,6 +365,25 @@ fun TcgApp(viewModel: TcgGameViewModel) {
                 state = state.introStory,
                 onNext = { audio.click(); viewModel.advanceIntro() },
                 onSkip = { audio.click(); viewModel.skipIntro() }
+            )
+        }
+
+        // ── 💎 다이아 교환소 — 상점·현실 소환 위에 겹치는 패널 (2026-11-27 v0.6.0) ──
+        AnimatedVisibility(
+            visible = state.isDiamondShopOpen,
+            enter = fadeIn(tween(durationMillis = 160)),
+            exit = fadeOut(tween(durationMillis = 160)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            DiamondShopOverlay(
+                state = state,
+                onClose = { audio.click(); viewModel.closeDiamondShop() },
+                onSelectTab = { tab -> viewModel.selectDiamondShopTab(tab) },
+                onSelectTarget = { id -> viewModel.selectDiamondShopTarget(id) },
+                onBuyTargetSummon = { audio.click(); viewModel.buyTargetSummon() },
+                onRecharge = { kind -> audio.click(); viewModel.rechargeWithGems(kind) },
+                onExchange = { kind -> audio.click(); viewModel.exchangeWithGems(kind) },
+                onUnlockDateLook = { audio.click(); viewModel.unlockDateLookWithGems() }
             )
         }
 

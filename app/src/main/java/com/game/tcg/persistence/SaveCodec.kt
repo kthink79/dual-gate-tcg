@@ -73,6 +73,8 @@ object SaveCodec {
         appendLine("bond=${save.partnerBond}")
         appendLine("pVisual=${save.partnerVisual}")
         appendLine("dateLook=${flag(save.dateLookUnlocked)}")
+        // 2026-11-27 v0.6.0 — 💎로 즉시 해금한 데이트 룩 캐릭터 번호
+        appendLine("dateLookIds=${save.dateLookUnlockedIds.sorted().joinToString(LIST)}")
         appendLine("ultimate=${flag(save.ultimateUnlocked)}")
         appendLine("frontPenalty=${save.frontRowDefensePenaltyPercent}")
         appendLine("rift=${enc(save.trustRiftChoice)}")
@@ -314,6 +316,7 @@ object SaveCodec {
             partnerBond = int("bond", defaults.partnerBond, 0),
             partnerVisual = raw("pVisual") ?: defaults.partnerVisual,
             dateLookUnlocked = bool("dateLook", defaults.dateLookUnlocked),
+            dateLookUnlockedIds = intList("dateLookIds").filter { it > 0 }.distinct().sorted(),
             ultimateUnlocked = bool("ultimate", defaults.ultimateUnlocked),
             frontRowDefensePenaltyPercent = int("frontPenalty", defaults.frontRowDefensePenaltyPercent, 0),
             trustRiftChoice = str("rift"),

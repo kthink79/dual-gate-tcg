@@ -62,7 +62,9 @@ fun RealWorldScreen(
     onInteract: (RealWorldActivity) -> Unit,
     onBondMemoryPartner: (Int) -> Unit,
     onSummon: (Int) -> Unit = {},
-    onSelectSummonCard: (Int) -> Unit = {}
+    onSelectSummonCard: (Int) -> Unit = {},
+    /** 2026-11-27 v0.6.0 — 💎 지정 소환 (다이아 교환소 1번 탭) */
+    onOpenDiamondShop: () -> Unit = {}
 ) {
     val summonTarget = state.summonCard
     val partnerName = summonTarget?.name ?: "파트너"
@@ -83,6 +85,18 @@ fun RealWorldScreen(
             Spacer(Modifier.width(8.dp))
             Pill("⚡ ${state.gateEnergy}/${state.gateEnergyMax}", TcgColors.Mana)
             Spacer(Modifier.weight(1f))
+            // 💎 지정 소환 — 원하는 캐릭터를 다이아로 바로 영입
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(TcgColors.Mana.copy(alpha = 0.16f))
+                    .border(1.dp, TcgColors.Mana.copy(alpha = 0.6f), RoundedCornerShape(50))
+                    .clickable { onOpenDiamondShop() }
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            ) {
+                Text("💎 지정 소환", color = TcgColors.Mana, fontSize = TcgType.LABEL.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(6.dp))
             Pill("#${partnerId} $partnerName", elementColor(summonTarget?.element ?: com.game.tcg.core.model.Element.LIGHT))
         }
 

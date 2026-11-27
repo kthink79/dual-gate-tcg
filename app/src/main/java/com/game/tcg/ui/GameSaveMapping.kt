@@ -3,6 +3,7 @@ package com.game.tcg.ui
 import com.game.tcg.audio.AudioScene
 import com.game.tcg.audio.AudioSettings
 import com.game.tcg.core.engine.AffinityRules
+import com.game.tcg.core.engine.DiamondShopEngine
 import com.game.tcg.core.engine.IntroStoryState
 import com.game.tcg.core.engine.TemptationEngine
 import com.game.tcg.core.model.CardCatalog
@@ -60,6 +61,7 @@ fun TcgGameState.toGameSave(): GameSave = GameSave(
     partnerBond = partnerBond,
     partnerVisual = partnerVisual.name,
     dateLookUnlocked = dateLookUnlocked,
+    dateLookUnlockedIds = dateLookUnlockedIds.sorted(),
     ultimateUnlocked = ultimateUnlocked,
     frontRowDefensePenaltyPercent = frontRowDefensePenaltyPercent,
     trustRiftChoice = trustRiftChoice,
@@ -142,9 +144,12 @@ private fun TcgCard.toSavedCard(): SavedCard = SavedCard(
  * - 보유 카드가 하나도 복원되지 않으면 `base`(신규 시작 상태)를 그대로 돌려준다.
  */
 fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
-    /** 친밀도 단계보다 높은 비주얼은 잠금 단계로 내린다 (2026-11-16 개편) */
-    fun capVisual(visual: VisualState, bond: Int): VisualState {
-        // 미니어처(SD)는 친밀도와 무관하게 처음부터 열려 있으므로 복원에서도 유지한다
+    /** 친밀도 단계보다 높은 비주얼은 잠금 단계로 내린다 (2026-11-16 개편) — 💎로 연 데이트 룩은 예외 */
+    fun capVisual(visual: VisualState, bond: Int, cardId: Int? = null): VisualState {
+        // 미니어처(SD)·💎 해금 데이트 룩은 친밀도와 무관하게 유지한다
+        if (cardId != null &&
+            DiamondShopEngine.isVisualUnlocked(cardId, visual, bond, dateLookUnlockedIds.toSet())
+        ) return visual
         if (AffinityRules.isVisualUnlocked(visual, bond)) return visual
         return AffinityRules.visualFor(bond)
     }
@@ -163,7 +168,7 @@ fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
             equippedRelicCount = row.equippedRelicCount.coerceIn(0, MAX_EQUIPMENT_SLOTS),
             isMemoryReset = row.isMemoryReset,
             memoryFragments = row.memoryFragments.coerceIn(0, TcgCard.MEMORY_FRAGMENT_TARGET),
-            currentVisual = capVisual(visualOf(row.visual), row.bondLevel.coerceIn(0, 100)),
+            currentVisual = capVisual(visualOf(row.visual), row.bondLevel.coerceIn(0, 100), row.cardId),
             battleCount = row.battleCount.coerceAtLeast(0),
             lastBondDay = row.lastBondDay
         )
@@ -255,11 +260,11 @@ fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
     val restoredOutfits: Map<Int, VisualState> = lobbyOutfits
         .mapNotNull { (cardId, visualName) ->
             if (!cardById.containsKey(cardId)) return@mapNotNull null
-            cardId to capVisual(visualOf(visualName), bondOfId(cardId))
+            cardId to capVisual(visualOf(visualName), bondOfId(cardId), cardId)
         }
         .toMap()
     val savedLobbyVisualName = lobbyOutfits[restoredHeroId] ?: lobbyVisual
-    val restoredLobbyVisual = capVisual(visualOf(savedLobbyVisualName), bondOfId(restoredHeroId))
+    val restoredLobbyVisual = capVisual(visualOf(savedLobbyVisualName), bondOfId(restoredHeroId), restoredHeroId)
 
     return base.copy(
         gold = gold.coerceAtLeast(0),
@@ -286,6 +291,7 @@ fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
         partnerBond = partnerBond.coerceIn(0, 100),
         partnerVisual = visualOf(partnerVisual),
         dateLookUnlocked = dateLookUnlocked,
+        dateLookUnlockedIds = dateLookUnlockedIds.filter { cardById.containsKey(it) }.toSet(),
         ultimateUnlocked = ultimateUnlocked,
         frontRowDefensePenaltyPercent = frontRowDefensePenaltyPercent.coerceAtLeast(0),
         trustRiftChoice = trustRiftChoice,
@@ -314,7 +320,7 @@ fun GameSave.restoreInto(base: TcgGameState): TcgGameState {
         else restoredCards.first().id,
         selectedCardId = if (cardById.containsKey(selectedCardId)) selectedCardId
         else restoredCards.first().id,
-        selectedVisual = capVisual(visualOf(selectedVisual), bondOfId(selectedCardId)),
+        selectedVisual = capVisual(visualOf(selectedVisual), bondOfId(selectedCardId), selectedCardId),
         introStory = IntroStoryState(
             sceneIndex = 0,
             isPlaying = !introSeen,

@@ -38,6 +38,7 @@ import com.game.tcg.core.engine.TacticalRetreatEngine
 import com.game.tcg.core.engine.TemptationEngine
 import com.game.tcg.core.engine.TrustRiftEngine
 import com.game.tcg.core.engine.DeckAutoBuilder
+import com.game.tcg.core.engine.DiamondShopEngine
 import com.game.tcg.core.engine.AdvancedSynthesisEngine
 import com.game.tcg.core.engine.EmergencySupplyEngine
 import com.game.tcg.core.engine.SupplyOffer
@@ -428,6 +429,16 @@ data class TcgGameState(
     val realWorldLog: List<String> = listOf("[현실 교감] 파트너 대기 중. 친밀도는 전투 출전으로 올라갑니다."),
     val dateLookUnlocked: Boolean = false,
     val ultimateUnlocked: Boolean = false,
+    /** 💎로 미리 연 데이트 룩 캐릭터 번호 — 2026-11-27 v0.6.0 「💎 4 · 데이트 룩 즉시 해금」 */
+    val dateLookUnlockedIds: Set<Int> = emptySet(),
+    // ── 💎 다이아 상점 (2026-11-27 v0.6.0) ──
+    /** 💎 교환소가 화면 위에 열려 있는지 (상점·현실 소환 어디서든 같은 패널) */
+    val isDiamondShopOpen: Boolean = false,
+    /** 열려 있는 탭 — [com.game.tcg.core.engine.DiamondShopEngine.Tab] ordinal */
+    val diamondShopTab: Int = 0,
+    /** 지정 소환·교환·해금의 대상 캐릭터 번호 (0 = 미선택) */
+    val diamondShopTargetId: Int = 0,
+    val diamondShopMessage: String? = null,
     // ── 「기억의 잔향」: 환생 재획득 후 기억 초기화·파편 회상 ──
     val memoryRecallMessage: String? = null,
     val memoryRecallDialogue: MemoryRecallDialogue? = null,
@@ -705,9 +716,10 @@ data class TcgGameState(
     val lobbyHeroBond: Int
         get() = if (lobbyHeroId == 3) maxOf(partnerBond, lobbyHero.bondLevel) else lobbyHero.bondLevel
 
-    /** 데이트 룩(③) 해금 여부 — 친밀도 70 이상 */
+    /** 데이트 룩(③) 해금 여부 — 친밀도 70 이상 또는 💎로 해금 */
     val isLobbyDateLookUnlocked: Boolean
-        get() = lobbyHeroBond >= TcgGameViewModel.DATE_LOOK_UNLOCK_BOND
+        get() = isDateLookUnlockedByGem(lobbyHeroId) ||
+            lobbyHeroBond >= TcgGameViewModel.DATE_LOOK_UNLOCK_BOND
 
     /** 일상 사복(②) 해금 여부 — 친밀도 30 이상 (현실 소환 조건과 같은 값) */
     val isLobbyCasualLookUnlocked: Boolean
@@ -743,14 +755,26 @@ data class TcgGameState(
      */
     fun outfitVisual(cardId: Int): VisualState {
         val remembered = lobbyOutfits[cardId] ?: VisualState.BATTLE
-        val bond = bondForCard(cardId)
-        return if (AffinityRules.isVisualUnlocked(remembered, bond)) remembered
-        else AffinityRules.visualFor(bond)
+        if (isVisualUnlockedFor(cardId, remembered)) return remembered
+        return AffinityRules.visualFor(bondForCard(cardId))
     }
 
     /** 이 친밀도에서 고를 수 있는 복장 목록 (전투·미니어처는 친밀도와 무관하게 항상 열린다) */
     fun unlockedOutfitVisuals(cardId: Int): List<VisualState> =
-        AffinityRules.unlockedVisuals(bondForCard(cardId))
+        VisualState.entries.filter { isVisualUnlockedFor(cardId, it) }
+
+    /**
+     * 이 캐릭터가 💎로 데이트 룩을 미리 열었는가 — 2026-11-27 v0.6.0.
+     * (친밀도 70 을 기다리지 않고 💎 4 로 연 경우)
+     */
+    fun isDateLookUnlockedByGem(cardId: Int): Boolean = cardId in dateLookUnlockedIds
+
+    /**
+     * 복장 해금 판정의 **단일 지점** — 친밀도 규칙 + 💎로 연 데이트 룩.
+     * 로비·도감·덱 편성이 모두 이 함수를 거치므로 세 화면의 잠금이 어긋나지 않는다.
+     */
+    fun isVisualUnlockedFor(cardId: Int, visual: VisualState): Boolean =
+        DiamondShopEngine.isVisualUnlocked(cardId, visual, bondForCard(cardId), dateLookUnlockedIds)
 
     /** 덱 편성 시트에서 열어 둔 캐릭터 (null = 시트 닫힘) */
     val deckSheetCard: TcgCard?
@@ -1258,7 +1282,7 @@ class TcgGameViewModel(
     private fun outfitFor(s: TcgGameState, cardId: Int): VisualState {
         val bond = bondOf(s, cardId)
         val remembered = s.lobbyOutfits[cardId] ?: s.lobbyVisual
-        return capVisual(remembered, bond)
+        return capVisual(remembered, bond, cardId, s.dateLookUnlockedIds)
     }
 
     /**
@@ -1273,12 +1297,14 @@ class TcgGameViewModel(
         updateState { s ->
             val heroName = s.lobbyHeroProfile?.displayName ?: s.lobbyHero.name
             val bond = s.lobbyHeroBond
-            if (!AffinityRules.isVisualUnlocked(visual, bond)) {
+            if (!s.isVisualUnlockedFor(s.lobbyHeroId, visual)) {
                 val need = AffinityRules.requiredBond(visual)
                 return@updateState s.copy(
                     statusMessage = "[잠금] ${visual.displayName}은(는) $heroName 친밀도 $need 이상에서 열립니다. " +
-                            "(현재 $bond/100 — 이계 전투 출전 1회 +${AffinityRules.BATTLE_WIN_GAIN})",
-                    visualLockMessage = AffinityRules.lockLabel(visual, bond)
+                            "(현재 $bond/100 — 이계 전투 출전 1회 +${AffinityRules.BATTLE_WIN_GAIN}, 💎 ${DiamondShopEngine.PRICE_DATE_LOOK} 로 즉시 해금)",
+                    visualLockMessage = DiamondShopEngine.lockLabel(
+                        s.lobbyHeroId, visual, bond, s.dateLookUnlockedIds
+                    )
                 )
             }
             s.copy(
@@ -1290,9 +1316,14 @@ class TcgGameViewModel(
         }
     }
 
-    /** 친밀도에 맞는 단계까지만 비주얼을 유지한다 (미니어처는 친밀도와 무관하게 유지) */
-    private fun capVisual(visual: VisualState, bond: Int): VisualState {
-        if (AffinityRules.isVisualUnlocked(visual, bond)) return visual
+    /** 친밀도에 맞는 단계까지만 비주얼을 유지한다 (미니어처는 친밀도와 무관, 💎로 연 데이트 룩도 유지) */
+    private fun capVisual(
+        visual: VisualState,
+        bond: Int,
+        cardId: Int,
+        dateLookIds: Set<Int> = emptySet()
+    ): VisualState {
+        if (DiamondShopEngine.isVisualUnlocked(cardId, visual, bond, dateLookIds)) return visual
         return AffinityRules.visualFor(bond)
     }
 
@@ -2562,8 +2593,8 @@ class TcgGameViewModel(
                 ?: return@updateState s.copy(statusMessage = "[덱 편성] 복장을 바꿀 캐릭터를 먼저 골라 주세요.")
             if (s.ownedCards.none { it.id == cardId }) return@updateState s
             val bond = s.bondForCard(cardId)
-            if (!AffinityRules.isVisualUnlocked(visual, bond)) {
-                val locked = AffinityRules.lockLabel(visual, bond)
+            if (!s.isVisualUnlockedFor(cardId, visual)) {
+                val locked = DiamondShopEngine.lockLabel(cardId, visual, bond, s.dateLookUnlockedIds)
                 return@updateState s.copy(
                     deckOutfitLockMessage = locked,
                     statusMessage = "[잠금] ${locked ?: visual.displayName}"
@@ -3170,8 +3201,8 @@ class TcgGameViewModel(
     fun selectVisual(visual: VisualState) {
         updateState { s ->
             val bond = s.selectedCardBond
-            if (!AffinityRules.isVisualUnlocked(visual, bond)) {
-                val locked = AffinityRules.lockLabel(visual, bond)
+            if (!s.isVisualUnlockedFor(s.selectedCardId, visual)) {
+                val locked = DiamondShopEngine.lockLabel(s.selectedCardId, visual, bond, s.dateLookUnlockedIds)
                 return@updateState s.copy(
                     visualLockMessage = locked,
                     statusMessage = "[잠금] ${locked ?: visual.displayName}"
@@ -3226,9 +3257,177 @@ class TcgGameViewModel(
         }
     }
 
-    /** 2웨이 합성 ① 한계 돌파 — 동일 카드 흡수 */
-    fun limitBreakSelected() {
+    // ──────────────────────────────────────────────────────────────
+    // 💎 다이아 교환소 — 2026-11-27 v0.6.0 사용자 요청
+    //   가격·상한·잠금 판정은 [DiamondShopEngine] 한 곳에서만 판정하고,
+    //   여기서는 그 결과를 상태(재화·보유 카드·해금 목록)에 반영만 한다.
+    // ──────────────────────────────────────────────────────────────
+
+    /** 💎 교환소 열기 — 상점·현실 소환 어느 쪽에서 눌러도 같은 패널이 열린다 */
+    fun openDiamondShop(tab: Int = 0) {
         updateState { s ->
+            s.copy(
+                isDiamondShopOpen = true,
+                diamondShopTab = tab.coerceIn(0, DiamondShopEngine.Tab.entries.size - 1),
+                diamondShopMessage = null,
+                diamondShopTargetId = s.diamondShopTargetId.takeIf { it > 0 } ?: s.selectedCardId
+            )
+        }
+    }
+
+    fun closeDiamondShop() {
+        updateState { s ->
+            if (!s.isDiamondShopOpen && s.diamondShopMessage == null) s
+            else s.copy(isDiamondShopOpen = false, diamondShopMessage = null)
+        }
+    }
+
+    /** 💎 탭 전환 — 탭마다 대상 후보가 달라서 대상 선택은 비운다 */
+    fun selectDiamondShopTab(tab: Int) {
+        updateState { s ->
+            val next = tab.coerceIn(0, DiamondShopEngine.Tab.entries.size - 1)
+            if (next == s.diamondShopTab) s
+            else s.copy(
+                diamondShopTab = next,
+                diamondShopTargetId = if (next == DiamondShopEngine.Tab.TARGET_SUMMON.ordinal) 0 else s.diamondShopTargetId,
+                diamondShopMessage = null
+            )
+        }
+    }
+
+    fun selectDiamondShopTarget(cardId: Int) {
+        updateState { s -> s.copy(diamondShopTargetId = cardId, diamondShopMessage = null) }
+    }
+
+    /** ✨ 💎 [PRICE_TARGET_SUMMON] — 고른 캐릭터 1명을 즉시 영입 (미보유만) */
+    fun buyTargetSummon(): DiamondShopEngine.Purchase? {
+        var out: DiamondShopEngine.Purchase? = null
+        updateState { s ->
+            val record = CardCatalog.find(s.diamondShopTargetId)
+            if (record == null) {
+                val fail = DiamondShopEngine.Purchase.fail("영입할 캐릭터를 먼저 선택하세요.")
+                out = fail
+                return@updateState s.copy(diamondShopMessage = fail.message)
+            }
+            val purchase = DiamondShopEngine.summonTarget(record, s.ownedCards.map { it.id }, s.gems)
+            out = purchase
+            if (!purchase.isSuccess) {
+                return@updateState s.copy(
+                    diamondShopMessage = purchase.message,
+                    statusMessage = purchase.message
+                )
+            }
+            val card = characterCard(record.id)
+            lifecycleEngine.registerOwnedCard(card)
+            s.copy(
+                gems = s.gems - purchase.gemsSpent,
+                ownedCards = s.ownedCards + card,
+                selectedCardId = card.id,
+                summonCardId = card.id,
+                diamondShopTargetId = 0,
+                diamondShopMessage = purchase.message,
+                statusMessage = purchase.message
+            )
+        }
+        return out
+    }
+
+    /** 🔋 💎 [PRICE_RECHARGE] — 차원 균열 에너지 또는 성수 즉시 충전 */
+    fun rechargeWithGems(kind: DiamondShopEngine.RechargeKind): DiamondShopEngine.Purchase? {
+        var out: DiamondShopEngine.Purchase? = null
+        updateState { s ->
+            val purchase = when (kind) {
+                DiamondShopEngine.RechargeKind.GATE_ENERGY ->
+                    DiamondShopEngine.rechargeEnergy(s.gems, s.gateEnergy, s.gateEnergyMax)
+                DiamondShopEngine.RechargeKind.HOLY_WATER ->
+                    DiamondShopEngine.rechargeHolyWater(s.gems)
+            }
+            out = purchase
+            if (!purchase.isSuccess) {
+                return@updateState s.copy(
+                    diamondShopMessage = purchase.message,
+                    statusMessage = purchase.message
+                )
+            }
+            s.copy(
+                gems = s.gems - purchase.gemsSpent,
+                gateEnergy = (s.gateEnergy + purchase.energyGain).coerceAtMost(s.gateEnergyMax),
+                holyWater = s.holyWater + purchase.holyWaterGain,
+                diamondShopMessage = purchase.message,
+                statusMessage = purchase.message
+            )
+        }
+        return out
+    }
+
+    /** 🎁 💎 [PRICE_EXCHANGE] — 강화석(조각) 또는 친밀도 선물 교환 */
+    fun exchangeWithGems(kind: DiamondShopEngine.ExchangeKind): DiamondShopEngine.Purchase? {
+        var out: DiamondShopEngine.Purchase? = null
+        updateState { s ->
+            val target = s.ownedCards.firstOrNull { it.id == s.diamondShopTargetId }
+            val purchase = when (kind) {
+                DiamondShopEngine.ExchangeKind.UPGRADE_SHARD ->
+                    DiamondShopEngine.exchangeShards(target, s.gems)
+                DiamondShopEngine.ExchangeKind.AFFINITY_GIFT ->
+                    DiamondShopEngine.giftAffinity(target, s.bondForCard(s.diamondShopTargetId), s.gems)
+            }
+            out = purchase
+            if (!purchase.isSuccess || target == null) {
+                return@updateState s.copy(
+                    diamondShopMessage = purchase.message,
+                    statusMessage = purchase.message
+                )
+            }
+            val gifted = if (purchase.bondGain > 0) {
+                target.copy(bondLevel = (target.bondLevel + purchase.bondGain).coerceAtMost(AffinityRules.MAX_BOND))
+            } else target
+            s.copy(
+                gems = s.gems - purchase.gemsSpent,
+                ownedCards = s.ownedCards.map { if (it.id == target.id) gifted else it },
+                partnerBond = if (target.id == 3) maxOf(s.partnerBond, gifted.bondLevel) else s.partnerBond,
+                shards = if (purchase.shardGain > 0) s.shards.add(target.id, purchase.shardGain) else s.shards,
+                diamondShopMessage = purchase.message,
+                statusMessage = purchase.message
+            )
+        }
+        return out
+    }
+
+    /** 🌹 💎 [PRICE_DATE_LOOK] — 보유 캐릭터의 데이트 룩을 친밀도 없이 즉시 해금 */
+    fun unlockDateLookWithGems(): DiamondShopEngine.Purchase? {
+        var out: DiamondShopEngine.Purchase? = null
+        updateState { s ->
+            val target = s.ownedCards.firstOrNull { it.id == s.diamondShopTargetId }
+            val purchase = DiamondShopEngine.unlockDateLook(
+                card = target,
+                bond = s.bondForCard(s.diamondShopTargetId),
+                alreadyUnlocked = s.isDateLookUnlockedByGem(s.diamondShopTargetId),
+                gems = s.gems
+            )
+            out = purchase
+            if (!purchase.isSuccess) {
+                return@updateState s.copy(
+                    diamondShopMessage = purchase.message,
+                    statusMessage = purchase.message
+                )
+            }
+            val cardId = purchase.dateLookCardId ?: s.diamondShopTargetId
+            s.copy(
+                gems = s.gems - purchase.gemsSpent,
+                dateLookUnlockedIds = s.dateLookUnlockedIds + cardId,
+                // 해금하자마자 그 캐릭터는 데이트 룩으로 보여 준다 (로비·도감 복장 기억에 남긴다)
+                lobbyOutfits = s.lobbyOutfits + (cardId to VisualState.ROMANTIC_DATE),
+                lobbyVisual = if (s.lobbyHeroId == cardId) VisualState.ROMANTIC_DATE else s.lobbyVisual,
+                selectedVisual = if (s.selectedCardId == cardId) VisualState.ROMANTIC_DATE else s.selectedVisual,
+                diamondShopMessage = purchase.message,
+                statusMessage = purchase.message
+            )
+        }
+        return out
+    }
+
+    /** 2웨이 합성 ① 한계 돌파 — 동일 카드 흡수 */
+    fun limitBreakSelected() {        updateState { s ->
             val original = s.ownedCards.firstOrNull { it.id == s.selectedCardId }
                 ?: return@updateState s.copy(synthesisMessage = "[한계 돌파 불가] 보유하지 않은 카드입니다.")
             if (original.starLevel >= 5) {
